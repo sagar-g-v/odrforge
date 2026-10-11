@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <sstream>
@@ -247,7 +249,18 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
          << ",\"maxLinkGap\":" << opt.validation->maxLinkGap;
   data << "},\"roads\":[" << roads.str() << "],\"junctions\":[" << juncs.str() << "],\"lanes\":[" << lanes.str()
        << "],\"marks\":[" << marks.str() << "],\"refs\":[" << refs.str() << "],\"signals\":[" << sigs.str()
-       << "],\"objects\":[" << objs.str() << "]}";
+       << "],\"objects\":[" << objs.str() << "]";
+  if (!opt.basemapDir.empty()) {
+    namespace fs = std::filesystem;
+    std::ifstream bm(fs::path(opt.basemapDir) / "basemap.json", std::ios::binary);
+    if (!bm) throw std::runtime_error("cannot read " + (fs::path(opt.basemapDir) / "basemap.json").string());
+    const std::string meta((std::istreambuf_iterator<char>(bm)), std::istreambuf_iterator<char>());
+    const fs::path htmlDir = fs::absolute(fs::path(path)).parent_path();
+    std::string rel = fs::relative(fs::absolute(opt.basemapDir), htmlDir).generic_string();
+    if (rel.empty()) rel = ".";
+    data << ",\"basemap\":{\"dir\":\"" << esc(rel) << "\",\"meta\":" << meta << "}";
+  }
+  data << "}";
 
   std::string html = kVizTemplate;
   const std::string tagTitle = "__ODRFORGE_TITLE__", tagData = "/*__ODRFORGE_DATA__*/";

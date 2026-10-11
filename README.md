@@ -72,6 +72,22 @@ crossfall is written as `superelevation`. Pass `--no-superelevation` for consume
 The vertical datum of the grids is recorded in the header `userData`. See
 [docs/DESIGN.md](docs/DESIGN.md#real-elevation-elevationcpp).
 
+## Verify against the map and imagery
+
+```bat
+python tools\make_basemap.py --origin 34.054,-118.2575 --bounds 34.044,-118.27,34.064,-118.245 ^
+    --out out_basemap --osm area.osm --naip
+osm2xodr area.osm out.xodr ... --viz out.html --basemap out_basemap
+```
+
+The viewer's Background selector then offers:
+- an HD map rendered from the OSM file,
+- USGS NAIP satellite imagery (offline, 0.6 m),
+- live Esri imagery.
+
+All of them are placed in the network's own projection, under the roads. A path on the map with no
+lanes over it, or lanes beside the street in the imagery, is a difference to look at.
+
 ## Visualise
 
 ```bat

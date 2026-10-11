@@ -24,6 +24,7 @@ static void usage() {
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
       "  --no-furniture      no street lamps / trees\n"
       "  --viz OUT.html      also write an interactive HTML view of the result\n"
+      "  --basemap DIR       offline HD map / imagery backgrounds for the view (tools/make_basemap.py)\n"
       "  --terrain G.odrz    ground surface grid (tools/make_terrain.py): real road elevation\n"
       "  --structures S.odrz bridge-deck surface grid (lidar class 17) for bridge=yes roads\n"
       "  --clip MINLAT,MINLON,MAXLAT,MAXLON  cut the network to this area (ways split at the boundary)\n"
@@ -43,7 +44,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "asam", name, vizPath, terrainPath, structuresPath;
+  std::string country = "XX", target = "asam", name, vizPath, terrainPath, structuresPath, basemapDir;
   double lat0 = 1e9, lon0 = 1e9, clip[4] = {0, 0, 0, 0};
   bool haveClip = false, flat = false;
   BuildOptions opt;
@@ -59,6 +60,7 @@ int main(int argc, char **argv) {
     } else if (a == "--no-sidewalks") opt.lanes.assumeSidewalks = false;
     else if (a == "--no-furniture") opt.streetFurniture = false;
     else if (a == "--viz") vizPath = next();
+    else if (a == "--basemap") basemapDir = next();
     else if (a == "--terrain") terrainPath = next();
     else if (a == "--structures") structuresPath = next();
     else if (a == "--no-superelevation") flat = true;
@@ -108,6 +110,7 @@ int main(int argc, char **argv) {
       VizOptions vo;
       vo.title = opt.name;
       vo.validation = &vr;
+      vo.basemapDir = basemapDir;
       writeVizHtml(od, vizPath, vo);
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

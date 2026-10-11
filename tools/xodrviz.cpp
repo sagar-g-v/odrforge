@@ -9,13 +9,14 @@
 
 int main(int argc, char **argv) {
   if (argc < 3) {
-    std::printf("xodrviz %s - OpenDRIVE to interactive HTML\nusage: xodrviz <in.xodr> <out.html> [--title T]\n", ODRFORGE_VERSION);
+    std::printf("xodrviz %s - OpenDRIVE to interactive HTML\nusage: xodrviz <in.xodr> <out.html> [--title T] [--basemap DIR]\n", ODRFORGE_VERSION);
     return 2;
   }
   odrforge::VizOptions vo;
   vo.title = argv[1];
   for (int i = 3; i + 1 < argc; ++i)
     if (std::string(argv[i]) == "--title") vo.title = argv[++i];
+    else if (std::string(argv[i]) == "--basemap") vo.basemapDir = argv[++i];
   try {
     const auto od = odrforge::odr::read(argv[1]);
     const auto vr = odrforge::validate(od);

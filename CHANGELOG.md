@@ -2,6 +2,27 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-10-11
+
+### Added
+- **Reference backgrounds for verification** (`tools/make_basemap.py`, `osm2xodr` / `xodrviz --basemap DIR`).
+  Two offline layers are produced as tile pyramids of 512 px tiles:
+  - **HD map:** a carto-style map rendered from the OSM file itself (landuse, water, parks,
+    buildings, roads by class, paths, rail) at 0.3 m per pixel, supersampled. Nothing is downloaded
+    from tile servers.
+  - **HD satellite:** USGS NAIP orthoimagery (public domain, 0.6 m), fetched in its native Web
+    Mercator and resampled into the network's transverse Mercator. The inverse projection
+    round-trips to 0.02 mm.
+  - The viewer embeds the pyramid description and loads only the tiles in view, with the overview
+    level drawn first so nothing is blank.
+- **Viewer Background selector:** None, HD map, HD satellite, or live satellite (Esri World
+  Imagery). Live tiles are requested only inside the network's boundary. Background and road
+  opacity are adjustable, and the attribution is shown for each source.
+
+### Removed
+- The live OpenStreetMap tile layer from 0.5.1. The tile servers block requests from a local file
+  (no referrer, per their usage policy), and the HD map rendered from the same OSM data replaces it.
+
 ## [0.5.1] - 2026-10-11
 
 ### Added
