@@ -60,6 +60,7 @@ struct RoadMeta {
   std::vector<double> zs, zz;  ///< elevation samples (s on the trimmed road) and smoothed heights
   std::vector<double> xs;      ///< smoothed cross slope (tan of the superelevation) per sample
   bool hasData = true;         ///< false: no measurement anywhere on the road
+  std::optional<double> fixedTrimStart, fixedTrimEnd;  ///< set by the gore stage: not re-trimmed
   std::vector<double> zy, zw, ztc;  ///< observed centre heights (NaN: none), robust weights, carriageway centre t
   double zLambda = 0.0;             ///< Whittaker smoothing weight used for the profile
   double obs0 = 1e9, obs1 = 1e9;    ///< distance from the start / end to the nearest observed sample
@@ -75,8 +76,29 @@ struct Cluster {
   bool crossing = false;
   int junction = -1;  ///< index into OpenDrive::junctions
   bool hasPlane = false;
+  /// lane-level gore (diverge: trunk -> main + branch; merge: main + branch -> trunk). The trunk
+  /// carries `extra` branch lanes on the branch side up to the separation point (the junction).
+  struct Gore {
+    int trunk = -1, main = -1, branch = -1;  ///< meta indices
+    bool diverge = true;
+    bool branchLeft = false;  ///< branch on the left of the main road (travel direction)
+    int extra = 0;
+  };
+  std::optional<Gore> gore;
   double plane[3] = {0, 0, 0};  ///< z = a + b (x - cx) + c (y - cy)
 };
+
+/// minimum fillet radius of a road class (m)
+double classMinRadius(const std::string &hw);
+/// carriageway extents (left, right) of a cross section relative to the reference line (no sidewalks)
+void carriagewayExtents(const CrossSection &x, double &left, double &right);
+/// the way becomes a road (highway class, service kind, access, complete geometry)
+bool isRoadWay(const OsmData &osm, const OsmWay &w, const BuildOptions &opt);
+
+/// parking aisles of lots that connect two or more road attachment points (BuildOptions::connectParkingLots)
+std::set<OsmId> throughParkingAisles(const OsmData &osm, const BuildOptions &opt);
+/// joins way ends that stop short of another road (see BuildOptions::snapDanglingEnds)
+OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped);
 
 struct Builder {
   const OsmData &osm;
@@ -108,6 +130,7 @@ struct Builder {
   void buildChains();
   void clusterJunctions();
   void buildRoadGeometry();
+  void buildGores();         // gore.cpp
   void trimRoads();
   void buildRoads();
   void resolveOverlaps();    // overlap.cpp

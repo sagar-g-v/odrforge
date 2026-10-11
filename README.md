@@ -15,6 +15,9 @@ command-line tool.
   sign catalogues. Included: `XX` (generic), `US`, `CA`, `DE`, `FR`, `GB`, `IN`, `JP`, `AU`.
 - **Targets.** `asam` (OpenDRIVE 1.6), `asam18` (1.8: `walking` lanes, `direction`, ISO country
   codes), `carla` (1.4 plus CARLA conventions), `esmini`.
+- **Connected network.** OSM near-misses are joined, and parking lots that link streets are
+  driven through. Freeway exits and entrances are lane-level splits and merges at the gore, so road
+  surfaces never overlap there.
 - **Validated on every run.** Checks cover geometry gaps, lane-level link gaps and headings,
   references and ids.
 

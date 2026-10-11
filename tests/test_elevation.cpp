@@ -266,3 +266,22 @@ TEST_CASE("grade separation: untagged crossing without a junction - the lower ro
   }
   CHECK(zHi - zLo >= 4.5);
 }
+
+TEST_CASE("elevation: a road measured at a single point stays level (no extrapolated slope)") {
+  OsmB b;
+  const OsmId c = b.node(0, 0);
+  const Tags street{{"highway", "residential"}};
+  b.way({b.node(-120, 0), c}, street);
+  b.way({c, b.node(120, 0)}, street);
+  b.way({c, b.node(0, 60)}, {{"highway", "service"}, {"tunnel", "yes"}});
+  Terrain t;
+  // ground at 40 m, measured only on a 3 m strip at the far end of the tunnel road
+  t.ground = makeGrid(-150, -150, 1.0, 301, 301, 1, [](int, double x, double y) {
+    return std::abs(x) < 40 || y < 10 || y > 58 ? 40.0f : NAN;
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  for (const auto &r : od.roads)
+    for (double s = 0; s <= r.length(); s += 1.0) CHECK_NEAR(odr::elevationAt(r, s), 40.0, 0.05);
+}

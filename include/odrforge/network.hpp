@@ -56,6 +56,16 @@ struct BuildOptions {
   /// Optional area of interest in local metres (minX, minY, maxX, maxY): ways are cut exactly at
   /// the boundary (new end nodes at the crossing points), everything outside is dropped.
   std::optional<std::array<double, 4>> clipBox;
+  /// OSM near-misses: a way end that stops short of another road (within that road's half width
+  /// plus this many metres, pointing at it, same layer) is joined to it; 0 disables
+  double snapDanglingEnds = 3.0;
+  /// parking aisles (excluded service kinds) become roads where their lot connects two or more
+  /// road attachment points: driving through the lot is a real connection, not two dead ends
+  bool connectParkingLots = true;
+  /// freeway splits / merges at a shallow angle: the trunk carries the branch lanes up to where the
+  /// carriageways separate and the junction sits there (no overlapping road surfaces at gores)
+  bool laneLevelGores = true;
+  std::set<OsmId> includeWays;  ///< ways included regardless of the class filters (lot aisles are added here)
   std::string name = "OdrForge network";
 };
 
@@ -66,6 +76,9 @@ struct BuildReport {
   /// road surface vs measured ground at driving-lane centres (outside bridges / tunnels), metres
   double elevMeanDev = 0.0, elevP95Dev = 0.0, elevMaxDev = 0.0;
   int elevSamples = 0;
+  int snappedEnds = 0;
+  int parkingAisles = 0;
+  int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int overlapShifts = 0;
   int steepSpots = 0;        ///< samples steeper than 20 %
   int steepNotInTerrain = 0; ///< ... of which the measured terrain is > 3 % less steep (artefacts)  ///< roads shifted sideways to remove side-by-side carriageway overlaps

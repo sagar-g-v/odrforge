@@ -36,6 +36,9 @@ struct CrossSection {
   SideSpec left, right;      ///< OpenDRIVE sides relative to the OSM way direction
   double laneOffset = 0.0;   ///< position of the lane-0 divider relative to the OSM way (left +)
   bool roundabout = false;
+  /// this section's laneOffset applies across its boundaries even when lanes change on one side
+  /// only (lanes added beside lanes that must not move, e.g. the branch lanes before a gore)
+  bool holdOffset = false;
 
   int drivingLanes() const { return left.drivingCount() + right.drivingCount(); }
   /// same lane layout (kinds and counts) - widths / turns may differ

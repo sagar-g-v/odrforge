@@ -39,16 +39,18 @@ The research behind this design is in `docs/research/`:
 
 | Stage | What it does |
 |---|---|
+| topology preparation (`snap.cpp`) | Joins OSM near-misses: a way end that stops short of another road (within that road's half-width plus 3 m, pointing at it, same layer) gets connected to it. Real dead ends are kept: `noexit`, turning circles and loops, ends at buildings, garages and barriers, ends beyond the kerb. Surface parking-lot aisles become roads where the lot connects two or more streets. |
 | collect segments | Selects road ways (`highway` set, `service` exclusions, `access`) and splits them at shared nodes. Builds the cross-section from tags (`lanes.cpp`). |
 | junction nodes | Marks nodes with 3+ segment ends, and 2-end nodes where two oneways conflict. |
 | chains | Joins pass-through segments into roads, oriented along the oneway traffic. |
 | cluster junctions | Union-find merges intersection nodes joined by segments shorter than the sum of their carriageway half-widths plus slack, which turns dual-carriageway crossings into one junction. Internal segments are dropped. With terrain, two nodes merge only if some measured surface at each (ground or a deck level) is within a junction grade of the other, so a ramp between a street and a trenched freeway stays a road. |
 | reference lines | Fits a clothoid spline through each chain polyline (`clothoid_fit.cpp`). Lane sections start at way joints, and every OSM node gets its `s`. |
+| lane-level gores (`gore.cpp`) | A freeway split or merge at a shallow angle (three oneway roads, branches within 30°) is modelled as it is built. The freeway becomes one reference line through the OSM node, and the trunk carries the branch lanes beside the main lanes until the driving lanes separate. Those lanes are added with a taper for an exit, or dropped after an entrance. A 4 m junction sits at that point: main lanes continue 1:1, and the branch lanes become the ramp. |
 | trim roads | Scans each road end outward from its junction until neither carriageway edge overlaps another road of the junction, then adds the stop-line setback and the curb return. Freeways and ramps may be trimmed back up to 160 m, because ramps leave at shallow angles. |
-| resolve overlaps | Near-parallel roads on the same layer that OSM draws closer than their lanes are wide get pushed apart by a smooth extra `laneOffset`: at most 3 m, tapered at no more than about 5 %. Gores (two roads converging into the same junction) are left to the junction. |
+| resolve overlaps | Near-parallel roads on the same layer that OSM draws closer than their lanes are wide get pushed apart by a smooth extra `laneOffset`: at most 3 m, tapered at no more than about 5 %. A shift never exceeds the free room on that side, and a road squeezed from both sides is left in place. Gore partners count as obstacles and are never pushed apart. |
 | roads | Builds lane sections with tapers and lane links, `laneOffset` held across one-sided changes, road types, speeds, and bridges and tunnels. |
 | elevation | Fits measured terrain to the roads (see [Real elevation](#real-elevation-elevationcpp)). The output is C1 cubic Hermite `elevation` records and `superelevation` (crossfall). |
-| junctions | Builds connecting roads per movement: a single G1 clothoid, or a curvature-continuous 2-piece curve when it would be tighter than `minConnectingRadius`. Width and `laneOffset` follow cubics. Height and banking come from the junction surface, so every connecting road of a junction lies on one plane. |
+| junctions | A movement sharper than 150° is a U-turn and is not built, unless it is the only way out of (or into) a road end and leads to another road; such a movement is built as a tight turn instead (for example a driveway hooking into the street at its last node). Builds connecting roads per movement: a single G1 clothoid, or a curvature-continuous 2-piece curve when it would be tighter than `minConnectingRadius`. Width and `laneOffset` follow cubics. Height and banking come from the junction surface, so every connecting road of a junction lies on one plane. |
 | signals | Creates traffic lights, controllers and junction references, stop and give-way signs, and speed-limit signs. |
 | objects | Adds crosswalks (mapped crossings, plus every approach of signalised junctions), street lamps and trees. |
 
@@ -169,7 +171,8 @@ walked in 1 m steps: `scripts/compare_xodr_carla.py` in MirrorMile.
   `reference` links.
 - **Inputs:** OSM PBF via libosmium, and GeoTIFF terrain read directly (today it goes through
   `make_terrain.py` to `.odrz`).
-- **Gores as lane-level merges:** model freeway exits and entries as a widening lane on the
-  freeway, instead of trimming both roads back. This would remove the last overlap reports.
+- **Braided ramps:** a branch whose OSM line crosses the main line before it separates (flyover
+  ramps in the Four Level Interchange) is not a gore. It needs the vertical separation known when
+  the junction is shaped.
 - **Python bindings (pybind11)** and MirrorMile integration, replacing steps 01–02f.
 - **More country rule files,** plus the US state and EU zone speed tables.

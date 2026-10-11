@@ -78,6 +78,9 @@ void Builder::resolveOverlaps() {
       const double L = a.length();
       const int n = std::max(2, static_cast<int>(std::ceil(L / step)) + 1);
       std::vector<double> push(n, 0.0);  // required lateral shift (left +) per sample
+      // free room to the left / right before a shift would run into another road (gore partners and
+      // roads already clear on that side are obstacles too)
+      std::vector<double> roomL(n, maxShift), roomR(n, maxShift);
       bool any = false;
       for (int i = 0; i < n; ++i) {
         const double s = L * i / (n - 1);
@@ -87,6 +90,7 @@ void Builder::resolveOverlaps() {
         const int la = layerAt(m, s);
         const long cx = static_cast<long>(std::floor(pa.x / cell)), cy = static_cast<long>(std::floor(pa.y / cell));
         std::map<int, bool> seen;
+        double needL = 0, needR = 0;
         for (long dx = -1; dx <= 1; ++dx)
           for (long dy = -1; dy <= 1; ++dy) {
             auto it = grid.find({cx + dx, cy + dy});
@@ -105,24 +109,33 @@ void Builder::resolveOverlaps() {
               const double c = std::cos(pa.hdg - pb.hdg);
               if (std::abs(c) < std::cos(30.0 * kPi / 180.0)) continue;  // crossing, not side by side
               if (layerAt(mb, sb) != la) continue;                        // grade separated
-              if (nearSharedEnd(mi, s, mj, sb)) continue;                 // a gore: merges in the junction
               double blo, bhi;
               if (!extent(b, sb, blo, bhi)) continue;
               // a's carriageway in b's lateral frame
               const double lo = c > 0 ? tb + alo : tb - ahi, hi = c > 0 ? tb + ahi : tb - alo;
-              const double depth = std::min(hi, bhi) - std::max(lo, blo) + margin;
-              if (depth <= margin || depth > maxDepth + margin) continue;
+              const double overlap = std::min(hi, bhi) - std::max(lo, blo);
+              // the side of a that faces away from b (in a's frame, +1 = left)
+              const double away = ((0.5 * (lo + hi) >= 0.5 * (blo + bhi)) ? 1.0 : -1.0) * (c > 0 ? 1.0 : -1.0);
+              std::vector<double> &room = away > 0 ? roomR : roomL;  // b lies on the other side
+              const bool gore = nearSharedEnd(mi, s, mj, sb);        // merges in the junction: never pushed from
+              if (gore || overlap <= 0 || overlap > maxDepth) {
+                room[i] = std::min(room[i], std::max(0.0, -overlap - margin));
+                continue;
+              }
               // move a away from b by half the overlap (b moves the other half on its own turn)
-              const double dirInB = (0.5 * (lo + hi) >= 0.5 * (blo + bhi)) ? 1.0 : -1.0;
-              const double need = 0.5 * depth * dirInB * (c > 0 ? 1.0 : -1.0);
-              if (std::abs(need) > std::abs(push[i])) push[i] = need;
-              any = true;
+              const double need = 0.5 * (overlap + margin);
+              (away > 0 ? needL : needR) = std::max(away > 0 ? needL : needR, need);
+              room[i] = 0.0;
             }
           }
+        if (needL > 0 && needR > 0) continue;  // squeezed from both sides: a shift cannot help
+        if (needL > 0) push[i] = needL, any = true;
+        if (needR > 0) push[i] = -needR, any = true;
       }
       if (!any) continue;
       // smooth envelope: keep the required shift, spread it with C1 ramps of at least 20 m and a
-      // taper of at most ~5 % (smoothstep peak slope 1.5 push / ramp length)
+      // taper of at most ~5 % (smoothstep peak slope 1.5 push / ramp length); never more than the
+      // free room on that side
       std::vector<double> sm(n, 0.0);
       for (int i = 0; i < n; ++i) {
         if (std::abs(push[i]) < 1e-6) continue;
@@ -136,6 +149,13 @@ void Builder::resolveOverlaps() {
           if (std::abs(v) > std::abs(sm[j])) sm[j] = v;
         }
       }
+      // limit by the room, then re-smooth the limit so the taper stays gentle
+      std::vector<double> lim(n);
+      for (int i = 0; i < n; ++i) lim[i] = sm[i] >= 0 ? roomL[i] : roomR[i];
+      const double dLim = 0.05 * step;  // the limit changes by at most 5 % per metre
+      for (int i = 1; i < n; ++i) lim[i] = std::min(lim[i], lim[i - 1] + dLim);
+      for (int i = n - 2; i >= 0; --i) lim[i] = std::min(lim[i], lim[i + 1] + dLim);
+      for (int i = 0; i < n; ++i) sm[i] = std::clamp(sm[i], -lim[i], lim[i]);
       // new laneOffset = original + accumulated shift (bounded), as C1 cubic pieces every ~10 m
       if (!original.count(mi)) original[mi] = a.laneOffset, total[mi].assign(n, 0.0);
       std::vector<double> &acc = total[mi];

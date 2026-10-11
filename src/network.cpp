@@ -81,19 +81,31 @@ std::vector<int> Builder::endLanes(const odr::Road &r, bool atEnd, bool incoming
 
 // ---------------------------------------------------------------------------------------- stages
 
+double classMinRadius(const std::string &hw) { return minRadiusFor(hw); }
+void carriagewayExtents(const CrossSection &x, double &left, double &right) { vehicleExtents(x, left, right); }
+
+bool isRoadWay(const OsmData &osm, const OsmWay &w, const BuildOptions &opt) {
+  const auto hw = tag(w.tags, "highway");
+  if (!hw || !opt.highways.count(*hw) || w.nodes.size() < 2) return false;
+  if (tagYes(w.tags, "area")) return false;
+  if (opt.includeWays.count(w.id)) {
+    for (OsmId n : w.nodes)
+      if (!osm.node(n)) return false;
+    return true;
+  }
+  if (*hw == "service")
+    if (auto sv = tag(w.tags, "service"); sv && opt.excludeService.count(*sv)) return false;
+  if (tagIs(w.tags, "access", "no") && !tag(w.tags, "bus") && !tag(w.tags, "psv")) return false;
+  for (OsmId n : w.nodes)
+    if (!osm.node(n)) return false;
+  return true;
+}
+
 void Builder::collectSegments() {
   std::unordered_map<OsmId, int> usage;
   std::vector<const OsmWay *> ways;
   for (const auto &[id, w] : osm.ways) {
-    const auto hw = tag(w.tags, "highway");
-    if (!hw || !opt.highways.count(*hw) || w.nodes.size() < 2) continue;
-    if (tagYes(w.tags, "area")) continue;
-    if (*hw == "service")
-      if (auto sv = tag(w.tags, "service"); sv && opt.excludeService.count(*sv)) continue;
-    if (tagIs(w.tags, "access", "no") && !tag(w.tags, "bus") && !tag(w.tags, "psv")) continue;
-    bool complete = true;
-    for (OsmId n : w.nodes) complete = complete && osm.node(n);
-    if (!complete) continue;
+    if (!isRoadWay(osm, w, opt)) continue;
     ways.push_back(&w);
     for (size_t i = 0; i < w.nodes.size(); ++i) usage[w.nodes[i]] += (i == 0 || i + 1 == w.nodes.size()) ? 2 : 1;
   }
@@ -435,7 +447,8 @@ void Builder::trimRoads() {
       // starts about R before the point where the edges would meet
       const double R = opt.cornerRadius * (m.rank >= 7 ? 1.5 : 1.0);
       const double corner = c.ends.size() >= 3 ? 0.7 * R : 0.0;
-      const double trim = lastOverlap < 0 ? 0.5 : lastOverlap + opt.stopLineSetback + corner;
+      double trim = lastOverlap < 0 ? 0.5 : lastOverlap + opt.stopLineSetback + corner;
+      if (const auto &fixed = e.atEnd ? m.fixedTrimEnd : m.fixedTrimStart) trim = *fixed;
       (e.atEnd ? metas[e.road].trimEnd : metas[e.road].trimStart) = trim;
     }
   }
@@ -579,8 +592,8 @@ void Builder::buildRoads() {
       const bool leftChanged = a.left.drivingCount() != b.left.drivingCount();
       const bool rightChanged = a.right.drivingCount() != b.right.drivingCount();
       const double room = (k + 1 < secs.size() ? secs[k + 1].s : len) - secs[k].s;
-      const bool recentre = room >= 10.0 &&
-                            (a.oneway != b.oneway || (leftChanged && rightChanged) || (!leftChanged && !rightChanged));
+      const bool recentre = a.holdOffset || b.holdOffset ||
+                            (room >= 10.0 && (a.oneway != b.oneway || (leftChanged && rightChanged) || (!leftChanged && !rightChanged)));
       offs[k] = recentre ? b.laneOffset : offs[k - 1];
     }
     r.laneOffset.push_back({0.0, offs[0], 0, 0, 0});
@@ -697,8 +710,15 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
                               BuildReport *report) {
   OsmData clipped;
   if (opt.clipBox) clipped = clipOsm(osmIn, proj, *opt.clipBox);
-  const OsmData &osm = opt.clipBox ? clipped : osmIn;
-  detail::Builder b(osm, proj, opt);
+  const OsmData &src = opt.clipBox ? clipped : osmIn;
+  BuildOptions o = opt;  // topology preparation: lot aisles that connect streets become roads
+  if (o.connectParkingLots)
+    for (OsmId w : detail::throughParkingAisles(src, o)) o.includeWays.insert(w);
+  int snapped = 0;
+  const OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped);
+  detail::Builder b(osm, proj, o);
+  b.rep.snappedEnds = snapped;
+  b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());
   const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
   auto stage = [&](const char *name, void (detail::Builder::*fn)()) {
     if (verbose) std::fprintf(stderr, "[odrforge] %s...\n", name);
@@ -709,6 +729,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("chains", &detail::Builder::buildChains);
   stage("cluster junctions", &detail::Builder::clusterJunctions);
   stage("reference lines", &detail::Builder::buildRoadGeometry);
+  stage("lane-level gores", &detail::Builder::buildGores);
   stage("trim roads", &detail::Builder::trimRoads);
   stage("roads", &detail::Builder::buildRoads);
   stage("resolve overlaps", &detail::Builder::resolveOverlaps);

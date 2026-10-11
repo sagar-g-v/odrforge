@@ -111,6 +111,26 @@ void Builder::buildJunctions() {
       (e.atEnd ? r.successor : r.predecessor) = t;
     }
     int connIdx = 0;
+    // a movement sharper than 150 degrees is a U-turn and is not built - unless it is the only way
+    // out of (or into) a road end and leads to another road: a driveway drawn alongside the street
+    // and hooking into it at the last node still connects (as a tight turn), it is not a dead end
+    auto endHeading = [&](const RoadEnd &e, bool incoming) {
+      const odr::Road &r = od.roads[metas[e.road].roadIndex];
+      const Pose p = r.planView.eval(e.atEnd ? r.length() : 0.0);
+      return incoming == e.atEnd ? p.hdg : p.hdg + kPi;
+    };
+    auto hasLanes = [&](const RoadEnd &e, bool incoming) {
+      return !endLanes(od.roads[metas[e.road].roadIndex], e.atEnd, incoming).empty();
+    };
+    auto regularPartner = [&](const RoadEnd &e, bool incoming) {
+      for (const RoadEnd &o : cl.ends) {
+        if (o.road == e.road && o.atEnd == e.atEnd) continue;
+        if (!hasLanes(o, !incoming)) continue;
+        const double dh = incoming ? endHeading(o, false) - endHeading(e, true) : endHeading(e, false) - endHeading(o, true);
+        if (classify(normalizeAngle(dh)) != Turn::UTurn) return true;
+      }
+      return false;
+    };
     for (const RoadEnd &in : cl.ends) {
       const RoadMeta &mi = metas[in.road];
       const odr::Road &ri = od.roads[mi.roadIndex];
@@ -146,8 +166,11 @@ void Builder::buildJunctions() {
         if (ol.empty()) continue;
         const Pose po = ro.planView.eval(out.atEnd ? ro.length() : 0.0);
         const double hOut = out.atEnd ? po.hdg + kPi : po.hdg;
-        const Turn t = classify(normalizeAngle(hOut - hIn));
-        if (t == Turn::UTurn) continue;
+        Turn t = classify(normalizeAngle(hOut - hIn));
+        if (t == Turn::UTurn) {
+          if (out.road == in.road || (regularPartner(in, true) && regularPartner(out, false))) continue;
+          t = normalizeAngle(hOut - hIn) > 0 ? Turn::Left : Turn::Right;  // the only connection: a tight turn
+        }
         // turn restrictions on the OSM ways adjacent to the junction
         const OsmId fromWay = in.atEnd ? mi.wayEnd : mi.wayStart;
         const OsmId toWay = out.atEnd ? mo.wayEnd : mo.wayStart;
@@ -190,22 +213,46 @@ void Builder::buildJunctions() {
       (void)anyLeft;
       (void)anyRight;
       for (const Target &tg : targets) {
-        std::vector<int> src;
-        for (int i = 0; i < nIn; ++i)
-          if (perm[i].count(tg.turn)) src.push_back(i);
-        if (src.empty()) continue;
         const int nOut = static_cast<int>(tg.lanes.size());
         std::vector<std::pair<int, int>> pairs;  // (incoming lane id, outgoing lane id)
-        const int ns = static_cast<int>(src.size());
-        for (int k = 0; k < ns; ++k) {
-          int o;
-          if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
-          else if (tg.turn == Turn::Left) o = k;                    // align on the left
-          else o = ns == 1 ? std::min(nOut - 1, src[k] * nOut / std::max(1, nIn))
-                           : static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
-          o = std::clamp(o, 0, nOut - 1);
-          pairs.push_back({byLeft[src[k]], tg.lanes[o]});
+        if (cl.gore) {
+          // lane-level gore: main lanes continue 1:1, the trunk's branch-side lanes are the branch
+          const Cluster::Gore &g = *cl.gore;
+          auto prop = [](int i, int n, int m) {
+            return n == m || n <= 1 || m <= 1 ? std::min(i, m - 1) : static_cast<int>(std::lround(i * (m - 1) / double(n - 1)));
+          };
+          auto split = [&](const std::vector<int> &lanes, std::vector<int> &ext, std::vector<int> &main) {
+            const int n = static_cast<int>(lanes.size()), k = std::min(g.extra, n - 1);
+            for (int i = 0; i < n; ++i) ((g.branchLeft ? i < k : i >= n - k) ? ext : main).push_back(lanes[i]);
+          };
+          std::vector<int> ext, main;
+          if (g.diverge && in.road == g.trunk) {
+            split(byLeft, ext, main);
+            const std::vector<int> &from = tg.end->road == g.branch ? ext : main;
+            for (int i = 0; i < static_cast<int>(from.size()); ++i)
+              pairs.push_back({from[i], tg.lanes[prop(i, static_cast<int>(from.size()), nOut)]});
+          } else if (!g.diverge && tg.end->road == g.trunk) {
+            split(tg.lanes, ext, main);
+            const std::vector<int> &to = in.road == g.branch ? ext : main;
+            if (to.empty()) continue;
+            for (int i = 0; i < nIn; ++i) pairs.push_back({byLeft[i], to[prop(i, nIn, static_cast<int>(to.size()))]});
+          }
+        } else {
+          std::vector<int> src;
+          for (int i = 0; i < nIn; ++i)
+            if (perm[i].count(tg.turn)) src.push_back(i);
+          const int ns = static_cast<int>(src.size());
+          for (int k = 0; k < ns; ++k) {
+            int o;
+            if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
+            else if (tg.turn == Turn::Left) o = k;                    // align on the left
+            else o = ns == 1 ? std::min(nOut - 1, src[k] * nOut / std::max(1, nIn))
+                             : static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
+            o = std::clamp(o, 0, nOut - 1);
+            pairs.push_back({byLeft[src[k]], tg.lanes[o]});
+          }
         }
+        if (pairs.empty()) continue;
         const RoadMeta &mo = metas[tg.end->road];
         const odr::Road &ro = od.roads[mo.roadIndex];
         const double sOut = tg.end->atEnd ? ro.length() : 0.0;

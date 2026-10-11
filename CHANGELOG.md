@@ -2,6 +2,37 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-10-11
+
+### Added
+- **Lane-level gores** (`BuildOptions::laneLevelGores`, on by default).
+  - Freeway exits and entrances become splits and merges at the gore. The trunk carries the branch
+    lanes, with a taper, up to where the driving lanes separate, and a 4 m junction there links the
+    lanes 1:1.
+  - The freeway is one continuous reference line through the OSM node. Chained gores (exit, entry,
+    exit) are supported.
+  - Downtown Los Angeles: 46 splits and merges.
+- **OSM near-miss joining** (`BuildOptions::snapDanglingEnds`, 3 m). A way end that stops short of
+  the road it points at is connected to it. Real dead ends are kept: `noexit`, turning circles,
+  building, garage and barrier entrances, and ends beyond the kerb.
+- **Parking-lot through routes** (`BuildOptions::connectParkingLots`). Surface-lot aisles become
+  roads where the lot connects two or more streets; single-entrance lots and garage aisles stay out.
+- Report and CLI: `snappedEnds`, `parkingAisles`, `gores`.
+- **6 tests:** exit and entrance gores (lane counts, short junction, branch-lane links, no overlaps),
+  the hook driveway, near-miss joining with the kept dead ends, parking lots, and a road measured at
+  a single point.
+
+### Fixed
+- Roads whose only movement is sharper than 150° (a driveway drawn alongside the street that hooks
+  into it at the last node) were dead ends. Such a movement is now built as a tight turn.
+- The overlap resolver could push a road into its neighbour on the other side. Shifts are now
+  limited by the free room on both sides, and gore partners count as obstacles.
+- The Whittaker profile of a road measured at a single point extrapolated an arbitrary slope (one
+  junction reached -73 m). Such a road is now level.
+- Junctions with no measured road around them (underground garages) take their height outward from
+  the measured network, nearest known neighbour first, with the 15 % gradient cap. Placeholder zeros
+  are no longer used.
+
 ## [0.3.0] - 2026-10-11
 
 ### Added

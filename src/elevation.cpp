@@ -25,7 +25,11 @@ const double kNaN = std::numeric_limits<double>::quiet_NaN();
 /// Unknown samples have w = 0 and are filled with the smoothest (cubic-spline-like) curve.
 std::vector<double> whittaker(const std::vector<double> &y, const std::vector<double> &w, double lambda) {
   const size_t n = y.size();
-  if (n < 3) {  // too short to smooth: weighted mean of the known samples everywhere
+  size_t observed = 0;
+  for (size_t i = 0; i < n; ++i) observed += w[i] > 0 && !std::isnan(y[i]);
+  // too short to smooth, or a single observation (the straight lines the second-difference penalty
+  // leaves free are not determined by one point): weighted mean of the known samples everywhere
+  if (n < 3 || observed < 2) {
     double s = 0, ws = 0;
     for (size_t i = 0; i < n; ++i)
       if (w[i] > 0 && !std::isnan(y[i])) s += w[i] * y[i], ws += w[i];
@@ -568,35 +572,50 @@ void Builder::junctionSurfaces() {
     cl.plane[0] = sol[0], cl.plane[1] = sol[1], cl.plane[2] = sol[2];
     cl.hasPlane = true;
   }
-  // roads without any measurement (outside the terrain data, fully in tunnels): heights from the
-  // junction surfaces at their ends (linear in between), so they join their neighbours seamlessly
-  for (RoadMeta &m : metas) {
-    if (m.roadIndex < 0 || m.hasData) continue;
-    const odr::Road &r = od.roads[m.roadIndex];
-    const Chain &ch = chains[m.chain];
-    const bool h0 = ch.c0 >= 0 && clusters[ch.c0].hasPlane, h1 = ch.c1 >= 0 && clusters[ch.c1].hasPlane;
-    const double z0 = h0 ? planeZ(clusters[ch.c0], r.planView.eval(0).pos()) : 0.0;
-    const double z1 = h1 ? planeZ(clusters[ch.c1], r.planView.eval(r.length()).pos()) : 0.0;
-    const double a = h0 ? z0 : (h1 ? z1 : 0.0), b = h1 ? z1 : a;
-    for (size_t i = 0; i < m.zs.size(); ++i) m.zz[i] = a + (b - a) * m.zs[i] / std::max(1e-9, r.length());
-  }
-  // every junction gets a surface: the ones without a measured road use the propagated heights
-  for (Cluster &cl : clusters) {
-    if (cl.hasPlane || cl.ends.empty()) continue;
-    std::vector<Pt> pts;
-    for (const RoadEnd &e : cl.ends) {
-      const RoadMeta &m = metas[e.road];
-      if (m.roadIndex < 0 || m.zz.empty()) continue;
+  // roads without any measurement (outside the terrain data, fully in tunnels, underground garages)
+  // take their heights from the junction surfaces at their ends (linear in between), and junctions
+  // without a measured road take a surface from the heights already known around them - repeated
+  // outward from the measured network until nothing changes. Only real or propagated heights are
+  // used, never placeholders.
+  std::vector<char> known(metas.size(), 0);
+  for (size_t i = 0; i < metas.size(); ++i) known[i] = metas[i].roadIndex >= 0 && metas[i].hasData;
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (size_t i = 0; i < metas.size(); ++i) {
+      RoadMeta &m = metas[i];
+      if (m.roadIndex < 0 || known[i]) continue;
       const odr::Road &r = od.roads[m.roadIndex];
-      const Vec2 p = r.planView.eval(e.atEnd ? r.length() : 0.0).pos();
-      pts.push_back({p.x, p.y, e.atEnd ? m.zz.back() : m.zz.front(), 1.0});
+      const Chain &ch = chains[m.chain];
+      const bool h0 = ch.c0 >= 0 && clusters[ch.c0].hasPlane, h1 = ch.c1 >= 0 && clusters[ch.c1].hasPlane;
+      if (!h0 && !h1) continue;
+      const double z0 = h0 ? planeZ(clusters[ch.c0], r.planView.eval(0).pos()) : 0.0;
+      const double z1 = h1 ? planeZ(clusters[ch.c1], r.planView.eval(r.length()).pos()) : 0.0;
+      const double a = h0 ? z0 : z1, b = h1 ? z1 : a;
+      for (size_t k = 0; k < m.zs.size(); ++k) m.zz[k] = a + (b - a) * m.zs[k] / std::max(1e-9, r.length());
+      known[i] = 1, changed = true;
     }
-    if (pts.empty()) continue;
-    double sol[3];
-    fit(pts, cl.center, sol, 0.05 * weightSum(pts) * 100.0);
-    if (!opt.target.superelevation) sol[1] = sol[2] = 0.0;
-    cl.plane[0] = sol[0], cl.plane[1] = sol[1], cl.plane[2] = sol[2];
-    cl.hasPlane = true;
+    for (Cluster &cl : clusters) {
+      if (cl.hasPlane || cl.ends.empty()) continue;
+      std::vector<Pt> pts;
+      for (const RoadEnd &e : cl.ends) {
+        const RoadMeta &m = metas[e.road];
+        if (m.roadIndex < 0 || !known[e.road] || m.zz.empty()) continue;
+        const odr::Road &r = od.roads[m.roadIndex];
+        const Vec2 p = r.planView.eval(e.atEnd ? r.length() : 0.0).pos();
+        // a height carried through an unmeasured road counts less the longer that road is: a
+        // junction follows its nearest known neighbour (a garage entrance stub, not the far exits)
+        const double w = m.hasData ? 1.0 : 1.0 / std::pow(1.0 + r.length() / 10.0, 2.0);
+        pts.push_back({p.x, p.y, e.atEnd ? m.zz.back() : m.zz.front(), w});
+      }
+      if (pts.empty()) continue;
+      double sol[3];
+      fit(pts, cl.center, sol, 0.05 * weightSum(pts) * 100.0);
+      const double g = std::hypot(sol[1], sol[2]);
+      if (g > 0.15) sol[1] *= 0.15 / g, sol[2] *= 0.15 / g;
+      if (!opt.target.superelevation) sol[1] = sol[2] = 0.0;
+      cl.plane[0] = sol[0], cl.plane[1] = sol[1], cl.plane[2] = sol[2];
+      cl.hasPlane = changed = true;
+    }
   }
 }
 
