@@ -287,8 +287,16 @@ void Builder::buildRoadGeometry() {
     m.wayStart = first.way;
     m.wayEnd = segs[ch.parts.back().seg].way;
     PolylineFitOptions fo = opt.fit;
-    fo.minCornerRadius = std::max(fo.minCornerRadius, minRadiusFor(m.highway));
-    m.full = fitPolyline(pts, fo);
+    // a corner tighter than the road's half-width would fold its outer lanes back on themselves
+    double halfWidth = 0.0;
+    for (const Part &p : ch.parts) {
+      const CrossSection &x = segs[p.seg].xs;
+      halfWidth = std::max({halfWidth, x.left.totalWidth() + std::abs(x.laneOffset),
+                            x.right.totalWidth() + std::abs(x.laneOffset)});
+    }
+    fo.minCornerRadius = std::max({fo.minCornerRadius, minRadiusFor(m.highway), halfWidth + 3.0});
+    fo.maxCurvature = 1.0 / (halfWidth + 1.5);  // lanes must never fold on the inside of a bend
+    m.full = fitPolylineLimited(pts, fo);
     if (m.full.elements.empty() || m.full.length() < 0.5) continue;
     // s of every chain node (sections, signals, crossings are located by node)
     for (size_t k = 0; k < pts.size(); ++k) {
@@ -424,6 +432,14 @@ void Builder::buildRoads() {
       secs.push_back({s, si.xs});
     }
     if (secs.empty()) secs.push_back({0.0, sectionAtFull(m, s0)});
+    // short roads keep one layout (the widest); their junction connections absorb the change
+    if (secs.size() > 1 && len < 2.0 * opt.taperLength / 1.2) {
+      SectionInfo widest = secs.back();
+      for (const auto &si : secs)
+        if (si.xs.drivingLanes() > widest.xs.drivingLanes()) widest = si;
+      widest.s = 0.0;
+      secs = {widest};
+    }
     // OSM ways are usually split right at the intersection, so a turn-pocket section can be only a
     // few metres long after trimming: give end sections at least one taper length (where the road
     // allows) and merge tiny interior sections into their predecessor.

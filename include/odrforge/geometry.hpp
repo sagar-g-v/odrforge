@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cmath>
+#include <memory>
 #include <vector>
 
 namespace odrforge {
@@ -34,12 +35,20 @@ struct Pose {
 
 double normalizeAngle(double a);  ///< (-pi, pi]
 
-enum class GeomType { Line, Arc, Spiral };
+enum class GeomType { Line, Arc, Spiral, Poly3, ParamPoly3 };
+
+/// Cubic polynomial geometry read from other generators (OdrForge itself never writes these):
+/// poly3: v(u) = a + b u + c u^2 + d u^3; paramPoly3: u(p), v(p) with p in [0, 1] or [0, length].
+struct CubicGeom {
+  bool param = false, normalized = true;
+  double aU = 0, bU = 1, cU = 0, dU = 0, aV = 0, bV = 0, cV = 0, dV = 0;
+};
 
 /// One planView <geometry> record. Curvature varies linearly from k0 to k1 over length
 /// (Line: k0 = k1 = 0, Arc: k0 = k1 != 0, Spiral: otherwise).
 struct GeomElement {
   double s = 0.0, x = 0.0, y = 0.0, hdg = 0.0, length = 0.0, k0 = 0.0, k1 = 0.0;
+  std::shared_ptr<CubicGeom> cubic;  ///< set for poly3 / paramPoly3 (read only)
   GeomType type() const;
   Pose eval(double ds) const;  ///< pose at local distance ds in [0, length]
   Pose start() const { return eval(0.0); }
@@ -67,6 +76,8 @@ class ReferenceLine {
   ReferenceLine slice(double s0, double s1) const;
   /// Merge nearly-straight / nearly-constant-curvature elements, drop zero-length ones.
   void simplify(double kTol = 1e-5);
+  /// Fold elements shorter than minLen into a neighbour (spec 2: avoid geometries below ~1 mm).
+  void dropTiny(double minLen = 1e-3);
 };
 
 }  // namespace odrforge

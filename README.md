@@ -54,6 +54,25 @@ odr::OpenDrive od = buildOpenDrive(osm, Projection(lat0, lon0), opt, &rep);
 odr::write(od, "out.xodr", {opt.target.revMinor});
 ```
 
+## Visualise
+
+```bat
+osm2xodr area.osm out.xodr --country US --viz out.html
+xodrviz any.xodr view.html
+```
+
+Both commands write one self-contained HTML file, with no external resources:
+- pan and zoom, plus layer toggles: lanes by type, junction areas, road marks, reference lines,
+  curvature heat map, signals, objects
+- hover and click inspection of lanes and roads, and road search
+- the validation status of the file
+
+## Conformance
+
+`validate()` checks the ASAM OpenDRIVE rules listed in `src/validate.cpp`. Every message carries the
+ASAM rule id or the spec section it enforces. The test suite (`ctest`) runs the formulas, writer,
+reader and 9 end-to-end OSM scenarios against these rules.
+
 ## Versioning
 
 The library follows [Semantic Versioning](https://semver.org/). The version lives in `VERSION` and

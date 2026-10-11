@@ -20,6 +20,46 @@ Turn classify(double dh) {
   return dh > 0 ? Turn::Left : Turn::Right;
 }
 
+double maxCurvature(const ReferenceLine &l) {
+  double k = 0;
+  for (const auto &e : l.elements) k = std::max({k, std::abs(e.k0), std::abs(e.k1)});
+  return k;
+}
+
+/// Smoothest standard-geometry path between two lane poses: a single clothoid, or two clothoids
+/// through a midpoint sampled between the chord and the tangent intersection (min peak curvature).
+ReferenceLine connectionPath(const Pose &a, const Pose &b) {
+  ReferenceLine best;
+  double bestScore = 1e300;
+  auto consider = [&](std::vector<GeomElement> els) {
+    ReferenceLine l;
+    l.elements = std::move(els);
+    l.finalize();
+    const double score = maxCurvature(l) + 0.002 * l.length();
+    if (score < bestScore) bestScore = score, best = l;
+  };
+  if (auto g = fitClothoidG1(a.pos(), a.hdg, b.pos(), b.hdg)) consider({*g});
+  const Vec2 da = a.dir(), db = b.dir(), d = b.pos() - a.pos();
+  const Vec2 chordMid = (a.pos() + b.pos()) * 0.5;
+  Vec2 apex = chordMid;
+  const double den = da.cross(db);
+  if (std::abs(den) > 1e-3) {
+    const double u = d.cross(db) / den;
+    if (u > 0 && u < 3.0 * d.norm()) apex = a.pos() + da * u;
+  }
+  const double chordHdg = std::atan2(d.y, d.x);
+  const double meanHdg = a.hdg + 0.5 * normalizeAngle(b.hdg - a.hdg);
+  for (double t : {0.0, 0.25, 0.4, 0.55, 0.7}) {
+    const Vec2 m = chordMid + (apex - chordMid) * t;
+    for (double hm : {chordHdg, meanHdg}) {
+      auto g1 = fitClothoidG1(a.pos(), a.hdg, m, hm);
+      auto g2 = fitClothoidG1(m, hm, b.pos(), b.hdg);
+      if (g1 && g2) consider({*g1, *g2});
+    }
+  }
+  return best;
+}
+
 bool allows(const std::vector<std::string> &turns, Turn t) {
   for (const auto &v : turns) {
     if (t == Turn::Left && (v == "left" || v == "sharp_left" || v == "slight_left")) return true;
@@ -178,27 +218,7 @@ void Builder::buildJunctions() {
           odr::laneBorders(ro, sOut, lo, ua, ub);
           const double w0 = std::abs(tb - ta), w1 = std::abs(ub - ua);
           // geometry: single clothoid when it is a reasonable curve, else a G2 two-piece curve
-          ReferenceLine line;
-          if (auto g = fitClothoidG1(a.pos(), a.hdg, b.pos(), b.hdg)) {
-            const double chord = (b.pos() - a.pos()).norm();
-            const double kmax = std::max(std::abs(g->k0), std::abs(g->k1));
-            if (g->length < 2.5 * chord + 2.0 && kmax < 1.0 / opt.minConnectingRadius) line.elements = {*g};
-          }
-          if (line.elements.empty()) {
-            const Vec2 da = a.dir(), db = b.dir(), d = b.pos() - a.pos();
-            const double den = da.cross(db);
-            Vec2 mid = (a.pos() + b.pos()) * 0.5;
-            if (std::abs(den) > 1e-3) {
-              const double u = d.cross(db) / den;  // tangent intersection a + u da
-              if (u > 0 && u < 3.0 * d.norm()) mid = (a.pos() + da * u) * 0.5 + mid * 0.5;
-            }
-            PolylineFitOptions fo;
-            fo.noiseTolerance = 0.0;
-            fo.cornerAngle = 10.0;
-            fo.startHeading = a.hdg;
-            fo.endHeading = b.hdg;
-            line = fitPolyline({a.pos(), mid, b.pos()}, fo);
-          }
+          ReferenceLine line = connectionPath(a, b);
           if (line.elements.empty() || line.length() < 0.05) continue;
           odr::Road c;
           c.id = std::to_string(nextConnId++);
@@ -246,6 +266,16 @@ void Builder::buildJunctions() {
         }
       }
     }
+    // spec 5 (road.linkage.both_sides_consistency): a road links to the junction only if the
+    // junction connects it (as incoming road or as the target of a connecting road)
+    std::set<std::string> used;
+    for (const auto &cn : J.connections) used.insert(cn.incomingRoad);
+    for (const auto &c : connecting)
+      if (c.junction == J.id && c.successor) used.insert(c.successor->elementId);
+    for (const RoadEnd &e : cl.ends) {
+      odr::Road &r = od.roads[metas[e.road].roadIndex];
+      if (!used.count(r.id)) (e.atEnd ? r.successor : r.predecessor).reset();
+    }
     od.junctions.push_back(std::move(J));
   }
   for (auto &c : connecting) od.roads.push_back(std::move(c));
@@ -285,12 +315,9 @@ void Builder::buildSignals() {
     sg.t = to + (outer > 0 ? 0.6 : -0.6);
     const bool plus = (outer < 0) != LHT;
     sg.orientation = plus ? "+" : "-";
-    int mn = lanes.front(), mx = lanes.front();
-    for (int id : lanes) {
-      if (std::abs(id) < std::abs(mn)) mn = id;
-      if (std::abs(id) > std::abs(mx)) mx = id;
-    }
-    sg.validity.push_back({mn, mx});
+    // spec 7.1: <validity fromLane toLane> with fromLane <= toLane (numerically)
+    const auto [mn, mx] = std::minmax_element(lanes.begin(), lanes.end());
+    sg.validity.push_back({*mn, *mx});
   };
 
   // traffic lights near (within 40 m of) a cluster also signalise it
@@ -623,6 +650,7 @@ void Builder::finish() {
         case GeomType::Line: ++rep.lines; break;
         case GeomType::Arc: ++rep.arcs; break;
         case GeomType::Spiral: ++rep.spirals; break;
+        default: break;
       }
     }
 }

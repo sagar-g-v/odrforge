@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__ODRFORGE_TITLE__ · OdrForge viewer</title>
+<style>
+:root {
+  --bg: #12161c; --panel: #1a2029; --panel-2: #222a35; --text: #e6e9ee; --muted: #8d97a6; --line: #2e3744;
+  --accent: #5aa9ff; --ok: #3ecf8e; --warn: #f5b84a; --err: #ff6b6b;
+  --lane-driving: #3a4250; --lane-junction: #485263; --lane-sidewalk: #6b6f78; --lane-biking: #2f6e57;
+  --lane-parking: #2d4a6b; --lane-shoulder: #4c4436; --lane-border: #5b5148; --lane-median: #355c37;
+  --lane-bidir: #5b4a2c; --lane-other: #5a3d5c; --mark-white: #f2f2f0; --mark-yellow: #f2c230;
+  --ref: #ff7ad9;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eef1f5; --panel: #ffffff; --panel-2: #f3f5f8; --text: #1b2330; --muted: #5d6878; --line: #d8dee7;
+    --lane-driving: #9aa3b1; --lane-junction: #b3bbc7; --lane-sidewalk: #d6d2c8; --lane-biking: #8cc9a8;
+    --lane-parking: #9fb9d9; --lane-shoulder: #c9bfa8; --lane-border: #c0b4a4; --lane-median: #a9cf9f;
+    --lane-bidir: #d8c08c; --lane-other: #c9a3cc; --mark-white: #ffffff; --mark-yellow: #e0a800;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #eef1f5; --panel: #ffffff; --panel-2: #f3f5f8; --text: #1b2330; --muted: #5d6878; --line: #d8dee7;
+  --lane-driving: #9aa3b1; --lane-junction: #b3bbc7; --lane-sidewalk: #d6d2c8; --lane-biking: #8cc9a8;
+  --lane-parking: #9fb9d9; --lane-shoulder: #c9bfa8; --lane-border: #c0b4a4; --lane-median: #a9cf9f;
+  --lane-bidir: #d8c08c; --lane-other: #c9a3cc; --mark-white: #ffffff; --mark-yellow: #e0a800;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+#app { display: flex; height: 100%; }
+#side { width: 300px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; overflow: hidden; }
+#side header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+#side h1 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+#side .sub { color: var(--muted); font-size: 12px; }
+#scroll { overflow: auto; padding: 4px 16px 16px; }
+section { padding: 12px 0; border-bottom: 1px solid var(--line); }
+section:last-child { border-bottom: 0; }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.stat { background: var(--panel-2); border-radius: 8px; padding: 7px 9px; }
+.stat b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 11px; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+.badge.err { background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
+label.tog { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; user-select: none; }
+label.tog input { accent-color: var(--accent); }
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.legend div { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 1px solid var(--line); }
+.heat { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #3ecf8e, #f5e14a, #f59a3a, #ff4d4d); margin: 6px 0 2px; }
+.heatlab { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+input[type=search] { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); font: inherit; }
+#info { font-size: 12px; }
+#info table { width: 100%; border-collapse: collapse; }
+#info td { padding: 2px 0; vertical-align: top; }
+#info td:first-child { color: var(--muted); width: 42%; }
+#info .empty { color: var(--muted); }
+#mapwrap { position: relative; flex: 1; min-width: 0; }
+canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+canvas.drag { cursor: grabbing; }
+#tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.25); display: none; max-width: 260px; }
+#tools { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
+#tools button, #menu { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--text); font-size: 16px; cursor: pointer; }
+#scale { position: absolute; left: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#menu { position: absolute; left: 12px; top: 12px; display: none; }
+@media (max-width: 760px) {
+  #side { position: absolute; z-index: 5; left: 0; top: 0; bottom: 0; width: min(300px, 86vw); transform: translateX(-100%); transition: transform .2s; }
+  #side.open { transform: none; box-shadow: 0 0 30px rgba(0,0,0,.4); }
+  #menu { display: block; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <header>
+      <h1 id="title"></h1>
+      <div class="sub" id="subtitle"></div>
+    </header>
+    <div id="scroll">
+      <section>
+        <h2>Network</h2>
+        <div class="stats" id="stats"></div>
+        <div style="margin-top:8px" id="valid"></div>
+      </section>
+      <section>
+        <h2>Find road</h2>
+        <input type="search" id="search" placeholder="Road id or name, Enter to zoom">
+      </section>
+      <section>
+        <h2>Layers</h2>
+        <div id="layers"></div>
+      </section>
+      <section>
+        <h2>Lane types</h2>
+        <div class="legend" id="legend"></div>
+      </section>
+      <section id="heatsec">
+        <h2>Reference-line curvature</h2>
+        <div class="heat"></div>
+        <div class="heatlab"><span>straight</span><span>R 100 m</span><span>R 20 m</span><span>R ≤ 5 m</span></div>
+      </section>
+      <section>
+        <h2>Selection</h2>
+        <div id="info"><span class="empty">Hover a lane for details, click to pin a road.</span></div>
+      </section>
+    </div>
+  </aside>
+  <div id="mapwrap">
+    <canvas id="cv"></canvas>
+    <button id="menu" title="Panel">☰</button>
+    <div id="tools">
+      <button id="zin" title="Zoom in">+</button>
+      <button id="zout" title="Zoom out">−</button>
+      <button id="fit" title="Fit network">⤢</button>
+      <button id="theme" title="Toggle theme">◐</button>
+    </div>
+    <div id="scale"></div>
+    <div id="tip"></div>
+  </div>
+</div>
+<script>
+/*__ODRFORGE_DATA__*/
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const LANE_TYPES = ["driving", "sidewalk", "biking", "parking", "shoulder", "border", "median", "bidirectional", "other", "none"];
+const LANE_VARS = ["--lane-driving", "--lane-sidewalk", "--lane-biking", "--lane-parking", "--lane-shoulder", "--lane-border",
+  "--lane-median", "--lane-bidir", "--lane-other", "--lane-other"];
+const SIG_NAMES = ["sign", "traffic light", "stop", "give way", "speed limit"];
+
+// ---------- decode
+function decode(arr) { // delta-encoded decimetres -> Float64Array metres
+  const out = new Float64Array(arr.length);
+  let x = 0, y = 0;
+  for (let i = 0; i < arr.length; i += 2) {
+    if (i === 0) { x = arr[0]; y = arr[1]; } else { x += arr[i]; y += arr[i + 1]; }
+    out[i] = x / 10; out[i + 1] = y / 10;
+  }
+  return out;
+}
+function bbox(p) {
+  let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+  for (let i = 0; i < p.length; i += 2) { a = Math.min(a, p[i]); c = Math.max(c, p[i]); b = Math.min(b, p[i + 1]); d = Math.max(d, p[i + 1]); }
+  return [a, b, c, d];
+}
+function path(p, close) {
+  const P = new Path2D();
+  for (let i = 0; i < p.length; i += 2) i ? P.lineTo(p[i], p[i + 1]) : P.moveTo(p[i], p[i + 1]);
+  if (close) P.closePath();
+  return P;
+}
+const roads = DATA.roads.map((r, i) => ({ i, id: r[0], name: r[1], junction: r[2], length: r[3], type: r[4], speed: r[5],
+  pred: r[6], succ: r[7], sections: r[8], geoms: r[9], lanes: [] }));
+const lanes = DATA.lanes.map((l) => {
+  const p = decode(l[5]);
+  const o = { road: l[0], id: l[1], type: l[2], section: l[3], speed: l[4], p, bb: bbox(p), path: path(p, true) };
+  roads[o.road].lanes.push(o);
+  return o;
+});
+const marks = DATA.marks.map((m) => { const p = decode(m[2]); return { style: m[0], color: m[1], p, bb: bbox(p), path: path(p) }; });
+const HEAT = [0.002, 0.01, 0.05, 0.2]; // 1/m thresholds -> 5 buckets
+const refs = DATA.refs.map((r) => {
+  const p = decode(r[1]); const k = r[2];
+  const buckets = [new Path2D(), new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+  for (let i = 2; i < p.length; i += 2) {
+    const kv = Math.max(k[i / 2 - 1] || 0, k[i / 2] || 0) / 1000;
+    let b = 0; while (b < 4 && kv > HEAT[b]) b++;
+    buckets[b].moveTo(p[i - 2], p[i - 1]); buckets[b].lineTo(p[i], p[i + 1]);
+  }
+  return { road: r[0], p, bb: bbox(p), path: path(p), buckets };
+});
+const W = DATA.bbox[2] / 10, H = DATA.bbox[3] / 10;
+const sigs = DATA.signals.map((s) => ({ x: s[0] / 10, y: s[1] / 10, h: s[2] / 1000, kind: s[3], road: s[4], id: s[5], text: s[6], ctrl: s[7] }));
+const objs = DATA.objects.map((o) => ({ kind: o[0], x: o[1] / 10, y: o[2] / 10, p: o[3].length ? decode(o[3]) : null, type: o[4] }));
+for (const o of objs) if (o.p) o.path = path(o.p, true);
+
+// spatial grid for picking
+const CELL = 40, GW = Math.ceil(W / CELL) + 1, grid = new Map();
+lanes.forEach((l, idx) => {
+  for (let gx = Math.floor(l.bb[0] / CELL); gx <= Math.floor(l.bb[2] / CELL); gx++)
+    for (let gy = Math.floor(l.bb[1] / CELL); gy <= Math.floor(l.bb[3] / CELL); gy++) {
+      const key = gy * GW + gx; (grid.get(key) || grid.set(key, []).get(key)).push(idx);
+    }
+});
+function inside(p, x, y) {
+  let c = false;
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+    const xi = p[i], yi = p[i + 1], xj = p[j], yj = p[j + 1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+function pick(x, y) {
+  const cand = grid.get(Math.floor(y / CELL) * GW + Math.floor(x / CELL)) || [];
+  let best = null;
+  for (const idx of cand) {
+    const l = lanes[idx];
+    if (x < l.bb[0] || x > l.bb[2] || y < l.bb[1] || y > l.bb[3]) continue;
+    if (inside(l.p, x, y)) { if (!best || roads[l.road].junction === "-1") best = l; }
+  }
+  return best;
+}
+
+// ---------- UI
+$("title").textContent = DATA.title;
+$("subtitle").textContent = `${DATA.generator} · OpenDRIVE ${DATA.rev}`;
+const S = DATA.stats;
+const statItems = [["roads", S.roads], ["junctions", S.junctions], ["controllers", S.controllers], ["road km", S.lengthKm],
+  ["lines", S.lines], ["arcs", S.arcs], ["spirals", S.spirals], ["poly3 / paramPoly3", S.polys]];
+$("stats").innerHTML = statItems.map(([k, v]) => `<div class="stat"><b>${Number(v).toLocaleString()}</b><span>${k}</span></div>`).join("");
+if (S.valErrors !== undefined)
+  $("valid").innerHTML = `Validation <span class="badge ${S.valErrors ? "err" : "ok"}">${S.valErrors} errors · ${S.valWarnings} warnings</span>` +
+    `<div class="sub" style="margin-top:4px">max lane-link gap ${(S.maxLinkGap * 100).toFixed(1)} cm</div>`;
+const layers = { lanes: true, junctions: true, marks: true, ref: false, heat: false, signals: true, objects: true };
+const layerNames = { lanes: "Lanes", junctions: "Junction areas", marks: "Road marks", ref: "Reference lines",
+  heat: "Curvature heat map", signals: "Signals and signs", objects: "Objects (crosswalks, lamps, trees)" };
+$("layers").innerHTML = Object.keys(layers).map((k) =>
+  `<label class="tog"><input type="checkbox" data-k="${k}" ${layers[k] ? "checked" : ""}>${layerNames[k]}</label>`).join("");
+$("layers").addEventListener("change", (e) => { layers[e.target.dataset.k] = e.target.checked; draw(); });
+function legend() {
+  $("legend").innerHTML = LANE_TYPES.slice(0, 8).map((t, i) => `<div><span class="sw" style="background:${css(LANE_VARS[i])}"></span>${t}</div>`).join("");
+}
+legend();
+
+// ---------- view
+const cv = $("cv"), ctx = cv.getContext("2d");
+let dpr = 1, vw = 0, vh = 0, scale = 1, cx = W / 2, cy = H / 2; // scale: px per metre, (cx, cy) world centre
+function resize() {
+  dpr = window.devicePixelRatio || 1; vw = cv.clientWidth; vh = cv.clientHeight;
+  cv.width = Math.round(vw * dpr); cv.height = Math.round(vh * dpr); draw();
+}
+function fit() { scale = Math.min(vw / (W || 1), vh / (H || 1)) * 0.92; cx = W / 2; cy = H / 2; draw(); }
+const toWorld = (sx, sy) => [cx + (sx - vw / 2) / scale, cy - (sy - vh / 2) / scale];
+let hover = null, pinned = null, raf = 0;
+function draw() { if (!raf) raf = requestAnimationFrame(render); }
+function visible(bb, v) { return !(bb[2] < v[0] || bb[0] > v[2] || bb[3] < v[1] || bb[1] > v[3]); }
+function render() {
+  raf = 0;
+  const C = {}; for (const v of LANE_VARS.concat(["--lane-junction", "--mark-white", "--mark-yellow", "--ref", "--bg", "--accent", "--text"])) C[v] = css(v);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C["--bg"]; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(scale * dpr, 0, 0, -scale * dpr, (vw / 2 - cx * scale) * dpr, (vh / 2 + cy * scale) * dpr);
+  const [x0, y1] = toWorld(0, 0), [x1, y0] = toWorld(vw, vh), view = [x0, y0, x1, y1];
+  const px = 1 / scale; // one screen pixel in metres
+  if (layers.lanes) {
+    for (const l of lanes) {
+      if (!visible(l.bb, view)) continue;
+      const j = roads[l.road].junction !== "-1";
+      if (j && !layers.junctions) continue;
+      ctx.fillStyle = j && l.type === 0 ? C["--lane-junction"] : C[LANE_VARS[l.type]];
+      ctx.globalAlpha = j ? 0.55 : 1;
+      ctx.fill(l.path);
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (layers.marks && scale > 0.6) {
+    for (const m of marks) {
+      if (!visible(m.bb, view)) continue;
+      ctx.strokeStyle = m.color === 1 ? C["--mark-yellow"] : C["--mark-white"];
+      ctx.lineWidth = Math.max(0.15, px * 0.8);
+      ctx.setLineDash(m.style === 2 || m.style === 6 ? [3, 9] : []);
+      ctx.stroke(m.path);
+    }
+    ctx.setLineDash([]);
+  }
+  if (layers.objects && scale > 1.2) {
+    for (const o of objs) {
+      if (o.x < x0 - 5 || o.x > x1 + 5 || o.y < y0 - 5 || o.y > y1 + 5) continue;
+      if (o.kind === 1 && o.path) { ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.fill(o.path); }
+      else { ctx.fillStyle = o.kind === 3 ? "#3f9b55" : o.kind === 2 ? "#ffd66b" : "#b48cff";
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.kind === 3 ? 1.6 : Math.max(0.35, px * 2.5), 0, 7); ctx.fill(); }
+    }
+  }
+  if (layers.ref || layers.heat) {
+    for (const r of refs) {
+      if (!visible(r.bb, view)) continue;
+      if (layers.heat) {
+        const cols = ["#3ecf8e", "#a6dc5a", "#f5e14a", "#f59a3a", "#ff4d4d"];
+        ctx.lineWidth = px * 3;
+        r.buckets.forEach((b, i) => { ctx.strokeStyle = cols[i]; ctx.stroke(b); });
+      } else { ctx.strokeStyle = C["--ref"]; ctx.lineWidth = px * 1.2; ctx.stroke(r.path); }
+    }
+  }
+  const hl = (l, col, w) => { ctx.strokeStyle = col; ctx.lineWidth = px * w; ctx.stroke(l.path); };
+  if (pinned !== null) for (const l of roads[pinned].lanes) hl(l, C["--accent"], 2.5);
+  if (hover) hl(hover, C["--text"], 2);
+  if (layers.signals && scale > 0.35) {
+    const r = Math.max(0.9, px * 5);
+    for (const s of sigs) {
+      if (s.x < x0 - 5 || s.x > x1 + 5 || s.y < y0 - 5 || s.y > y1 + 5) continue;
+      ctx.save(); ctx.translate(s.x, s.y);
+      if (s.kind === 1) { ctx.fillStyle = s.ctrl ? "#25c26e" : "#ff6b6b"; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+        ctx.strokeStyle = "#0b0e12"; ctx.lineWidth = r * 0.3; ctx.stroke();
+        ctx.rotate(s.h); ctx.strokeStyle = "#fff"; ctx.lineWidth = r * 0.25; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-r * 1.6, 0); ctx.stroke(); }
+      else if (s.kind === 2) { ctx.fillStyle = "#d7263d"; ctx.beginPath();
+        for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.fill(); }
+      else if (s.kind === 3) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#d7263d"; ctx.lineWidth = r * 0.3; ctx.beginPath();
+        ctx.moveTo(0, -r); ctx.lineTo(r, r * 0.8); ctx.lineTo(-r, r * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      else if (s.kind === 4) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#d7263d"; ctx.lineWidth = r * 0.25;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.stroke(); }
+      else { ctx.fillStyle = "#5aa9ff"; ctx.fillRect(-r * 0.7, -r * 0.7, r * 1.4, r * 1.4); }
+      ctx.restore();
+    }
+  }
+  // scale bar
+  const target = 120 / scale, pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const nice = [1, 2, 5, 10].map((k) => k * pow).find((v) => v >= target) || target;
+  $("scale").textContent = `${nice >= 1000 ? nice / 1000 + " km" : nice + " m"} ≈ ${Math.round(nice * scale)} px`;
+}
+
+// ---------- info
+function laneInfo(l) {
+  const r = roads[l.road];
+  const t = LANE_TYPES[l.type] || "other";
+  return `<table>
+    <tr><td>Road</td><td><b>${r.id}</b>${r.name ? " · " + esc(r.name) : ""}</td></tr>
+    <tr><td>Lane</td><td>${l.id} · ${t}</td></tr>
+    <tr><td>Lane speed</td><td>${l.speed >= 0 ? (l.speed / 10).toFixed(1) + " m/s (" + Math.round(l.speed * 0.36) + " km/h)" : "–"}</td></tr>
+    <tr><td>Section</td><td>${l.section + 1} of ${r.sections}</td></tr>
+    <tr><td>Junction</td><td>${r.junction === "-1" ? "–" : r.junction}</td></tr>
+    <tr><td>Road type</td><td>${esc(r.type) || "–"} ${esc(r.speed)}</td></tr>
+    <tr><td>Length</td><td>${r.length.toFixed(1)} m · ${r.geoms} geometries</td></tr>
+    <tr><td>Predecessor</td><td>${esc(r.pred)}</td></tr>
+    <tr><td>Successor</td><td>${esc(r.succ)}</td></tr></table>`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function sigAt(x, y) {
+  const r = Math.max(1.2, 8 / scale);
+  for (const s of sigs) if (Math.abs(s.x - x) < r && Math.abs(s.y - y) < r) return s;
+  return null;
+}
+
+// ---------- interaction
+let drag = null;
+cv.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, cx, cy, moved: false }; cv.setPointerCapture(e.pointerId); cv.classList.add("drag"); });
+cv.addEventListener("pointermove", (e) => {
+  const rect = cv.getBoundingClientRect(), sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    cx = drag.cx - dx / scale; cy = drag.cy + dy / scale; draw(); return;
+  }
+  const [wx, wy] = toWorld(sx, sy);
+  const s = layers.signals ? sigAt(wx, wy) : null;
+  const l = s ? null : pick(wx, wy);
+  const tip = $("tip");
+  if (s) {
+    tip.innerHTML = `<b>${SIG_NAMES[s.kind]}</b> · id ${esc(s.id)}<br>${esc(s.text)}${s.kind === 1 ? (s.ctrl ? "<br>in a controller" : "<br>no controller") : ""}<br>road ${roads[s.road].id}`;
+  } else if (l) {
+    tip.innerHTML = `road <b>${roads[l.road].id}</b> lane ${l.id} · ${LANE_TYPES[l.type]}${roads[l.road].junction !== "-1" ? " · junction " + roads[l.road].junction : ""}`;
+  }
+  tip.style.display = s || l ? "block" : "none";
+  tip.style.left = Math.min(sx + 14, vw - 270) + "px"; tip.style.top = (sy + 14) + "px";
+  if (l !== hover) { hover = l; if (l && pinned === null) $("info").innerHTML = laneInfo(l); draw(); }
+});
+cv.addEventListener("pointerup", (e) => {
+  cv.classList.remove("drag");
+  if (drag && !drag.moved) {
+    const rect = cv.getBoundingClientRect();
+    const [wx, wy] = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const l = pick(wx, wy);
+    pinned = l ? l.road : null;
+    $("info").innerHTML = l ? laneInfo(l) : '<span class="empty">Hover a lane for details, click to pin a road.</span>';
+    draw();
+  }
+  drag = null;
+});
+cv.addEventListener("pointerleave", () => { $("tip").style.display = "none"; });
+function zoomAt(f, sx = vw / 2, sy = vh / 2) {
+  const [wx, wy] = toWorld(sx, sy);
+  scale = Math.min(400, Math.max(0.02, scale * f));
+  cx = wx - (sx - vw / 2) / scale; cy = wy + (sy - vh / 2) / scale; draw();
+}
+cv.addEventListener("wheel", (e) => { e.preventDefault(); const r = cv.getBoundingClientRect();
+  zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+$("zin").onclick = () => zoomAt(1.6); $("zout").onclick = () => zoomAt(1 / 1.6); $("fit").onclick = fit;
+$("theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  document.documentElement.dataset.theme = cur === "light" ? "dark" : "light"; legend(); draw();
+};
+$("menu").onclick = () => $("side").classList.toggle("open");
+$("search").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const q = e.target.value.trim().toLowerCase(); if (!q) return;
+  const r = roads.find((x) => x.id.toLowerCase() === q) || roads.find((x) => x.name.toLowerCase().includes(q));
+  if (!r || !r.lanes.length) return;
+  let bb = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const l of r.lanes) bb = [Math.min(bb[0], l.bb[0]), Math.min(bb[1], l.bb[1]), Math.max(bb[2], l.bb[2]), Math.max(bb[3], l.bb[3])];
+  cx = (bb[0] + bb[2]) / 2; cy = (bb[1] + bb[3]) / 2;
+  scale = Math.min(60, Math.min(vw / (bb[2] - bb[0] + 40), vh / (bb[3] - bb[1] + 40)));
+  pinned = r.i; $("info").innerHTML = laneInfo(r.lanes[0]); draw();
+});
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { legend(); draw(); });
+window.addEventListener("resize", resize);
+resize(); fit();
+})();
+</script>
+</body>
+</html>

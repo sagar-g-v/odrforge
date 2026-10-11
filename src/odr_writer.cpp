@@ -165,6 +165,23 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
         attrN(sp, c, "curvEnd", g.k1);
         break;
       }
+      case GeomType::Poly3: {  // pass-through of geometry read from other files
+        auto p = e.append_child("poly3");
+        attrN(p, c, "a", g.cubic->aV);
+        attrN(p, c, "b", g.cubic->bV);
+        attrN(p, c, "c", g.cubic->cV);
+        attrN(p, c, "d", g.cubic->dV);
+        break;
+      }
+      case GeomType::ParamPoly3: {
+        auto p = e.append_child("paramPoly3");
+        const auto &k = *g.cubic;
+        for (auto [nm, v] : {std::pair{"aU", k.aU}, {"bU", k.bU}, {"cU", k.cU}, {"dU", k.dU},
+                             {"aV", k.aV}, {"bV", k.bV}, {"cV", k.cV}, {"dV", k.dV}})
+          attrN(p, c, nm, v);
+        attr(p, "pRange", k.normalized ? "normalized" : "arcLength");
+        break;
+      }
     }
   }
   auto ep = n.append_child("elevationProfile");

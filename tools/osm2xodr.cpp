@@ -7,6 +7,7 @@
 #include "odrforge/network.hpp"
 #include "odrforge/validate.hpp"
 #include "odrforge/version.hpp"
+#include "odrforge/viz.hpp"
 
 using namespace odrforge;
 
@@ -19,7 +20,8 @@ static void usage() {
       "  --origin LAT,LON    projection origin (default: centre of the data)\n"
       "  --name NAME         header name\n"
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
-      "  --no-furniture      no street lamps / trees\n",
+      "  --no-furniture      no street lamps / trees\n"
+      "  --viz OUT.html      also write an interactive HTML view of the result\n",
       ODRFORGE_VERSION);
 }
 
@@ -29,7 +31,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "asam", name;
+  std::string country = "XX", target = "asam", name, vizPath;
   double lat0 = 1e9, lon0 = 1e9;
   BuildOptions opt;
   for (int i = 3; i < argc; ++i) {
@@ -43,6 +45,7 @@ int main(int argc, char **argv) {
       std::sscanf(v.c_str(), "%lf,%lf", &lat0, &lon0);
     } else if (a == "--no-sidewalks") opt.lanes.assumeSidewalks = false;
     else if (a == "--no-furniture") opt.streetFurniture = false;
+    else if (a == "--viz") vizPath = next();
     else {
       usage();
       return 2;
@@ -62,6 +65,12 @@ int main(int argc, char **argv) {
     wo.revMinor = opt.target.revMinor;
     odr::write(od, out, wo);
     const ValidationReport vr = validate(od, opt.target);
+    if (!vizPath.empty()) {
+      VizOptions vo;
+      vo.title = opt.name;
+      vo.validation = &vr;
+      writeVizHtml(od, vizPath, vo);
+    }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("osm2xodr %s: %s -> %s in %.2f s\n", ODRFORGE_VERSION, in.c_str(), out.c_str(), secs);
     std::printf("  roads %d + connecting %d, junctions %d, signals %d, controllers %d, objects %d\n", rep.roads,

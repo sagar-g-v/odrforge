@@ -19,11 +19,14 @@ struct PolylineFitOptions {
   bool g2 = true;                 ///< curvature-continuous spline (else G1 with bisector headings)
   std::optional<double> startHeading, endHeading;  ///< fixed end tangents (e.g. continuation roads)
   double straightTolerance = 2e-5;  ///< |curvature| below this (1/m) becomes a line
+  double maxCurvature = 0.0;        ///< > 0: refit with more smoothing until |curvature| stays below
 };
 
 /// Clothoid spline through a polyline: every segment between kept vertices becomes one spiral
 /// (merged into lines / arcs where the curvature is (nearly) zero / constant).
 ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &opt = {});
+/// fitPolyline honouring opt.maxCurvature: G2 -> G1 -> stronger smoothing and corner fillets
+ReferenceLine fitPolylineLimited(const std::vector<Vec2> &pts, const PolylineFitOptions &opt);
 
 /// Douglas-Peucker simplification (keeps first / last and any index listed in keep).
 std::vector<Vec2> simplifyPolyline(const std::vector<Vec2> &pts, double tol);

@@ -13,6 +13,7 @@ double normalizeAngle(double a) {
 }
 
 GeomType GeomElement::type() const {
+  if (cubic) return cubic->param ? GeomType::ParamPoly3 : GeomType::Poly3;
   constexpr double eps = 1e-9;
   if (std::abs(k0) < eps && std::abs(k1) < eps) return GeomType::Line;
   if (std::abs(k1 - k0) < eps) return GeomType::Arc;
@@ -45,7 +46,57 @@ void generalizedFresnel(double a, double b, double c, double &X, double &Y) {
   }
 }
 
+namespace {
+// cubic geometry: integrate arc length numerically to map ds -> curve parameter
+Pose evalCubic(const GeomElement &e, double ds) {
+  const CubicGeom &c = *e.cubic;
+  auto uv = [&](double p, double &u, double &v, double &du, double &dv, double &ddu, double &ddv) {
+    if (c.param) {
+      u = c.aU + p * (c.bU + p * (c.cU + p * c.dU));
+      v = c.aV + p * (c.bV + p * (c.cV + p * c.dV));
+      du = c.bU + p * (2 * c.cU + 3 * p * c.dU);
+      dv = c.bV + p * (2 * c.cV + 3 * p * c.dV);
+      ddu = 2 * c.cU + 6 * p * c.dU;
+      ddv = 2 * c.cV + 6 * p * c.dV;
+    } else {  // poly3: parameter is u
+      u = p;
+      v = c.aV + p * (c.bV + p * (c.cV + p * c.dV));
+      du = 1;
+      dv = c.bV + p * (2 * c.cV + 3 * p * c.dV);
+      ddu = 0;
+      ddv = 2 * c.cV + 6 * p * c.dV;
+    }
+  };
+  // parameter range: [0,1] (normalized), [0,length] (arcLength) or u in [0, ?] for poly3 (solve by length)
+  const double pEnd = c.param ? (c.normalized ? 1.0 : e.length) : e.length;
+  const int n = 512;
+  double s = 0, p = 0, u, v, du, dv, ddu, ddv;
+  const double h = pEnd / n;
+  for (int i = 0; i < n && s < ds; ++i) {
+    uv(p + 0.5 * h, u, v, du, dv, ddu, ddv);
+    const double step = std::hypot(du, dv) * h;
+    if (s + step >= ds) {
+      p += h * (ds - s) / step;
+      s = ds;
+      break;
+    }
+    s += step;
+    p += h;
+  }
+  uv(p, u, v, du, dv, ddu, ddv);
+  const double ch = std::cos(e.hdg), sh = std::sin(e.hdg);
+  Pose q;
+  q.x = e.x + u * ch - v * sh;
+  q.y = e.y + u * sh + v * ch;
+  q.hdg = e.hdg + std::atan2(dv, du);
+  const double sp = std::hypot(du, dv);
+  q.kappa = sp > 1e-12 ? (du * ddv - dv * ddu) / (sp * sp * sp) : 0.0;
+  return q;
+}
+}  // namespace
+
 Pose GeomElement::eval(double ds) const {
+  if (cubic) return evalCubic(*this, ds);
   Pose p;
   const double dk = length > 0.0 ? (k1 - k0) / length : 0.0;
   p.kappa = k0 + dk * ds;
@@ -167,7 +218,33 @@ ReferenceLine ReferenceLine::slice(double s0, double s1) const {
     r.elements.push_back(c);
   }
   r.finalize();
+  r.dropTiny();
   return r;
+}
+
+void ReferenceLine::dropTiny(double minLen) {
+  if (elements.size() < 2) return;
+  std::vector<GeomElement> out;
+  double carry = 0.0;  // length of dropped leading elements, added to the next kept one
+  for (const GeomElement &e : elements) {
+    if (e.length < minLen) {
+      if (!out.empty()) out.back().length += e.length;
+      else carry += e.length;
+      continue;
+    }
+    out.push_back(e);
+    if (carry > 0) {
+      out.back().length += carry;
+      carry = 0;
+    }
+  }
+  if (out.empty()) return;  // everything tiny: keep as is
+  // the first kept element must start where the line started
+  out.front().x = elements.front().x;
+  out.front().y = elements.front().y;
+  out.front().hdg = elements.front().hdg;
+  elements = out;
+  finalize();
 }
 
 void ReferenceLine::simplify(double kTol) {
@@ -192,6 +269,7 @@ void ReferenceLine::simplify(double kTol) {
   }
   elements = out;
   finalize();
+  dropTiny();
 }
 
 }  // namespace odrforge

@@ -166,6 +166,29 @@ std::optional<GeomElement> fitClothoidG1(const Vec2 &p0, double hdg0, const Vec2
   return e;
 }
 
+ReferenceLine fitPolylineLimited(const std::vector<Vec2> &pts, const PolylineFitOptions &opt) {
+  auto peak = [](const ReferenceLine &l) {
+    double k = 0;
+    for (const auto &e : l.elements) k = std::max({k, std::abs(e.k0), std::abs(e.k1)});
+    return k;
+  };
+  ReferenceLine best = fitPolyline(pts, opt);
+  if (opt.maxCurvature <= 0 || peak(best) <= opt.maxCurvature) return best;
+  PolylineFitOptions o = opt;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    if (attempt == 0) o.g2 = false;                 // local G1 spline: no oscillation
+    else {
+      o.noiseTolerance *= 2.0;                      // ignore more digitising detail
+      o.cornerAngle = std::max(0.08, o.cornerAngle * 0.5);  // fillet gentler bends too
+      o.minCornerRadius = std::max(o.minCornerRadius, 1.0 / opt.maxCurvature);
+    }
+    ReferenceLine l = fitPolyline(pts, o);
+    if (!l.elements.empty() && peak(l) < peak(best)) best = l;
+    if (peak(best) <= opt.maxCurvature) break;
+  }
+  return best;
+}
+
 std::vector<Vec2> simplifyPolyline(const std::vector<Vec2> &pts, double tol) {
   if (pts.size() < 3) return pts;
   std::vector<bool> keep(pts.size(), false);

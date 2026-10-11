@@ -179,7 +179,7 @@ struct OpenDrive {
 
 struct WriteOptions {
   int revMinor = 6;           ///< 4, 6 or 8 (1.8 enables lane direction, ISO country codes)
-  int precision = 9;          ///< significant digits
+  int precision = 12;         ///< significant digits (spec pitfall 15: >= 10)
 };
 
 // ---- queries
@@ -193,6 +193,9 @@ bool laneCenter(const Road &r, double s, int laneId, Pose &out);
 const Lane *findLane(const LaneSection &sec, int laneId);
 double elevationAt(const Road &r, double s);
 double elevationSlopeAt(const Road &r, double s);
+
+/// Read an OpenDRIVE file (1.4 - 1.8; line, arc, spiral, poly3, paramPoly3; width or border lanes).
+OpenDrive read(const std::string &path);
 
 /// Write an OpenDRIVE file. Throws std::runtime_error on I/O failure.
 void write(const OpenDrive &od, const std::string &path, const WriteOptions &opt = {});

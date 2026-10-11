@@ -24,6 +24,14 @@ FetchContent_Declare(nlohmann_json
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(pugixml nlohmann_json)
 
+# viewer template embedded as a C string (regenerated when viewer.html changes)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp
+  COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_CURRENT_SOURCE_DIR}/src/viz/viewer.html
+          -DOUT=${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp -DNAME=kVizTemplate -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/viz/viewer.html ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+  COMMENT "Embedding viewer.html")
+
 configure_file(include/odrforge/version.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/include/odrforge/version.hpp @ONLY)
 
 add_library(odrforge
@@ -38,6 +46,9 @@ add_library(odrforge
   src/network.cpp
   src/network_junctions.cpp
   src/validate.cpp
+  src/odr_reader.cpp
+  src/viz.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp
 )
 target_include_directories(odrforge PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -55,12 +66,15 @@ endif()
 if(ODRFORGE_BUILD_CLI)
   add_executable(osm2xodr tools/osm2xodr.cpp)
   target_link_libraries(osm2xodr PRIVATE odrforge)
-  install(TARGETS osm2xodr RUNTIME DESTINATION bin)
+  add_executable(xodrviz tools/xodrviz.cpp)
+  target_link_libraries(xodrviz PRIVATE odrforge)
+  install(TARGETS osm2xodr xodrviz RUNTIME DESTINATION bin)
 endif()
 
 if(ODRFORGE_BUILD_TESTS)
   enable_testing()
-  add_executable(odrforge_tests tests/test_main.cpp tests/test_geometry.cpp tests/test_projection.cpp)
+  add_executable(odrforge_tests tests/test_main.cpp tests/test_geometry.cpp tests/test_projection.cpp
+    tests/test_spec.cpp tests/test_network.cpp)
   target_link_libraries(odrforge_tests PRIVATE odrforge)
   add_test(NAME odrforge_tests COMMAND odrforge_tests)
 endif()
