@@ -707,7 +707,7 @@ def summarize(findings, stats):
         out.append("  %-14s %-26s %-8s %5d" % (c, s, v, n))
     out.append("by sub-pattern x highway class:")
     hw = collections.Counter((f["sub"], f.get("highway")) for f in findings)
-    for (s, h), n in sorted(hw.items()):
+    for (s, h), n in sorted(hw.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
         out.append("  %-26s %-16s %5d" % (s, h, n))
     out.append("stats: " + json.dumps(dict(stats)))
     sites = []
