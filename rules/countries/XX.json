@@ -1,0 +1,68 @@
+{
+ "code": "XX",
+ "name": "Generic (metric, right-hand)",
+ "drivingSide": "right",
+ "speedUnit": "km/h",
+ "laneWidth": {
+  "motorway": 3.75,
+  "trunk": 3.5,
+  "primary": 3.5,
+  "secondary": 3.25,
+  "tertiary": 3.25,
+  "residential": 3.0,
+  "unclassified": 3.0,
+  "living_street": 3.0,
+  "service": 2.75,
+  "default": 3.25
+ },
+ "defaultSpeed": {
+  "motorway": 120,
+  "trunk": 100,
+  "primary": 50,
+  "secondary": 50,
+  "tertiary": 50,
+  "residential": 50,
+  "unclassified": 50,
+  "living_street": 10,
+  "service": 20,
+  "default": 50
+ },
+ "signs": {
+  "stop": {
+   "country": "OpenDRIVE",
+   "type": "206"
+  },
+  "give_way": {
+   "country": "OpenDRIVE",
+   "type": "205"
+  },
+  "maxspeed": {
+   "country": "OpenDRIVE",
+   "type": "274"
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

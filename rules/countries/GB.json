@@ -1,0 +1,73 @@
+{
+ "code": "GB",
+ "name": "United Kingdom (TSRGD)",
+ "drivingSide": "left",
+ "speedUnit": "mph",
+ "laneWidth": {
+  "motorway": 3.65,
+  "trunk": 3.65,
+  "primary": 3.3,
+  "secondary": 3.3,
+  "tertiary": 3.0,
+  "residential": 3.0,
+  "unclassified": 3.0,
+  "living_street": 3.0,
+  "service": 2.75,
+  "default": 3.0
+ },
+ "defaultSpeed": {
+  "motorway": 70,
+  "trunk": 70,
+  "primary": 30,
+  "secondary": 30,
+  "tertiary": 30,
+  "residential": 30,
+  "unclassified": 30,
+  "living_street": 10,
+  "service": 15,
+  "default": 30
+ },
+ "maxspeedZones": {
+  "GB:nsl_single": "60",
+  "GB:nsl_dual": "70",
+  "GB:motorway": "70"
+ },
+ "signs": {
+  "stop": {
+   "country": "GB",
+   "type": "601.1"
+  },
+  "give_way": {
+   "country": "GB",
+   "type": "602"
+  },
+  "maxspeed": {
+   "country": "GB",
+   "type": "670"
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

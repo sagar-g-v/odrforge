@@ -1,0 +1,77 @@
+{
+ "code": "US",
+ "name": "United States (MUTCD)",
+ "drivingSide": "right",
+ "speedUnit": "mph",
+ "laneWidth": {
+  "motorway": 3.66,
+  "trunk": 3.66,
+  "primary": 3.5,
+  "secondary": 3.35,
+  "tertiary": 3.35,
+  "residential": 3.2,
+  "unclassified": 3.2,
+  "living_street": 3.2,
+  "service": 3.0,
+  "default": 3.35
+ },
+ "defaultSpeed": {
+  "motorway": 65,
+  "trunk": 55,
+  "primary": 35,
+  "secondary": 35,
+  "tertiary": 30,
+  "residential": 25,
+  "unclassified": 25,
+  "living_street": 15,
+  "service": 15,
+  "default": 25
+ },
+ "centerLineColor": "yellow",
+ "centerLineTwoWay": "solid solid",
+ "centerLineMultiLane": "solid solid",
+ "signs": {
+  "stop": {
+   "country": "US",
+   "type": "R1-1",
+   "width": 0.76,
+   "height": 0.76
+  },
+  "give_way": {
+   "country": "US",
+   "type": "R1-2",
+   "width": 0.91,
+   "height": 0.79
+  },
+  "maxspeed": {
+   "country": "US",
+   "type": "R2-1",
+   "width": 0.61,
+   "height": 0.76
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

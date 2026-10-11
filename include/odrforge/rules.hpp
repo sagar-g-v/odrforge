@@ -1,0 +1,56 @@
+// OdrForge - country rules (driving side, default widths / speeds / lane counts, marking colours,
+// sign catalogue) and output targets (generic ASAM OpenDRIVE, CARLA, esmini quirks).
+#pragma once
+
+#include <map>
+#include <optional>
+#include <string>
+
+namespace odrforge {
+
+struct SignCode {
+  std::string country;  ///< catalogue: ISO 3166-1 alpha-2 (e.g. "DE", "US") or "OpenDRIVE"
+  std::string type, subtype = "-1";
+  double width = 0.6, height = 0.6;
+};
+
+struct CountryProfile {
+  std::string code = "XX";         ///< ISO 3166-1 alpha-2 ("XX" = generic metric right-hand)
+  bool leftHandTraffic = false;
+  std::string speedUnit = "km/h";  ///< unit of implicit / posted limits: km/h or mph
+  std::map<std::string, double> laneWidth;      ///< per highway class (+ "default")
+  std::map<std::string, double> defaultSpeed;   ///< per highway class, in speedUnit (urban defaults)
+  std::map<std::string, int> defaultLanesOneway;   ///< lanes of a oneway when untagged
+  std::map<std::string, int> defaultLanesTwoway;   ///< total lanes of a two-way road when untagged
+  std::map<std::string, double> shoulderWidth;  ///< outer shoulder on rural / motorway classes
+  std::map<std::string, std::string> maxspeedZones;  ///< "DE:urban" -> "50" etc.
+  double sidewalkWidth = 2.0, bikeLaneWidth = 1.5, parkingWidthParallel = 2.4;
+  double parkingWidthDiagonal = 4.8, parkingWidthPerpendicular = 5.2;
+  double curbHeight = 0.15;
+  std::string centerLineColor = "white";    ///< yellow in the Americas
+  std::string edgeLineColor = "white";
+  std::string centerLineTwoWay = "broken";  ///< default separator between opposing lanes
+  std::string centerLineMultiLane = "solid solid";  ///< opposing directions with >= 2 lanes each
+  std::map<std::string, SignCode> signs;    ///< "stop", "give_way", "maxspeed", "traffic_light", ...
+
+  double width(const std::string &cls) const;
+  std::optional<double> speed(const std::string &cls) const;
+  int lanesOneway(const std::string &cls) const;
+  int lanesTwoway(const std::string &cls) const;
+  /// Load rules/countries/<code>.json (falls back to XX.json for unknown codes).
+  static CountryProfile load(const std::string &code, const std::string &rulesDir = "");
+};
+
+/// Output target: what the consumer of the .xodr supports.
+struct TargetProfile {
+  std::string name = "asam";       ///< asam | carla | esmini
+  int revMinor = 6;
+  bool openDriveSignCatalog = false;  ///< CARLA: country="OpenDRIVE", 206 stop / 205 yield / 274 speed
+  bool speedSignKmhBuckets = false;   ///< CARLA: speed sign subtype 30..120 km/h in steps of 10
+  bool trafficLightZeroOffset = true; ///< place traffic-light signals on the road surface (CARLA spawns poles)
+  size_t maxIdLength = 0;             ///< CARLA: 32
+  bool writeLaneOffsetForConnecting = true;
+  static TargetProfile byName(const std::string &name);
+};
+
+}  // namespace odrforge

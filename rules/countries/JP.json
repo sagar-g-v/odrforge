@@ -1,0 +1,68 @@
+{
+ "code": "JP",
+ "name": "Japan",
+ "drivingSide": "left",
+ "speedUnit": "km/h",
+ "laneWidth": {
+  "motorway": 3.6,
+  "trunk": 3.5,
+  "primary": 3.25,
+  "secondary": 3.0,
+  "tertiary": 3.0,
+  "residential": 2.75,
+  "unclassified": 2.75,
+  "living_street": 2.75,
+  "service": 2.5,
+  "default": 3.0
+ },
+ "defaultSpeed": {
+  "motorway": 100,
+  "trunk": 60,
+  "primary": 60,
+  "secondary": 60,
+  "tertiary": 50,
+  "residential": 40,
+  "unclassified": 40,
+  "living_street": 20,
+  "service": 20,
+  "default": 60
+ },
+ "signs": {
+  "stop": {
+   "country": "JP",
+   "type": "330"
+  },
+  "give_way": {
+   "country": "JP",
+   "type": "329"
+  },
+  "maxspeed": {
+   "country": "JP",
+   "type": "323"
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

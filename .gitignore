@@ -1,0 +1,4 @@
+build/
+*.xodr
+!tests/data/*.xodr
+__pycache__/

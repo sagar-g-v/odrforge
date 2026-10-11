@@ -1,0 +1,74 @@
+{
+ "code": "FR",
+ "name": "France",
+ "drivingSide": "right",
+ "speedUnit": "km/h",
+ "laneWidth": {
+  "motorway": 3.5,
+  "trunk": 3.5,
+  "primary": 3.5,
+  "secondary": 3.25,
+  "tertiary": 3.0,
+  "residential": 3.0,
+  "unclassified": 3.0,
+  "living_street": 3.0,
+  "service": 2.75,
+  "default": 3.0
+ },
+ "defaultSpeed": {
+  "motorway": 130,
+  "trunk": 110,
+  "primary": 50,
+  "secondary": 50,
+  "tertiary": 50,
+  "residential": 50,
+  "unclassified": 50,
+  "living_street": 20,
+  "service": 20,
+  "default": 50
+ },
+ "maxspeedZones": {
+  "FR:urban": "50",
+  "FR:rural": "80",
+  "FR:motorway": "130",
+  "FR:zone30": "30"
+ },
+ "signs": {
+  "stop": {
+   "country": "FR",
+   "type": "AB4"
+  },
+  "give_way": {
+   "country": "FR",
+   "type": "AB3a"
+  },
+  "maxspeed": {
+   "country": "FR",
+   "type": "B14"
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

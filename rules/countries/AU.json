@@ -1,0 +1,68 @@
+{
+ "code": "AU",
+ "name": "Australia",
+ "drivingSide": "left",
+ "speedUnit": "km/h",
+ "laneWidth": {
+  "motorway": 3.5,
+  "trunk": 3.5,
+  "primary": 3.5,
+  "secondary": 3.3,
+  "tertiary": 3.3,
+  "residential": 3.0,
+  "unclassified": 3.0,
+  "living_street": 3.0,
+  "service": 3.0,
+  "default": 3.3
+ },
+ "defaultSpeed": {
+  "motorway": 110,
+  "trunk": 100,
+  "primary": 60,
+  "secondary": 60,
+  "tertiary": 50,
+  "residential": 50,
+  "unclassified": 50,
+  "living_street": 10,
+  "service": 20,
+  "default": 50
+ },
+ "signs": {
+  "stop": {
+   "country": "AU",
+   "type": "R1-1"
+  },
+  "give_way": {
+   "country": "AU",
+   "type": "R1-2"
+  },
+  "maxspeed": {
+   "country": "AU",
+   "type": "R4-1"
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

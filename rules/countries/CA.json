@@ -1,0 +1,70 @@
+{
+ "code": "CA",
+ "name": "Canada",
+ "drivingSide": "right",
+ "speedUnit": "km/h",
+ "laneWidth": {
+  "motorway": 3.7,
+  "trunk": 3.7,
+  "primary": 3.5,
+  "secondary": 3.5,
+  "tertiary": 3.3,
+  "residential": 3.3,
+  "unclassified": 3.3,
+  "living_street": 3.3,
+  "service": 3.0,
+  "default": 3.3
+ },
+ "defaultSpeed": {
+  "motorway": 100,
+  "trunk": 80,
+  "primary": 50,
+  "secondary": 50,
+  "tertiary": 50,
+  "residential": 50,
+  "unclassified": 50,
+  "living_street": 20,
+  "service": 20,
+  "default": 50
+ },
+ "centerLineColor": "yellow",
+ "centerLineTwoWay": "solid solid",
+ "signs": {
+  "stop": {
+   "country": "CA",
+   "type": "Ra-1"
+  },
+  "give_way": {
+   "country": "CA",
+   "type": "Ra-2"
+  },
+  "maxspeed": {
+   "country": "CA",
+   "type": "Rb-1"
+  },
+  "traffic_light": {
+   "country": "OpenDRIVE",
+   "type": "1000001",
+   "width": 0.4,
+   "height": 1.0
+  }
+ },
+ "defaultLanesOneway": {
+  "motorway": 2,
+  "trunk": 2,
+  "default": 1
+ },
+ "defaultLanesTwoway": {
+  "motorway": 4,
+  "trunk": 4,
+  "default": 2
+ },
+ "shoulderWidth": {
+  "motorway": 2.5,
+  "trunk": 2.0,
+  "default": 0.0
+ },
+ "sidewalkWidth": 2.0,
+ "bikeLaneWidth": 1.5,
+ "curbHeight": 0.15
+}

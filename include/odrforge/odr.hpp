@@ -1,0 +1,201 @@
+// OdrForge - in-memory OpenDRIVE model (subset of ASAM OpenDRIVE 1.4 - 1.8 used by the generator)
+// and the XML writer. Element / attribute names follow the standard exactly.
+#pragma once
+
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "odrforge/geometry.hpp"
+
+namespace odrforge::odr {
+
+/// a + b*ds + c*ds^2 + d*ds^3 (width, elevation, laneOffset, superelevation records)
+struct Poly3 {
+  double s = 0.0, a = 0.0, b = 0.0, c = 0.0, d = 0.0;
+  double eval(double ds) const { return a + ds * (b + ds * (c + ds * d)); }
+  double deriv(double ds) const { return b + ds * (2.0 * c + ds * 3.0 * d); }
+  /// cubic Hermite from (v0, slope0) to (v1, slope1) over length L
+  static Poly3 hermite(double s, double L, double v0, double m0, double v1, double m1);
+};
+
+struct RoadMark {
+  double sOffset = 0.0;
+  std::string type = "none";    ///< none, solid, broken, solid solid, solid broken, broken solid, broken broken, botts dots, grass, curb, edge
+  std::string weight = "standard";  ///< standard, bold
+  std::string color = "standard";   ///< standard, white, yellow, blue, green, red, orange
+  double width = 0.12;
+  std::string laneChange = "both";  ///< increase, decrease, both, none
+  double height = 0.0;
+};
+
+struct LaneLinkRef {
+  std::optional<int> predecessor, successor;
+};
+
+struct Lane {
+  int id = 0;                    ///< >0 left, <0 right, 0 center
+  std::string type = "driving";  ///< driving, sidewalk, biking, parking, shoulder, border, median, curb, entry, exit, onRamp, offRamp, ...
+  bool level = false;
+  LaneLinkRef link;
+  std::vector<Poly3> widths;     ///< s relative to the lane section start
+  std::vector<RoadMark> roadMarks;
+  std::optional<double> speedMax;  ///< m/s
+  std::string speedUnit = "m/s";
+  std::vector<std::string> accessDeny;  ///< restricted road users (1.6 <access rule="deny" restriction=...>)
+  std::optional<double> heightInner, heightOuter;  ///< curb / sidewalk raise (m)
+  std::string material;          ///< surface (asphalt, concrete, ...)
+  std::string direction;         ///< 1.8 lane direction: standard, reversed, both (empty = not written)
+};
+
+struct LaneSection {
+  double s = 0.0;
+  std::vector<Lane> left;   ///< ordered from id 1 outwards
+  Lane center;
+  std::vector<Lane> right;  ///< ordered from id -1 outwards
+};
+
+struct LinkTarget {
+  std::string elementType = "road";  ///< road | junction
+  std::string elementId;
+  std::string contactPoint;          ///< start | end (roads only)
+};
+
+struct ValidityRange {
+  int fromLane = 0, toLane = 0;
+};
+
+struct Signal {
+  std::string id, name;
+  double s = 0.0, t = 0.0, zOffset = 0.0, hOffset = 0.0, height = 0.0, width = 0.0;
+  bool dynamic = false;
+  std::string orientation = "+";     ///< +, -, none
+  std::string country;               ///< ISO 3166-1 alpha-2 (1.8) or "OpenDRIVE" catalog
+  std::string countryRevision;
+  std::string type, subtype = "-1";
+  std::optional<double> value;
+  std::string unit, text;
+  std::vector<ValidityRange> validity;
+};
+
+struct SignalReference {
+  std::string id;
+  double s = 0.0, t = 0.0;
+  std::string orientation = "+";
+  std::vector<ValidityRange> validity;
+};
+
+struct ObjectCorner {
+  double u = 0.0, v = 0.0, z = 0.0, height = 0.0;  ///< cornerLocal (object frame)
+};
+
+struct Object {
+  std::string id, name, type, subtype;
+  double s = 0.0, t = 0.0, zOffset = 0.0, hdg = 0.0, pitch = 0.0, roll = 0.0;
+  double length = 0.0, width = 0.0, height = 0.0, radius = 0.0;
+  std::string orientation = "none";
+  std::vector<ObjectCorner> outline;  ///< closed local outline (crosswalks, islands)
+  std::vector<ValidityRange> validity;
+};
+
+struct Structure {  ///< <bridge> / <tunnel> under <objects>
+  std::string id, name, type;  ///< bridge: concrete, steel, brick, wood; tunnel: standard, underpass
+  double s = 0.0, length = 0.0;
+};
+
+struct Road {
+  std::string id, name;
+  std::string junction = "-1";
+  std::string rule;  ///< RHT / LHT (1.5+); empty = not written
+  std::optional<LinkTarget> predecessor, successor;
+  struct Type {
+    double s = 0.0;
+    std::string type = "town";    ///< unknown, rural, motorway, town, lowSpeed, pedestrian, bicycle, townExpressway, ...
+    std::string country;
+    std::optional<double> speedMax;
+    std::string speedUnit = "km/h";
+  };
+  std::vector<Type> types;
+  ReferenceLine planView;
+  std::vector<Poly3> elevation;      ///< s absolute
+  std::vector<Poly3> superelevation;
+  std::vector<Poly3> laneOffset;
+  std::vector<LaneSection> lanes;
+  std::vector<Object> objects;
+  std::vector<Structure> bridges, tunnels;
+  std::vector<Signal> signals;
+  std::vector<SignalReference> signalReferences;
+  std::map<std::string, std::string> userData;  ///< written as <userData code=.. value=..>
+
+  double length() const { return planView.length(); }
+};
+
+struct LaneLink {
+  int from = 0, to = 0;
+};
+
+struct Connection {
+  std::string id, incomingRoad, connectingRoad, contactPoint = "start";
+  std::vector<LaneLink> laneLinks;
+};
+
+struct JunctionController {
+  std::string id;
+  int sequence = 0;
+};
+
+struct Junction {
+  std::string id, name;
+  std::string type = "default";  ///< default, direct (1.7+), virtual, crossing (1.8)
+  std::vector<Connection> connections;
+  std::vector<JunctionController> controllers;
+  struct Priority {
+    std::string high, low;
+  };
+  std::vector<Priority> priorities;
+};
+
+struct Controller {
+  std::string id, name;
+  int sequence = 0;
+  std::vector<std::string> signalIds;  ///< <control signalId=..>
+};
+
+struct Header {
+  int revMajor = 1, revMinor = 6;
+  std::string name, version = "1", vendor = "OdrForge", date;
+  double north = 0, south = 0, east = 0, west = 0;
+  std::string geoReference;  ///< PROJ string
+  double offX = 0, offY = 0, offZ = 0, offHdg = 0;
+};
+
+struct OpenDrive {
+  Header header;
+  std::vector<Road> roads;
+  std::vector<Junction> junctions;
+  std::vector<Controller> controllers;
+};
+
+struct WriteOptions {
+  int revMinor = 6;           ///< 4, 6 or 8 (1.8 enables lane direction, ISO country codes)
+  int precision = 9;          ///< significant digits
+};
+
+// ---- queries
+const LaneSection &sectionAt(const Road &r, double s);
+double laneOffsetAt(const Road &r, double s);
+double laneWidthAt(const Lane &l, double ds);
+/// lateral borders of a lane at s (tInner closer to the reference line); false if the lane does not exist
+bool laneBorders(const Road &r, double s, int laneId, double &tInner, double &tOuter);
+/// lane centre pose at s, heading along +s
+bool laneCenter(const Road &r, double s, int laneId, Pose &out);
+const Lane *findLane(const LaneSection &sec, int laneId);
+double elevationAt(const Road &r, double s);
+double elevationSlopeAt(const Road &r, double s);
+
+/// Write an OpenDRIVE file. Throws std::runtime_error on I/O failure.
+void write(const OpenDrive &od, const std::string &path, const WriteOptions &opt = {});
+std::string toString(const OpenDrive &od, const WriteOptions &opt = {});
+
+}  // namespace odrforge::odr

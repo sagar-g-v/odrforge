@@ -1,0 +1,631 @@
+#include <algorithm>
+#include <cmath>
+#include <ctime>
+#include <limits>
+#include <set>
+
+#include "network_internal.hpp"
+
+namespace odrforge {
+namespace detail {
+
+namespace {
+
+enum class Turn { Straight, Left, Right, UTurn };
+
+Turn classify(double dh) {
+  const double a = std::abs(dh);
+  if (a > 150.0 * kPi / 180.0) return Turn::UTurn;
+  if (a < 35.0 * kPi / 180.0) return Turn::Straight;
+  return dh > 0 ? Turn::Left : Turn::Right;
+}
+
+bool allows(const std::vector<std::string> &turns, Turn t) {
+  for (const auto &v : turns) {
+    if (t == Turn::Left && (v == "left" || v == "sharp_left" || v == "slight_left")) return true;
+    if (t == Turn::Right && (v == "right" || v == "sharp_right" || v == "slight_right")) return true;
+    if (t == Turn::Straight && (v == "through" || v == "none" || v.empty() || v == "slight_left" ||
+                                v == "slight_right" || v == "merge_to_left" || v == "merge_to_right"))
+      return true;
+    if (t == Turn::UTurn && (v == "reverse")) return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+void Builder::buildJunctions() {
+  const bool LHT = opt.country.leftHandTraffic;
+  // turn restrictions: (fromWay, viaNode, toWay) -> allowed?
+  struct Restriction {
+    OsmId from, via, to;
+    bool only;
+  };
+  std::vector<Restriction> restr;
+  for (const auto &[id, rel] : osm.relations) {
+    if (!tagIs(rel.tags, "type", "restriction")) continue;
+    const std::string r = tag(rel.tags, "restriction").value_or("");
+    if (r.empty()) continue;
+    Restriction x{0, 0, 0, r.rfind("only_", 0) == 0};
+    for (const auto &m : rel.members) {
+      if (m.role == "from" && m.type == 'w') x.from = m.ref;
+      if (m.role == "to" && m.type == 'w') x.to = m.ref;
+      if (m.role == "via" && m.type == 'n') x.via = m.ref;
+    }
+    if (x.from && x.to && x.via) restr.push_back(x);
+  }
+
+  int nextConnId = static_cast<int>(od.roads.size()) + 1;
+  std::vector<odr::Road> connecting;  // appended after the loop: od.roads must not reallocate while referenced
+  for (Cluster &cl : clusters) {
+    if (cl.ends.empty()) continue;
+    odr::Junction J;
+    J.id = std::to_string(od.junctions.size() + 1);
+    cl.junction = static_cast<int>(od.junctions.size());
+    // link the roads to the junction
+    for (const RoadEnd &e : cl.ends) {
+      odr::Road &r = od.roads[metas[e.road].roadIndex];
+      odr::LinkTarget t{"junction", J.id, ""};
+      (e.atEnd ? r.successor : r.predecessor) = t;
+    }
+    int connIdx = 0;
+    for (const RoadEnd &in : cl.ends) {
+      const RoadMeta &mi = metas[in.road];
+      const odr::Road &ri = od.roads[mi.roadIndex];
+      const double sIn = in.atEnd ? ri.length() : 0.0;
+      const std::vector<int> inLanes = endLanes(ri, in.atEnd, true);
+      if (inLanes.empty()) continue;
+      const Pose pin = ri.planView.eval(sIn);
+      const double hIn = in.atEnd ? pin.hdg : pin.hdg + kPi;
+      // turn tags of the incoming lanes (inner -> outer on their side)
+      const CrossSection &xsIn = sectionAtFull(mi, in.atEnd ? mi.full.length() - mi.trimEnd : mi.trimStart);
+      auto turnsOf = [&](int laneId) -> std::vector<std::string> {
+        const SideSpec &side = laneId > 0 ? xsIn.left : xsIn.right;
+        const size_t k = static_cast<size_t>(std::abs(laneId) - 1);
+        return k < side.lanes.size() ? side.lanes[k].turns : std::vector<std::string>{};
+      };
+      // order incoming lanes from the left of the driver: inner lanes are on the driver's left in RHT
+      std::vector<int> byLeft = inLanes;
+      std::sort(byLeft.begin(), byLeft.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
+      if (LHT) std::reverse(byLeft.begin(), byLeft.end());
+      const int nIn = static_cast<int>(byLeft.size());
+
+      struct Target {
+        const RoadEnd *end;
+        Turn turn;
+        std::vector<int> lanes;  // left -> right in its driving direction
+      };
+      std::vector<Target> targets;
+      for (const RoadEnd &out : cl.ends) {
+        if (out.road == in.road && out.atEnd == in.atEnd) continue;
+        const RoadMeta &mo = metas[out.road];
+        const odr::Road &ro = od.roads[mo.roadIndex];
+        std::vector<int> ol = endLanes(ro, out.atEnd, false);
+        if (ol.empty()) continue;
+        const Pose po = ro.planView.eval(out.atEnd ? ro.length() : 0.0);
+        const double hOut = out.atEnd ? po.hdg + kPi : po.hdg;
+        const Turn t = classify(normalizeAngle(hOut - hIn));
+        if (t == Turn::UTurn) continue;
+        // turn restrictions on the OSM ways adjacent to the junction
+        const OsmId fromWay = in.atEnd ? mi.wayEnd : mi.wayStart;
+        const OsmId toWay = out.atEnd ? mo.wayEnd : mo.wayStart;
+        bool forbidden = false;
+        for (const auto &x : restr) {
+          if (x.from != fromWay || !std::count(cl.nodes.begin(), cl.nodes.end(), x.via)) continue;
+          if (x.only ? x.to != toWay : x.to == toWay) forbidden = true;
+        }
+        if (forbidden) continue;
+        std::sort(ol.begin(), ol.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
+        if (LHT) std::reverse(ol.begin(), ol.end());
+        targets.push_back({&out, t, ol});
+      }
+      if (targets.empty()) continue;
+      bool anyStraight = false, anyLeft = false, anyRight = false;
+      for (const auto &t : targets) {
+        anyStraight |= t.turn == Turn::Straight;
+        anyLeft |= t.turn == Turn::Left;
+        anyRight |= t.turn == Turn::Right;
+      }
+      // permitted movements per incoming lane (turn:lanes, else positional defaults)
+      std::vector<std::set<Turn>> perm(nIn);
+      for (int i = 0; i < nIn; ++i) {
+        const auto tr = turnsOf(byLeft[i]);
+        if (!tr.empty() && !(tr.size() == 1 && tr[0].empty())) {
+          for (Turn t : {Turn::Straight, Turn::Left, Turn::Right})
+            if (allows(tr, t)) perm[i].insert(t);
+        }
+        if (perm[i].empty()) {
+          perm[i].insert(Turn::Straight);
+          if (i == 0 || !anyStraight) perm[i].insert(Turn::Left);
+          if (i == nIn - 1 || !anyStraight) perm[i].insert(Turn::Right);
+          if (!anyStraight && nIn > 1) {  // T-junction: split lanes between the two turns
+            perm[i].clear();
+            perm[i].insert(i < (nIn + 1) / 2 ? Turn::Left : Turn::Right);
+            if (nIn == 1) perm[i] = {Turn::Left, Turn::Right};
+          }
+        }
+      }
+      (void)anyLeft;
+      (void)anyRight;
+      for (const Target &tg : targets) {
+        std::vector<int> src;
+        for (int i = 0; i < nIn; ++i)
+          if (perm[i].count(tg.turn)) src.push_back(i);
+        if (src.empty()) continue;
+        const int nOut = static_cast<int>(tg.lanes.size());
+        std::vector<std::pair<int, int>> pairs;  // (incoming lane id, outgoing lane id)
+        const int ns = static_cast<int>(src.size());
+        for (int k = 0; k < ns; ++k) {
+          int o;
+          if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
+          else if (tg.turn == Turn::Left) o = k;                    // align on the left
+          else o = ns == 1 ? std::min(nOut - 1, src[k] * nOut / std::max(1, nIn))
+                           : static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
+          o = std::clamp(o, 0, nOut - 1);
+          pairs.push_back({byLeft[src[k]], tg.lanes[o]});
+        }
+        const RoadMeta &mo = metas[tg.end->road];
+        const odr::Road &ro = od.roads[mo.roadIndex];
+        const double sOut = tg.end->atEnd ? ro.length() : 0.0;
+        for (const auto &[li, lo] : pairs) {
+          Pose a, b;
+          odr::laneCenter(ri, sIn, li, a);
+          odr::laneCenter(ro, sOut, lo, b);
+          a.hdg = (li < 0) != LHT ? a.hdg : a.hdg + kPi;  // travel direction
+          b.hdg = (lo < 0) != LHT ? b.hdg : b.hdg + kPi;
+          double ta, tb, ua, ub;
+          odr::laneBorders(ri, sIn, li, ta, tb);
+          odr::laneBorders(ro, sOut, lo, ua, ub);
+          const double w0 = std::abs(tb - ta), w1 = std::abs(ub - ua);
+          // geometry: single clothoid when it is a reasonable curve, else a G2 two-piece curve
+          ReferenceLine line;
+          if (auto g = fitClothoidG1(a.pos(), a.hdg, b.pos(), b.hdg)) {
+            const double chord = (b.pos() - a.pos()).norm();
+            const double kmax = std::max(std::abs(g->k0), std::abs(g->k1));
+            if (g->length < 2.5 * chord + 2.0 && kmax < 1.0 / opt.minConnectingRadius) line.elements = {*g};
+          }
+          if (line.elements.empty()) {
+            const Vec2 da = a.dir(), db = b.dir(), d = b.pos() - a.pos();
+            const double den = da.cross(db);
+            Vec2 mid = (a.pos() + b.pos()) * 0.5;
+            if (std::abs(den) > 1e-3) {
+              const double u = d.cross(db) / den;  // tangent intersection a + u da
+              if (u > 0 && u < 3.0 * d.norm()) mid = (a.pos() + da * u) * 0.5 + mid * 0.5;
+            }
+            PolylineFitOptions fo;
+            fo.noiseTolerance = 0.0;
+            fo.cornerAngle = 10.0;
+            fo.startHeading = a.hdg;
+            fo.endHeading = b.hdg;
+            line = fitPolyline({a.pos(), mid, b.pos()}, fo);
+          }
+          if (line.elements.empty() || line.length() < 0.05) continue;
+          odr::Road c;
+          c.id = std::to_string(nextConnId++);
+          c.junction = J.id;
+          if (!ri.rule.empty()) c.rule = ri.rule;
+          c.planView = line;
+          c.predecessor = odr::LinkTarget{"road", ri.id, in.atEnd ? "end" : "start"};
+          c.successor = odr::LinkTarget{"road", ro.id, tg.end->atEnd ? "end" : "start"};
+          c.types.push_back({0.0, ri.types.empty() ? "town" : ri.types.back().type, ri.types.empty() ? "" : ri.types.back().country,
+                             ri.types.empty() ? std::nullopt : ri.types.back().speedMax,
+                             ri.types.empty() ? "km/h" : ri.types.back().speedUnit});
+          const double L = line.length();
+          const int cid = LHT ? 1 : -1;  // the connecting lane travels along +s
+          const double sgn = LHT ? -1.0 : 1.0;
+          c.laneOffset.push_back(odr::Poly3::hermite(0.0, L, sgn * 0.5 * w0, 0.0, sgn * 0.5 * w1, 0.0));
+          odr::LaneSection sec;
+          sec.center.id = 0;
+          sec.center.type = "none";
+          odr::RoadMark none;
+          sec.center.roadMarks.push_back(none);
+          odr::Lane l;
+          l.id = cid;
+          l.type = "driving";
+          l.widths.push_back(odr::Poly3::hermite(0.0, L, w0, 0.0, w1, 0.0));
+          l.link.predecessor = li;
+          l.link.successor = lo;
+          l.roadMarks.push_back(none);
+          if (const auto *srcLane = odr::findLane(odr::sectionAt(ri, sIn), li)) l.speedMax = srcLane->speedMax;
+          (LHT ? sec.left : sec.right).push_back(l);
+          c.lanes.push_back(sec);
+          // elevation: Hermite between the two road ends (travel-direction slopes)
+          const double z0 = odr::elevationAt(ri, sIn), z1 = odr::elevationAt(ro, sOut);
+          const double m0 = odr::elevationSlopeAt(ri, sIn) * (in.atEnd ? 1.0 : -1.0);
+          const double m1 = odr::elevationSlopeAt(ro, sOut) * (tg.end->atEnd ? -1.0 : 1.0);
+          c.elevation.push_back(odr::Poly3::hermite(0.0, L, z0, m0, z1, m1));
+          odr::Connection cn;
+          cn.id = std::to_string(connIdx++);
+          cn.incomingRoad = ri.id;
+          cn.connectingRoad = c.id;
+          cn.contactPoint = "start";
+          cn.laneLinks.push_back({li, cid});
+          J.connections.push_back(cn);
+          connecting.push_back(std::move(c));
+          ++rep.connectingRoads;
+        }
+      }
+    }
+    od.junctions.push_back(std::move(J));
+  }
+  for (auto &c : connecting) od.roads.push_back(std::move(c));
+}
+
+void Builder::buildSignals() {
+  const CountryProfile &C = opt.country;
+  const TargetProfile &T = opt.target;
+  const bool LHT = C.leftHandTraffic;
+  auto signCode = [&](const std::string &key) {
+    if (T.openDriveSignCatalog) {
+      if (key == "stop") return SignCode{"OpenDRIVE", "206", "-1", 0.6, 0.6};
+      if (key == "give_way") return SignCode{"OpenDRIVE", "205", "-1", 0.6, 0.6};
+      if (key == "maxspeed") return SignCode{"OpenDRIVE", "274", "-1", 0.6, 0.6};
+      if (key == "traffic_light") return SignCode{"OpenDRIVE", "1000001", "-1", 0.4, 1.0};
+    }
+    auto it = C.signs.find(key);
+    if (it != C.signs.end()) return it->second;
+    return SignCode{"OpenDRIVE", key == "traffic_light" ? "1000001" : "-1", "-1", 0.6, 0.6};
+  };
+  // signal at the approach of a road end: on the curb right of the incoming traffic
+  auto placeAtEnd = [&](odr::Road &r, bool atEnd, const std::vector<int> &lanes, double back, odr::Signal &sg) {
+    const double s = atEnd ? std::max(0.0, r.length() - back) : std::min(r.length(), back);
+    int outer = lanes.front();
+    for (int id : lanes)
+      if (std::abs(id) > std::abs(outer)) outer = id;
+    double ti, to;
+    odr::laneBorders(r, s, outer, ti, to);
+    // beyond any bike / parking lane of that side, up to the sidewalk
+    const odr::LaneSection &sec = odr::sectionAt(r, s);
+    for (const auto &l : outer > 0 ? sec.left : sec.right) {
+      if (std::abs(l.id) <= std::abs(outer) || l.type == "sidewalk") continue;
+      double a, b;
+      if (odr::laneBorders(r, s, l.id, a, b)) to = b;
+    }
+    sg.s = s;
+    sg.t = to + (outer > 0 ? 0.6 : -0.6);
+    const bool plus = (outer < 0) != LHT;
+    sg.orientation = plus ? "+" : "-";
+    int mn = lanes.front(), mx = lanes.front();
+    for (int id : lanes) {
+      if (std::abs(id) < std::abs(mn)) mn = id;
+      if (std::abs(id) > std::abs(mx)) mx = id;
+    }
+    sg.validity.push_back({mn, mx});
+  };
+
+  // traffic lights near (within 40 m of) a cluster also signalise it
+  for (int ci = 0; ci < static_cast<int>(chains.size()); ++ci) {
+    const Chain &ch = chains[ci];
+    if (ch.internal) continue;
+    for (const RoadMeta &m : metas) {
+      if (m.chain != ci) continue;
+      for (const auto &[nid, s] : m.nodeS) {
+        const OsmNode *nd = osm.node(nid);
+        if (!nd || !tagIs(nd->tags, "highway", "traffic_signals")) continue;
+        if (ch.c1 >= 0 && m.full.length() - s < 40.0) clusters[ch.c1].signalised = true;
+        if (ch.c0 >= 0 && s < 40.0) clusters[ch.c0].signalised = true;
+      }
+    }
+  }
+
+  for (Cluster &cl : clusters) {
+    if (!cl.signalised || cl.junction < 0) continue;
+    odr::Junction &J = od.junctions[cl.junction];
+    // phases: opposite approaches share a controller
+    struct Approach {
+      const RoadEnd *end;
+      double heading;
+      std::vector<int> lanes;
+      int group = -1;
+    };
+    std::vector<Approach> ap;
+    for (const RoadEnd &e : cl.ends) {
+      odr::Road &r = od.roads[metas[e.road].roadIndex];
+      auto lanes = endLanes(r, e.atEnd, true);
+      if (lanes.empty()) continue;
+      const Pose p = r.planView.eval(e.atEnd ? r.length() : 0.0);
+      ap.push_back({&e, e.atEnd ? p.hdg : p.hdg + kPi, lanes, -1});
+    }
+    int groups = 0;
+    for (size_t i = 0; i < ap.size(); ++i) {
+      if (ap[i].group >= 0) continue;
+      ap[i].group = groups;
+      for (size_t j = i + 1; j < ap.size(); ++j)
+        if (ap[j].group < 0 && std::abs(std::abs(normalizeAngle(ap[j].heading - ap[i].heading)) - kPi) < 0.6) {
+          ap[j].group = groups;
+          break;
+        }
+      ++groups;
+    }
+    std::vector<odr::Controller> ctrls(groups);
+    for (int g = 0; g < groups; ++g) {
+      ctrls[g].id = std::to_string(nextControllerId++);
+      ctrls[g].name = "junction" + J.id + "_phase" + std::to_string(g);
+      J.controllers.push_back({ctrls[g].id, g});
+    }
+    for (const Approach &a : ap) {
+      odr::Road &r = od.roads[metas[a.end->road].roadIndex];
+      odr::Signal sg;
+      const SignCode code = signCode("traffic_light");
+      sg.id = std::to_string(nextSignalId++);
+      sg.name = "TrafficLight";
+      sg.dynamic = true;
+      sg.country = code.country;
+      sg.type = code.type;
+      sg.subtype = code.subtype;
+      sg.width = code.width;
+      sg.height = code.height;
+      sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 4.5;
+      placeAtEnd(r, a.end->atEnd, a.lanes, 0.2, sg);
+      ctrls[a.group].signalIds.push_back(sg.id);
+      r.signals.push_back(sg);
+      ++rep.signals;
+    }
+    for (auto &c : ctrls) od.controllers.push_back(c);
+    rep.controllers += groups;
+  }
+
+  // stop / give-way signs (node direction tags, all-way stops, minor approaches)
+  for (const auto &[nid, nd] : osm.nodes) {
+    const std::string hw = tag(nd.tags, "highway").value_or("");
+    if (hw != "stop" && hw != "give_way") continue;
+    const SignCode code = signCode(hw);
+    std::vector<std::pair<int, bool>> targets;  // (meta index, atEnd)
+    if (auto it = clusterOf.find(nid); it != clusterOf.end()) {
+      const Cluster &cl = clusters[it->second];
+      const bool allWay = tagIs(nd.tags, "stop", "all");
+      int minRank = 99;
+      for (const RoadEnd &e : cl.ends) minRank = std::min(minRank, metas[e.road].rank);
+      for (const RoadEnd &e : cl.ends)
+        if (allWay || metas[e.road].rank == minRank) targets.push_back({e.road, e.atEnd});
+    } else {
+      for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
+        const RoadMeta &m = metas[mi];
+        for (const auto &[n2, s] : m.nodeS) {
+          if (n2 != nid) continue;
+          const Chain &ch = chains[m.chain];
+          const std::string dir = tag(nd.tags, "direction").value_or("");
+          bool toEnd;
+          if (dir == "forward" || dir == "backward") {
+            // direction is relative to the OSM way; find whether this part runs along it
+            bool partFwd = true;
+            for (const Part &p : ch.parts)
+              if (std::count(segs[p.seg].nodes.begin(), segs[p.seg].nodes.end(), nid)) partFwd = p.fwd;
+            toEnd = (dir == "forward") == partFwd;
+          } else {
+            toEnd = (m.full.length() - s) < s;  // nearest junction
+          }
+          if ((toEnd ? ch.c1 : ch.c0) >= 0) targets.push_back({mi, toEnd});
+        }
+      }
+    }
+    for (const auto &[mi, atEnd] : targets) {
+      odr::Road &r = od.roads[metas[mi].roadIndex];
+      auto lanes = endLanes(r, atEnd, true);
+      if (lanes.empty()) continue;
+      odr::Signal sg;
+      sg.id = std::to_string(nextSignalId++);
+      sg.name = hw == "stop" ? "Stop" : "GiveWay";
+      sg.country = code.country;
+      sg.type = code.type;
+      sg.subtype = code.subtype;
+      sg.width = code.width;
+      sg.height = code.height;
+      sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
+      placeAtEnd(r, atEnd, lanes, 0.5, sg);
+      r.signals.push_back(sg);
+      ++rep.signals;
+    }
+  }
+
+  // speed-limit signs where the limit changes along the direction of travel (or a road starts)
+  if (!opt.speedSigns) return;
+  const SignCode code = signCode("maxspeed");
+  for (RoadMeta &m : metas) {
+    odr::Road &r = od.roads[m.roadIndex];
+    if (r.length() < 30.0) continue;
+    for (bool plus : {true, false}) {
+      // lanes travelling +s / -s at their starting end
+      const bool startAtEnd = !plus;  // -s traffic starts at the road end
+      auto lanes = endLanes(r, startAtEnd, false);
+      if (lanes.empty()) continue;
+      const auto *lane = odr::findLane(odr::sectionAt(r, startAtEnd ? r.length() : 0.0), lanes.front());
+      if (!lane || !lane->speedMax) continue;
+      const double v = *lane->speedMax;
+      // upstream speed: the roads feeding this one through its junction
+      const int c = startAtEnd ? chains[m.chain].c1 : chains[m.chain].c0;
+      bool differs = c < 0;
+      if (c >= 0)
+        for (const RoadEnd &e : clusters[c].ends) {
+          if (e.road == static_cast<int>(&m - &metas[0])) continue;
+          const odr::Road &u = od.roads[metas[e.road].roadIndex];
+          for (int id : endLanes(u, e.atEnd, true))
+            if (const auto *ul = odr::findLane(odr::sectionAt(u, e.atEnd ? u.length() : 0.0), id))
+              if (ul->speedMax && std::abs(*ul->speedMax - v) > 0.5) differs = true;
+        }
+      if (!differs) continue;
+      odr::Signal sg;
+      sg.id = std::to_string(nextSignalId++);
+      sg.name = "SpeedLimit";
+      sg.country = code.country;
+      sg.type = code.type;
+      sg.width = code.width;
+      sg.height = code.height;
+      sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
+      if (T.speedSignKmhBuckets) {
+        const int kmh = static_cast<int>(std::clamp(std::round(v * 3.6 / 10.0) * 10.0, 30.0, 120.0));
+        sg.subtype = std::to_string(kmh);
+        sg.value = kmh;
+        sg.unit = "km/h";
+      } else if (C.speedUnit == "mph") {
+        sg.value = std::round(v / 0.44704);
+        sg.unit = "mph";
+      } else {
+        sg.value = std::round(v * 3.6);
+        sg.unit = "km/h";
+      }
+      // a few metres after the road start in the direction of travel
+      const double back = std::min(8.0, r.length() / 3);
+      placeAtEnd(r, startAtEnd, lanes, back, sg);
+      sg.s = startAtEnd ? r.length() - back : back;
+      r.signals.push_back(sg);
+      ++rep.signals;
+    }
+  }
+}
+
+void Builder::buildObjects() {
+  const int rev = opt.target.revMinor;
+  // spatial index of road reference lines (5 m samples)
+  struct Sample {
+    int road;
+    double s;
+  };
+  const double cell = 25.0;
+  std::map<std::pair<int, int>, std::vector<Sample>> grid;
+  for (int i = 0; i < static_cast<int>(metas.size()); ++i) {
+    const odr::Road &r = od.roads[metas[i].roadIndex];
+    for (double s = 0; s <= r.length(); s += 5.0) {
+      const Pose p = r.planView.eval(s);
+      grid[{static_cast<int>(std::floor(p.x / cell)), static_cast<int>(std::floor(p.y / cell))}].push_back({i, s});
+    }
+  }
+  auto nearestRoad = [&](const Vec2 &q, double maxDist, int &mi, double &s, double &t) {
+    double best = maxDist;
+    mi = -1;
+    const int cx = static_cast<int>(std::floor(q.x / cell)), cy = static_cast<int>(std::floor(q.y / cell));
+    std::set<int> cand;
+    for (int dx = -1; dx <= 1; ++dx)
+      for (int dy = -1; dy <= 1; ++dy)
+        if (auto it = grid.find({cx + dx, cy + dy}); it != grid.end())
+          for (const auto &smp : it->second) cand.insert(smp.road);
+    for (int c : cand) {
+      const odr::Road &r = od.roads[metas[c].roadIndex];
+      double ss, tt;
+      r.planView.project(q, ss, tt);
+      const Pose p = r.planView.eval(ss);
+      const double d = (q - p.pos()).norm();
+      if (d < best && std::abs((q - p.pos()).dot(p.dir())) < 1.0) best = d, mi = c, s = ss, t = tt;
+    }
+    return mi >= 0;
+  };
+  auto carriageway = [&](const odr::Road &r, double s, double &lo, double &hi) {
+    const odr::LaneSection &sec = odr::sectionAt(r, s);
+    lo = hi = odr::laneOffsetAt(r, s);
+    double a, b;
+    for (const auto &l : sec.left)
+      if (l.type != "sidewalk" && odr::laneBorders(r, s, l.id, a, b)) hi = std::max(hi, b);
+    for (const auto &l : sec.right)
+      if (l.type != "sidewalk" && odr::laneBorders(r, s, l.id, a, b)) lo = std::min(lo, b);
+  };
+  auto crosswalk = [&](odr::Road &r, double s) {
+    double lo, hi;
+    carriageway(r, s, lo, hi);
+    odr::Object o;
+    o.id = std::to_string(nextObjectId++);
+    o.name = "Crosswalk";
+    o.type = "crosswalk";
+    o.s = s;
+    o.t = 0.0;
+    o.length = 3.0;
+    o.width = hi - lo;
+    o.orientation = "none";
+    o.outline = {{-1.5, lo, 0, 0}, {1.5, lo, 0, 0}, {1.5, hi, 0, 0}, {-1.5, hi, 0, 0}};
+    r.objects.push_back(o);
+    ++rep.objects;
+  };
+  // mapped crossings on roads
+  for (const auto &[nid, nd] : osm.nodes) {
+    if (!tagIs(nd.tags, "highway", "crossing") || clusterOf.count(nid)) continue;
+    for (RoadMeta &m : metas)
+      for (const auto &[n2, sf] : m.nodeS)
+        if (n2 == nid) {
+          odr::Road &r = od.roads[m.roadIndex];
+          const double s = std::clamp(sf - m.trimStart, 1.5, std::max(1.5, r.length() - 1.5));
+          crosswalk(r, s);
+        }
+  }
+  // crosswalks on every approach of signalised / crossing junctions
+  if (opt.crosswalksAtSignals)
+    for (const Cluster &cl : clusters) {
+      if (!(cl.signalised || cl.crossing)) continue;
+      for (const RoadEnd &e : cl.ends) {
+        odr::Road &r = od.roads[metas[e.road].roadIndex];
+        if (r.length() < 6.0) continue;
+        crosswalk(r, e.atEnd ? r.length() - 1.6 : 1.6);
+      }
+    }
+  if (!opt.streetFurniture) return;
+  for (const auto &[nid, nd] : osm.nodes) {
+    const bool lamp = tagIs(nd.tags, "highway", "street_lamp");
+    const bool tree = tagIs(nd.tags, "natural", "tree");
+    if (!lamp && !tree) continue;
+    int mi;
+    double s, t;
+    if (!nearestRoad(pos(nid), lamp ? 25.0 : 15.0, mi, s, t)) continue;
+    odr::Road &r = od.roads[metas[mi].roadIndex];
+    odr::Object o;
+    o.id = std::to_string(nextObjectId++);
+    o.s = s;
+    o.t = t;
+    if (lamp) {
+      o.name = "StreetLamp";
+      o.type = rev >= 8 ? "pole" : "streetLamp";
+      o.subtype = rev >= 8 ? "streetLamp" : "";
+      o.height = 9.0;
+      o.radius = 0.15;
+    } else {
+      o.name = "Tree";
+      o.type = "tree";
+      o.height = 8.0;
+      o.radius = 2.0;
+    }
+    r.objects.push_back(o);
+    ++rep.objects;
+  }
+}
+
+void Builder::finish() {
+  // header: extent, georeference, date
+  double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
+  for (const auto &r : od.roads)
+    for (const auto &e : r.planView.elements)
+      for (double f : {0.0, 0.5, 1.0}) {
+        const Pose p = e.eval(e.length * f);
+        minX = std::min(minX, p.x), maxX = std::max(maxX, p.x);
+        minY = std::min(minY, p.y), maxY = std::max(maxY, p.y);
+      }
+  od.header.name = opt.name;
+  od.header.north = maxY;
+  od.header.south = minY;
+  od.header.east = maxX;
+  od.header.west = minX;
+  od.header.geoReference = proj.projString();
+  od.header.revMinor = opt.target.revMinor;
+  char buf[64];
+  const std::time_t now = std::time(nullptr);
+  std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", std::gmtime(&now));
+  od.header.date = buf;
+  rep.roads = static_cast<int>(metas.size());
+  if (!fitDev.empty()) {
+    std::sort(fitDev.begin(), fitDev.end());
+    double sum = 0;
+    for (double d : fitDev) sum += d;
+    rep.fitMeanDev = sum / fitDev.size();
+    rep.fitP95Dev = fitDev[static_cast<size_t>(0.95 * (fitDev.size() - 1))];
+    rep.fitMaxDev = fitDev.back();
+  }
+  rep.junctions = static_cast<int>(od.junctions.size());
+  for (const auto &r : od.roads)
+    for (const auto &e : r.planView.elements) {
+      ++rep.geometryElements;
+      switch (e.type()) {
+        case GeomType::Line: ++rep.lines; break;
+        case GeomType::Arc: ++rep.arcs; break;
+        case GeomType::Spiral: ++rep.spirals; break;
+      }
+    }
+}
+
+}  // namespace detail
+}  // namespace odrforge
