@@ -76,7 +76,26 @@ if(ODRFORGE_BUILD_TESTS)
   add_executable(odrforge_tests tests/test_main.cpp tests/test_geometry.cpp tests/test_projection.cpp
     tests/test_spec.cpp tests/test_network.cpp)
   target_link_libraries(odrforge_tests PRIVATE odrforge)
+  set(ODRFORGE_TEST_OUT ${CMAKE_CURRENT_BINARY_DIR}/test_out)
+  file(MAKE_DIRECTORY ${ODRFORGE_TEST_OUT})
   add_test(NAME odrforge_tests COMMAND odrforge_tests)
+  set_tests_properties(odrforge_tests PROPERTIES ENVIRONMENT "ODRFORGE_TEST_OUT=${ODRFORGE_TEST_OUT}"
+                       FIXTURES_SETUP scenario_files)
+  # official ASAM OpenDRIVE 1.8.1 XSD (XSD 1.1) validation of every scenario, if Python + xmlschema exist
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import xmlschema" RESULT_VARIABLE _xs OUTPUT_QUIET ERROR_QUIET)
+    if(_xs EQUAL 0)
+      add_test(NAME xsd_conformance COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${ODRFORGE_TEST_OUT})
+      set_tests_properties(xsd_conformance PROPERTIES FIXTURES_REQUIRED scenario_files)
+      add_test(NAME xsd_rejects_invalid COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/invalid_roadmark_height.xodr)
+      set_tests_properties(xsd_rejects_invalid PROPERTIES WILL_FAIL TRUE)
+    else()
+      message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
+    endif()
+  endif()
 endif()
 
 install(TARGETS odrforge ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)

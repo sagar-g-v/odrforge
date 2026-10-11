@@ -72,7 +72,7 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     attr(r, "color", m.color);
     attrN(r, c, "width", m.width);
     attr(r, "laneChange", m.laneChange);
-    attrN(r, c, "height", m.height);
+    if (m.height > 0) attrN(r, c, "height", m.height);  // optional; XSD 1.8: must be > 0 when present
   }
   if (l.id == 0) return;
   if (!l.material.empty()) {
