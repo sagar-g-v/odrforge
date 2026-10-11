@@ -1,4 +1,6 @@
 // osm2xodr - OpenStreetMap (.osm XML) to ASAM OpenDRIVE (.xodr) with OdrForge.
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -21,7 +23,12 @@ static void usage() {
       "  --name NAME         header name\n"
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
       "  --no-furniture      no street lamps / trees\n"
-      "  --viz OUT.html      also write an interactive HTML view of the result\n",
+      "  --viz OUT.html      also write an interactive HTML view of the result\n"
+      "  --terrain G.odrz    ground surface grid (tools/make_terrain.py): real road elevation\n"
+      "  --structures S.odrz bridge-deck surface grid (lidar class 17) for bridge=yes roads\n"
+      "  --clip MINLAT,MINLON,MAXLAT,MAXLON  cut the network to this area (ways split at the boundary)\n"
+      "  --no-superelevation flat cross sections and level junctions (for consumers that ignore\n"
+      "                      <superelevation>, e.g. CARLA meshing the roads itself)\n",
       ODRFORGE_VERSION);
 }
 
@@ -31,8 +38,9 @@ int main(int argc, char **argv) {
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "asam", name, vizPath;
-  double lat0 = 1e9, lon0 = 1e9;
+  std::string country = "XX", target = "asam", name, vizPath, terrainPath, structuresPath;
+  double lat0 = 1e9, lon0 = 1e9, clip[4] = {0, 0, 0, 0};
+  bool haveClip = false, flat = false;
   BuildOptions opt;
   for (int i = 3; i < argc; ++i) {
     const std::string a = argv[i];
@@ -46,6 +54,13 @@ int main(int argc, char **argv) {
     } else if (a == "--no-sidewalks") opt.lanes.assumeSidewalks = false;
     else if (a == "--no-furniture") opt.streetFurniture = false;
     else if (a == "--viz") vizPath = next();
+    else if (a == "--terrain") terrainPath = next();
+    else if (a == "--structures") structuresPath = next();
+    else if (a == "--no-superelevation") flat = true;
+    else if (a == "--clip") {
+      const std::string v = next();
+      if (std::sscanf(v.c_str(), "%lf,%lf,%lf,%lf", &clip[0], &clip[1], &clip[2], &clip[3]) == 4) haveClip = true;
+    }
     else {
       usage();
       return 2;
@@ -58,7 +73,21 @@ int main(int argc, char **argv) {
     const Projection proj(lat0, lon0);
     opt.country = CountryProfile::load(country);
     opt.target = TargetProfile::byName(target);
+    if (flat) opt.target.superelevation = false;
     if (!name.empty()) opt.name = name;
+    if (haveClip) {
+      const Vec2 a = proj.forward(clip[0], clip[1]), b = proj.forward(clip[2], clip[3]);
+      const Vec2 c = proj.forward(clip[0], clip[3]), d = proj.forward(clip[2], clip[1]);
+      opt.clipBox = std::array<double, 4>{std::min({a.x, b.x, c.x, d.x}), std::min({a.y, b.y, c.y, d.y}),
+                                          std::max({a.x, b.x, c.x, d.x}), std::max({a.y, b.y, c.y, d.y})};
+    }
+    Terrain terrain;
+    if (!terrainPath.empty()) terrain.ground = TerrainGrid::load(terrainPath);
+    if (!structuresPath.empty()) terrain.structures = TerrainGrid::load(structuresPath);
+    if (!terrain.ground.empty() || !terrain.structures.empty()) {
+      opt.terrain = &terrain;
+      opt.verticalDatum = !terrain.ground.datum.empty() ? terrain.ground.datum : terrain.structures.datum;
+    }
     BuildReport rep;
     const odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
     odr::WriteOptions wo;
@@ -79,8 +108,16 @@ int main(int argc, char **argv) {
                 rep.spirals);
     std::printf("  fit to OSM nodes: mean %.3f m, p95 %.3f m, max %.2f m\n", rep.fitMeanDev, rep.fitP95Dev,
                 rep.fitMaxDev);
+    if (rep.elevSamples)
+      std::printf("  elevation vs measured ground (%d lane-centre samples): mean %.3f m, p95 %.3f m, max %.2f m\n",
+                  rep.elevSamples, rep.elevMeanDev, rep.elevP95Dev, rep.elevMaxDev);
+    if (rep.elevSamples)
+      std::printf("  steep spots (> 20 %%): %d, of which not supported by the measured terrain: %d; overlap shifts %d\n",
+                  rep.steepSpots, rep.steepNotInTerrain, rep.overlapShifts);
     std::printf("  validation: %d errors, %d warnings\n", vr.errors, vr.warnings);
-    for (size_t i = 0; i < vr.messages.size() && i < 15; ++i) std::printf("    %s\n", vr.messages[i].c_str());
+    for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
+    if (std::getenv("ODRFORGE_VERBOSE"))
+      for (const auto &m : vr.messages) std::printf("    %s\n", m.c_str());
     for (size_t i = 0; i < rep.warnings.size() && i < 10; ++i) std::printf("  warn: %s\n", rep.warnings[i].c_str());
     return vr.errors ? 1 : 0;
   } catch (const std::exception &e) {

@@ -122,6 +122,7 @@ OpenDrive read(const std::string &path) {
       r.planView.elements.push_back(e);
     }
     for (auto e : rn.child("elevationProfile").children("elevation")) r.elevation.push_back(readPoly(e, "s"));
+    for (auto e : rn.child("lateralProfile").children("superelevation")) r.superelevation.push_back(readPoly(e, "s"));
     auto lanes = rn.child("lanes");
     for (auto o : lanes.children("laneOffset")) r.laneOffset.push_back(readPoly(o, "s"));
     for (auto sn : lanes.children("laneSection")) {

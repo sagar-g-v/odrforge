@@ -7,7 +7,9 @@
 // along the lane centre -> elevation -> signals, controllers, signs, crosswalks, street furniture.
 #pragma once
 
+#include <array>
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -18,6 +20,7 @@
 #include "odrforge/osm.hpp"
 #include "odrforge/projection.hpp"
 #include "odrforge/rules.hpp"
+#include "odrforge/terrain.hpp"
 
 namespace odrforge {
 
@@ -41,7 +44,18 @@ struct BuildOptions {
   bool crosswalksAtSignals = true;  ///< signalised junctions get crosswalks on every approach
   bool speedSigns = true;
   bool streetFurniture = true;      ///< street lamps, trees near roads as objects
-  ElevationFn elevation;            ///< optional terrain; flat (z = 0) when empty
+  ElevationFn elevation;            ///< optional terrain function; flat (z = 0) when empty and no terrain
+  const Terrain *terrain = nullptr; ///< ground + structure (bridge deck) grids; preferred over `elevation`
+  double elevationStep = 2.0;       ///< profile sampling step along the carriageway centre (m)
+  double elevationSmoothing = 8.0;  ///< Whittaker smoothing (lambda at 1 m spacing); larger = smoother grades
+  double elevationKnotSpacing = 10.0; ///< spacing of the cubic elevation records (m)
+  double maxGrade = 0.18;           ///< profiles steeper than this over 10 m get more smoothing
+  bool junctionSurfaces = true;     ///< roads blend into one plane per junction; connecting roads lie on it
+  double junctionBlend = 20.0;      ///< length over which a road blends into its junction surface (m)
+  std::string verticalDatum;        ///< written to the header userData (e.g. "NAVD88")
+  /// Optional area of interest in local metres (minX, minY, maxX, maxY): ways are cut exactly at
+  /// the boundary (new end nodes at the crossing points), everything outside is dropped.
+  std::optional<std::array<double, 4>> clipBox;
   std::string name = "OdrForge network";
 };
 
@@ -49,6 +63,12 @@ struct BuildReport {
   int roads = 0, connectingRoads = 0, junctions = 0, signals = 0, controllers = 0, objects = 0;
   int geometryElements = 0, lines = 0, arcs = 0, spirals = 0;
   double fitMeanDev = 0.0, fitP95Dev = 0.0, fitMaxDev = 0.0;  ///< OSM node distance to the reference line (m)
+  /// road surface vs measured ground at driving-lane centres (outside bridges / tunnels), metres
+  double elevMeanDev = 0.0, elevP95Dev = 0.0, elevMaxDev = 0.0;
+  int elevSamples = 0;
+  int overlapShifts = 0;
+  int steepSpots = 0;        ///< samples steeper than 20 %
+  int steepNotInTerrain = 0; ///< ... of which the measured terrain is > 3 % less steep (artefacts)  ///< roads shifted sideways to remove side-by-side carriageway overlaps
   std::vector<std::string> warnings;
 };
 

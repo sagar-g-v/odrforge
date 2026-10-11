@@ -327,6 +327,12 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
     attrN(o, c, "z", od.header.offZ);
     attrN(o, c, "hdg", od.header.offHdg);
   }
+  // XSD t_header: userData after geoReference / offset
+  for (const auto &[k, v] : od.header.userData) {
+    auto u = h.append_child("userData");
+    attr(u, "code", k);
+    attr(u, "value", v);
+  }
   for (const auto &r : od.roads) writeRoad(root, r, c);
   for (const auto &ct : od.controllers) {
     auto e = root.append_child("controller");

@@ -78,4 +78,14 @@ double elevationSlopeAt(const Road &r, double s) {
   return p ? p->deriv(s - p->s) : 0.0;
 }
 
+double superelevationAt(const Road &r, double s) {
+  const Poly3 *p = polyAt(r.superelevation, s);
+  return p ? p->eval(s - p->s) : 0.0;
+}
+
+double surfaceZ(const Road &r, double s, double t) {
+  // spec 3: superelevation is the roll angle about the reference line, positive falling to the right
+  return elevationAt(r, s) + t * std::tan(superelevationAt(r, s));
+}
+
 }  // namespace odrforge::odr

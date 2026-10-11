@@ -110,6 +110,7 @@ void Builder::collectSegments() {
     cur.travel = travel;
     cur.bridge = tagYes(w->tags, "bridge") || tagIs(w->tags, "bridge", "viaduct");
     cur.tunnel = tagYes(w->tags, "tunnel") || tagIs(w->tags, "tunnel", "building_passage");
+    cur.covered = tagYes(w->tags, "covered");
     for (size_t i = 0; i < w->nodes.size(); ++i) {
       cur.nodes.push_back(w->nodes[i]);
       const bool split = i > 0 && i + 1 < w->nodes.size() && usage[w->nodes[i]] >= 2;
@@ -217,20 +218,59 @@ void Builder::clusterJunctions() {
     }
     radius[n] = r;
   }
+  // with measured terrain: two nodes belong to one junction surface only if some measured surface
+  // (ground or a deck level) at each can be joined within a junction grade - a ramp between a street
+  // and a trenched freeway is a road, not part of one junction
+  auto levelsAt = [&](OsmId n) {
+    std::vector<double> z;
+    if (!opt.terrain) return z;
+    const Vec2 p = pos(n);
+    if (!opt.terrain->ground.empty()) {
+      const double g = opt.terrain->ground_at(p.x, p.y);
+      if (!std::isnan(g)) z.push_back(g);
+    }
+    for (double d : opt.terrain->structure_levels(p.x, p.y)) z.push_back(d);
+    return z;
+  };
+  auto sameLevel = [&](OsmId a, OsmId b, double dist) {
+    const auto za = levelsAt(a), zb = levelsAt(b);
+    if (za.empty() || zb.empty()) return true;  // unknown: trust the topology
+    for (double x : za)
+      for (double y : zb)
+        if (std::abs(x - y) <= 0.5 + 0.12 * dist) return true;
+    return false;
+  };
   for (Chain &c : chains) {
     if (!junctionNodes.count(c.n0) || !junctionNodes.count(c.n1)) continue;
     if (c.n0 == c.n1) continue;
-    if (c.approxLength < radius[c.n0] + radius[c.n1] + opt.junctionJoinSlack) {
+    if (c.approxLength < radius[c.n0] + radius[c.n1] + opt.junctionJoinSlack && sameLevel(c.n0, c.n1, c.approxLength)) {
       unite(c.n0, c.n1);
       c.internal = true;
     }
   }
   // geometrically coincident junction nodes (mapping artefacts)
+  // layer of the ways meeting at a node (bridge without layer = 1, tunnel = -1)
+  auto nodeLayer = [&](OsmId n) {
+    int layer = 0;
+    for (const auto &[si, atStart] : nodeSegs[n]) {
+      const Seg &sg = segs[si];
+      int l = sg.bridge ? 1 : sg.tunnel ? -1 : 0;
+      if (auto lv = tag(*sg.tags, "layer")) {
+        try {
+          l = std::stoi(*lv);
+        } catch (...) {
+        }
+      }
+      if (std::abs(l) > std::abs(layer)) layer = l;
+    }
+    return layer;
+  };
   std::vector<OsmId> jn(junctionNodes.begin(), junctionNodes.end());
   std::sort(jn.begin(), jn.end());
   for (size_t i = 0; i < jn.size(); ++i)
     for (size_t j = i + 1; j < jn.size(); ++j)
-      if ((pos(jn[i]) - pos(jn[j])).norm() < 2.0) unite(jn[i], jn[j]);
+      if ((pos(jn[i]) - pos(jn[j])).norm() < 2.0 && nodeLayer(jn[i]) == nodeLayer(jn[j]) && sameLevel(jn[i], jn[j], 2.0))
+        unite(jn[i], jn[j]);
 
   std::map<OsmId, int> rootIdx;
   for (OsmId n : jn) {
@@ -318,13 +358,25 @@ void Builder::buildRoadGeometry() {
           m.sections.back().xs.right.speed != xs.right.speed || m.sections.back().xs.left.speed != xs.left.speed)
         m.sections.push_back({s0, xs});
       if (sg.bridge) m.bridges.push_back({s0, s1});
+      int layer = sg.bridge ? 1 : sg.tunnel ? -1 : 0;
+      if (auto lv = tag(*sg.tags, "layer")) {
+        try {
+          layer = std::stoi(*lv);
+        } catch (...) {
+        }
+      }
+      m.layers.push_back({s0, s1, layer});
       if (sg.tunnel) m.tunnels.push_back({s0, s1});
+      if (sg.covered) m.covered.push_back({s0, s1});
     }
     metas.push_back(m);
   }
 }
 
 void Builder::trimRoads() {
+  // how far a road end may be pulled back: freeway ramps leave at shallow angles and overlap their
+  // carriageway for much longer than street corners
+  auto trimCap = [](const RoadMeta &m) { return m.rank >= 8 || m.highway.find("_link") != std::string::npos ? 160.0 : 80.0; };
   // register road ends at clusters
   for (int i = 0; i < static_cast<int>(metas.size()); ++i) {
     const Chain &ch = chains[metas[i].chain];
@@ -338,14 +390,14 @@ void Builder::trimRoads() {
     std::vector<double> nearStart(c.ends.size());
     for (size_t k = 0; k < c.ends.size(); ++k) {
       const RoadMeta &n = metas[c.ends[k].road];
-      const double Ln = n.full.length(), reach = std::min(0.6 * Ln, 80.0) + 2.0;
+      const double Ln = n.full.length(), reach = std::min(0.6 * Ln, trimCap(n)) + 2.0;
       nearStart[k] = c.ends[k].atEnd ? std::max(0.0, Ln - reach) : 0.0;
       nearPart[k] = n.full.slice(nearStart[k], c.ends[k].atEnd ? Ln : std::min(Ln, reach));
     }
     for (const RoadEnd &e : c.ends) {
       const RoadMeta &m = metas[e.road];
       const double L = m.full.length();
-      const double maxD = std::min(0.6 * L, 80.0);
+      const double maxD = std::min(0.6 * L, trimCap(m));
       double lastOverlap = -1.0;
       for (double d = 0.0; d <= maxD; d += 0.5) {
         const double s = e.atEnd ? L - d : d;
@@ -365,7 +417,7 @@ void Builder::trimRoads() {
             nearPart[fk].project(q, sf, tf);
             sf += nearStart[fk];
             const double df = f.atEnd ? Ln - sf : sf;
-            if (df < -0.5 || df > std::min(0.6 * Ln, 80.0)) continue;
+            if (df < -0.5 || df > std::min(0.6 * Ln, trimCap(n))) continue;
             const Pose pf = n.full.eval(sf);
             if (std::abs((q - pf.pos()).dot(pf.dir())) > 0.5) continue;  // beyond the road end
             double fL, fR;
@@ -578,78 +630,74 @@ void Builder::buildRoads() {
   }
 }
 
-void Builder::buildElevation() {
-  for (RoadMeta &m : metas) {
-    if (m.roadIndex < 0) continue;
-    odr::Road &r = od.roads[m.roadIndex];
-    const double L = r.length();
-    if (!opt.elevation) {
-      r.elevation = {{0.0, 0.0, 0, 0, 0}};
-      continue;
-    }
-    const double step = 5.0;
-    const int n = std::max(2, static_cast<int>(std::ceil(L / step)) + 1);
-    std::vector<double> s(n), z(n);
-    for (int i = 0; i < n; ++i) {
-      s[i] = L * i / (n - 1);
-      const Pose p = r.planView.eval(s[i]);
-      z[i] = opt.elevation(p.x, p.y);
-    }
-    // structures: the terrain under a bridge / above a tunnel is not the road surface
-    auto bridgeOver = [&](const std::vector<std::pair<double, double>> &ranges) {
-      for (const auto &[a, b] : ranges) {
-        const double sa = a - m.trimStart, sb = b - m.trimStart;
-        int i0 = -1, i1 = -1;
-        for (int i = 0; i < n; ++i) {
-          if (s[i] < sa) i0 = i;
-          if (s[i] > sb && i1 < 0) i1 = i;
-        }
-        for (int i = std::max(0, i0 + 1); i < (i1 < 0 ? n : i1); ++i) z[i] = std::numeric_limits<double>::quiet_NaN();
-      }
-    };
-    bridgeOver(m.bridges);
-    bridgeOver(m.tunnels);
-    // fill unknown samples by linear interpolation (flat extrapolation at the ends)
-    int lastKnown = -1;
-    for (int i = 0; i < n; ++i) {
-      if (std::isnan(z[i])) continue;
-      if (lastKnown < 0)
-        for (int k = 0; k < i; ++k) z[k] = z[i];
-      else
-        for (int k = lastKnown + 1; k < i; ++k)
-          z[k] = z[lastKnown] + (z[i] - z[lastKnown]) * (s[k] - s[lastKnown]) / (s[i] - s[lastKnown]);
-      lastKnown = i;
-    }
-    if (lastKnown < 0) z.assign(n, 0.0);
-    else
-      for (int k = lastKnown + 1; k < n; ++k) z[k] = z[lastKnown];
-    // smooth (removes DEM noise and building-edge artefacts) and fit C1 cubic pieces every ~20 m
-    for (int pass = 0; pass < 3; ++pass) {
-      std::vector<double> zz = z;
-      for (int i = 1; i + 1 < n; ++i) zz[i] = 0.25 * z[i - 1] + 0.5 * z[i] + 0.25 * z[i + 1];
-      z = zz;
-    }
-    const int knotEvery = std::max(1, static_cast<int>(20.0 / (L / (n - 1))));
-    std::vector<int> knots;
-    for (int i = 0; i < n; i += knotEvery) knots.push_back(i);
-    if (knots.back() != n - 1) knots.push_back(n - 1);
-    auto slope = [&](int i) {
-      const int a = std::max(0, i - 1), b = std::min(n - 1, i + 1);
-      return std::clamp((z[b] - z[a]) / std::max(1e-6, s[b] - s[a]), -0.15, 0.15);
-    };
-    r.elevation.clear();
-    for (size_t k = 0; k + 1 < knots.size(); ++k) {
-      const int a = knots[k], b = knots[k + 1];
-      r.elevation.push_back(odr::Poly3::hermite(s[a], s[b] - s[a], z[a], slope(a), z[b], slope(b)));
-    }
-    if (r.elevation.empty()) r.elevation.push_back({0.0, z[0], 0, 0, 0});
-  }
-}
-
 }  // namespace detail
 
-odr::OpenDrive buildOpenDrive(const OsmData &osm, const Projection &proj, const BuildOptions &opt,
+namespace {
+/// Cut every way at the box boundary (Liang-Barsky); crossing points become new end nodes.
+OsmData clipOsm(const OsmData &in, const Projection &proj, const std::array<double, 4> &box) {
+  OsmData out;
+  out.relations = in.relations;
+  out.minLat = in.minLat, out.minLon = in.minLon, out.maxLat = in.maxLat, out.maxLon = in.maxLon;
+  auto inside = [&](const Vec2 &p) { return p.x >= box[0] && p.x <= box[2] && p.y >= box[1] && p.y <= box[3]; };
+  std::unordered_map<OsmId, Vec2> pos;
+  for (const auto &[id, n] : in.nodes) {
+    pos[id] = proj.forward(n.lat, n.lon);
+    if (inside(pos[id])) out.nodes[id] = n;
+  }
+  OsmId synth = -1, wayId = -1;
+  auto addNode = [&](const Vec2 &p) {
+    OsmNode n;
+    n.id = synth--;
+    proj.inverse(p, n.lat, n.lon);
+    out.nodes[n.id] = n;
+    return n.id;
+  };
+  for (const auto &[id, w] : in.ways) {
+    std::vector<std::vector<OsmId>> parts(1);
+    for (size_t i = 0; i + 1 < w.nodes.size(); ++i) {
+      auto ia = pos.find(w.nodes[i]), ib = pos.find(w.nodes[i + 1]);
+      if (ia == pos.end() || ib == pos.end()) continue;
+      const Vec2 a = ia->second, d = ib->second - a;
+      double t0 = 0, t1 = 1;
+      const double p[4] = {-d.x, d.x, -d.y, d.y}, q[4] = {a.x - box[0], box[2] - a.x, a.y - box[1], box[3] - a.y};
+      bool visible = true;
+      for (int k = 0; k < 4 && visible; ++k) {
+        if (std::abs(p[k]) < 1e-12) visible = q[k] >= 0;
+        else if (p[k] < 0) t0 = std::max(t0, q[k] / p[k]);
+        else t1 = std::min(t1, q[k] / p[k]);
+      }
+      if (!visible || t0 > t1) {
+        if (!parts.back().empty()) parts.emplace_back();
+        continue;
+      }
+      const OsmId na = t0 <= 1e-12 ? w.nodes[i] : addNode(a + d * t0);
+      const OsmId nb = t1 >= 1 - 1e-12 ? w.nodes[i + 1] : addNode(a + d * t1);
+      if (parts.back().empty() || parts.back().back() != na) {
+        if (!parts.back().empty()) parts.emplace_back();
+        parts.back().push_back(na);
+      }
+      parts.back().push_back(nb);
+      if (nb != w.nodes[i + 1]) parts.emplace_back();  // left the box
+    }
+    bool first = true;
+    for (auto &pt : parts) {
+      if (pt.size() < 2) continue;
+      OsmWay c = w;
+      c.nodes = pt;
+      if (!first) c.id = wayId--;  // further pieces of the same way
+      first = false;
+      out.ways[c.id] = c;
+    }
+  }
+  return out;
+}
+}  // namespace
+
+odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, const BuildOptions &opt,
                               BuildReport *report) {
+  OsmData clipped;
+  if (opt.clipBox) clipped = clipOsm(osmIn, proj, *opt.clipBox);
+  const OsmData &osm = opt.clipBox ? clipped : osmIn;
   detail::Builder b(osm, proj, opt);
   const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
   auto stage = [&](const char *name, void (detail::Builder::*fn)()) {
@@ -663,7 +711,10 @@ odr::OpenDrive buildOpenDrive(const OsmData &osm, const Projection &proj, const 
   stage("reference lines", &detail::Builder::buildRoadGeometry);
   stage("trim roads", &detail::Builder::trimRoads);
   stage("roads", &detail::Builder::buildRoads);
-  stage("elevation", &detail::Builder::buildElevation);
+  stage("resolve overlaps", &detail::Builder::resolveOverlaps);
+  stage("elevation samples", &detail::Builder::sampleElevation);
+  stage("junction surfaces", &detail::Builder::junctionSurfaces);
+  stage("elevation profiles", &detail::Builder::fitRoadElevation);
   stage("junctions", &detail::Builder::buildJunctions);
   stage("signals", &detail::Builder::buildSignals);
   stage("objects", &detail::Builder::buildObjects);

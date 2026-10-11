@@ -54,6 +54,21 @@ odr::OpenDrive od = buildOpenDrive(osm, Projection(lat0, lon0), opt, &rep);
 odr::write(od, "out.xodr", {opt.target.revMinor});
 ```
 
+### Real elevation
+
+```bat
+python tools\make_terrain.py --origin 34.054,-118.2575 --bounds 34.044,-118.27,34.064,-118.245 ^
+    --dem usgs_1m.tif --lidar tile.laz --ground ground.odrz --structures decks.odrz --datum NAVD88
+osm2xodr area.osm out.xodr --country US --target carla --origin 34.054,-118.2575 ^
+    --terrain ground.odrz --structures decks.odrz --clip 34.044,-118.27,34.064,-118.245
+```
+
+Roads follow the measured ground, and bridges follow their measured decks. Roads under another
+road keep 4.5 m clearance. Each junction is one plane shared by all its connecting roads, and
+crossfall is written as `superelevation`. Pass `--no-superelevation` for consumers that ignore it.
+The vertical datum of the grids is recorded in the header `userData`. See
+[docs/DESIGN.md](docs/DESIGN.md#real-elevation-elevationcpp).
+
 ## Visualise
 
 ```bat

@@ -268,7 +268,11 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
               R.maxLinkWidthDiff = std::max(R.maxLinkWidthDiff, std::abs(wo - wc));
               if (std::abs(wo - wc) > 0.02) err("spec10.lane_width_at_junction", R_ + "lane width differs from road " + o.id);
             }
-            const double dz = std::abs(odr::elevationAt(o, so) - odr::elevationAt(r, sc));
+            // surface height at the two lane centres (elevation + banking, spec 3)
+            double oa, ob, ca, cb;
+            odr::laneBorders(o, so, *ll, oa, ob);
+            odr::laneBorders(r, sc, l.id, ca, cb);
+            const double dz = std::abs(odr::surfaceZ(o, so, 0.5 * (oa + ob)) - odr::surfaceZ(r, sc, 0.5 * (ca + cb)));
             R.maxLinkZGap = std::max(R.maxLinkZGap, dz);
             if (dz > 0.01) err("spec10.elevation_at_links", R_ + "elevation differs from road " + o.id);
           }
@@ -367,6 +371,143 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
   }
   for (const auto &c : od.controllers)
     if (!referenced.count(c.id)) warn("spec7.2.controller_referenced", "controller " + c.id + " not referenced by any junction");
+
+  // ======================= visual quality (no jerks, no overlaps, one surface per junction)
+  for (const auto &r : od.roads) {
+    const std::string R_ = "road " + r.id + ": ";
+    for (size_t i = 1; i < r.elevation.size(); ++i) {
+      const auto &a = r.elevation[i - 1], &b = r.elevation[i];
+      if (std::abs(a.deriv(b.s - a.s) - b.b) > 0.005) err("quality.elevation_c1", R_ + "grade jumps at s=" + std::to_string(b.s));
+    }
+    for (size_t i = 1; i < r.superelevation.size(); ++i) {
+      const auto &a = r.superelevation[i - 1], &b = r.superelevation[i];
+      if (std::abs(a.eval(b.s - a.s) - b.a) > 1e-3) err("quality.superelevation_c0", R_ + "banking jumps at s=" + std::to_string(b.s));
+    }
+    for (double s = 0; s <= r.length(); s += 5.0)
+      if (std::abs(odr::elevationSlopeAt(r, s)) > 0.20) {
+        warn("quality.max_grade", R_ + "grade above 20 % at s=" + std::to_string(s));
+        break;
+      }
+    // grade continuity across connecting-road links
+    if (r.junction != "-1")
+      for (bool pred : {true, false}) {
+        const auto &lt = pred ? r.predecessor : r.successor;
+        if (!lt || lt->elementType != "road") continue;
+        auto it = roads.find(lt->elementId);
+        if (it == roads.end()) continue;
+        const odr::Road &o = *it->second;
+        const double so = lt->contactPoint == "end" ? o.length() : 0.0, sc = pred ? 0.0 : r.length();
+        const double align = std::cos(o.planView.eval(so).hdg - r.planView.eval(sc).hdg) >= 0 ? 1.0 : -1.0;
+        const double g1 = odr::elevationSlopeAt(o, so) * align, g2 = odr::elevationSlopeAt(r, sc);
+        if (std::abs(g1 - g2) > 0.01) err("quality.link_grade", R_ + "grade " + std::to_string(g2) + " vs " + std::to_string(g1) + " on road " + o.id);
+      }
+  }
+  // one surface per junction: overlapping connecting lanes must agree in height
+  {
+    std::map<std::string, std::vector<const odr::Road *>> byJunction;
+    for (const auto &r : od.roads)
+      if (r.junction != "-1") byJunction[r.junction].push_back(&r);
+    for (const auto &[jid, rs] : byJunction) {
+      struct P {
+        double x, y, z;
+        size_t road;
+      };
+      std::map<std::pair<long, long>, std::vector<P>> cells;
+      for (size_t k = 0; k < rs.size(); ++k) {
+        const odr::Road &r = *rs[k];
+        const auto &sec = r.lanes.front();
+        const int id = !sec.right.empty() ? sec.right.front().id : (!sec.left.empty() ? sec.left.front().id : 0);
+        if (!id) continue;
+        for (double s = 0.5; s < r.length() - 0.5; s += 1.0) {
+          Pose c;
+          double a, b;
+          if (!odr::laneCenter(r, s, id, c) || !odr::laneBorders(r, s, id, a, b)) continue;
+          const double z = odr::surfaceZ(r, s, 0.5 * (a + b));
+          cells[{static_cast<long>(std::floor(c.x / 0.5)), static_cast<long>(std::floor(c.y / 0.5))}].push_back({c.x, c.y, z, k});
+        }
+      }
+      std::set<std::pair<size_t, size_t>> reported;
+      for (const auto &[key, pts] : cells)
+        for (size_t i = 0; i < pts.size(); ++i)
+          for (size_t j = i + 1; j < pts.size(); ++j) {
+            if (pts[i].road == pts[j].road || std::hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) > 0.5) continue;
+            // compare both surfaces at the same point: project point i onto road j
+            const odr::Road &q = *rs[pts[j].road];
+            double sq, tq;
+            q.planView.project({pts[i].x, pts[i].y}, sq, tq);
+            const Pose pq = q.planView.eval(sq);
+            if (std::abs((Vec2(pts[i].x, pts[i].y) - pq.pos()).dot(pq.dir())) > 0.05) continue;
+            const double dz = std::abs(odr::surfaceZ(q, sq, tq) - pts[i].z);
+            if (dz <= 0.01) continue;
+            const auto pr = std::minmax(pts[i].road, pts[j].road);
+            if (reported.insert(pr).second)
+              err("quality.junction_surface", "junction " + jid + ": roads " + rs[pr.first]->id + " and " + rs[pr.second]->id +
+                                                  " differ by " + std::to_string(dz) + " m where they overlap");
+          }
+    }
+  }
+  // separate roads must not overlap outside junctions at the same level
+  {
+    struct S {
+      size_t road;
+      double s;
+    };
+    std::vector<const odr::Road *> rs;
+    for (const auto &r : od.roads)
+      if (r.junction == "-1") rs.push_back(&r);
+    std::map<std::pair<long, long>, std::vector<S>> grid;
+    const double cell = 20.0;
+    for (size_t k = 0; k < rs.size(); ++k)
+      for (double s = 0; s <= rs[k]->length(); s += 4.0) {
+        const Pose p = rs[k]->planView.eval(s);
+        grid[{static_cast<long>(std::floor(p.x / cell)), static_cast<long>(std::floor(p.y / cell))}].push_back({k, s});
+      }
+    std::set<std::pair<size_t, size_t>> reported;
+    for (size_t k = 0; k < rs.size(); ++k) {
+      const odr::Road &r = *rs[k];
+      for (double s = 1.0; s < r.length() - 1.0; s += 2.0) {
+        const odr::LaneSection &sec = odr::sectionAt(r, s);
+        for (const auto *side : {&sec.left, &sec.right})
+          for (const auto &l : *side) {
+            if (l.type != "driving") continue;
+            Pose c;
+            double a, b;
+            if (!odr::laneCenter(r, s, l.id, c) || !odr::laneBorders(r, s, l.id, a, b) || std::abs(b - a) < 0.5) continue;
+            const double z = odr::surfaceZ(r, s, 0.5 * (a + b));
+            std::set<size_t> cand;
+            const long cx = static_cast<long>(std::floor(c.x / cell)), cy = static_cast<long>(std::floor(c.y / cell));
+            for (long dx = -1; dx <= 1; ++dx)
+              for (long dy = -1; dy <= 1; ++dy)
+                if (auto it = grid.find({cx + dx, cy + dy}); it != grid.end())
+                  for (const auto &smp : it->second)
+                    if (smp.road != k) cand.insert(smp.road);
+            for (size_t o : cand) {
+              if (reported.count(std::minmax(k, o))) continue;
+              const odr::Road &q = *rs[o];
+              double so, to;
+              q.planView.project(c.pos(), so, to);
+              if (so < 1.0 || so > q.length() - 1.0) continue;
+              const Pose po = q.planView.eval(so);
+              if (std::abs((c.pos() - po.pos()).dot(po.dir())) > 0.3) continue;
+              const odr::LaneSection &qs = odr::sectionAt(q, so);
+              bool inside = false;
+              for (const auto *qside : {&qs.left, &qs.right})
+                for (const auto &ql : *qside) {
+                  double qa, qb;
+                  if (ql.type != "driving" || !odr::laneBorders(q, so, ql.id, qa, qb)) continue;
+                  if (to > std::min(qa, qb) + 0.2 && to < std::max(qa, qb) - 0.2) inside = true;
+                }
+              if (inside && std::abs(odr::surfaceZ(q, so, to) - z) < 3.0) {
+                reported.insert(std::minmax(k, o));
+                err("quality.road_overlap", "roads " + r.id + " (z " + std::to_string(z) + ") and " + q.id + " (z " +
+                                                std::to_string(odr::surfaceZ(q, so, to)) + ") overlap at the same level near (" +
+                                                std::to_string(static_cast<int>(c.x)) + ", " + std::to_string(static_cast<int>(c.y)) + ")");
+              }
+            }
+          }
+      }
+    }
+  }
   return R;
 }
 

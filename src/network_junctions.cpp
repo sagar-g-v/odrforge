@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <ctime>
 #include <limits>
@@ -249,11 +251,18 @@ void Builder::buildJunctions() {
           if (const auto *srcLane = odr::findLane(odr::sectionAt(ri, sIn), li)) l.speedMax = srcLane->speedMax;
           (LHT ? sec.left : sec.right).push_back(l);
           c.lanes.push_back(sec);
-          // elevation: Hermite between the two road ends (travel-direction slopes)
-          const double z0 = odr::elevationAt(ri, sIn), z1 = odr::elevationAt(ro, sOut);
-          const double m0 = odr::elevationSlopeAt(ri, sIn) * (in.atEnd ? 1.0 : -1.0);
-          const double m1 = odr::elevationSlopeAt(ro, sOut) * (tg.end->atEnd ? -1.0 : 1.0);
-          c.elevation.push_back(odr::Poly3::hermite(0.0, L, z0, m0, z1, m1));
+          // elevation and banking from the junction surface (shared by every connecting road)
+          if (cl.hasPlane) {
+            // flat cross sections (no superelevation): the plane plus a C1 correction that meets the
+            // two road surfaces exactly at the lane centres
+            const double z0 = odr::surfaceZ(ri, sIn, 0.5 * (ta + tb)), z1 = odr::surfaceZ(ro, sOut, 0.5 * (ua + ub));
+            connectingElevation(c, cl, opt.target.superelevation ? std::nullopt : std::optional<std::pair<double, double>>({z0, z1}));
+          } else {  // no junction surface: Hermite between the two road ends (C1)
+            const double z0 = odr::surfaceZ(ri, sIn, 0.5 * (ta + tb)), z1 = odr::surfaceZ(ro, sOut, 0.5 * (ua + ub));
+            const double m0 = odr::elevationSlopeAt(ri, sIn) * (in.atEnd ? 1.0 : -1.0);
+            const double m1 = odr::elevationSlopeAt(ro, sOut) * (tg.end->atEnd ? -1.0 : 1.0);
+            c.elevation.push_back(odr::Poly3::hermite(0.0, L, z0, m0, z1, m1));
+          }
           odr::Connection cn;
           cn.id = std::to_string(connIdx++);
           cn.incomingRoad = ri.id;
@@ -628,12 +637,66 @@ void Builder::finish() {
   od.header.east = maxX;
   od.header.west = minX;
   od.header.geoReference = proj.projString();
+  if (!opt.verticalDatum.empty()) od.header.userData["verticalDatum"] = opt.verticalDatum;
   od.header.revMinor = opt.target.revMinor;
   char buf[64];
   const std::time_t now = std::time(nullptr);
   std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", std::gmtime(&now));
   od.header.date = buf;
   rep.roads = static_cast<int>(metas.size());
+  if (opt.terrain && !opt.terrain->ground.empty()) {
+    std::vector<double> dev;
+    for (const RoadMeta &m : metas) {
+      if (m.roadIndex < 0) continue;
+      const odr::Road &r = od.roads[m.roadIndex];
+      for (double s = 1.0; s < r.length() - 1.0; s += 5.0) {
+        bool structure = false;
+        for (const auto *rg : {&m.bridges, &m.tunnels})
+          for (const auto &[a, bb] : *rg) structure |= s + m.trimStart >= a - 5 && s + m.trimStart <= bb + 5;
+        if (structure) continue;
+        const odr::LaneSection &sec = odr::sectionAt(r, s);
+        for (const auto *side : {&sec.left, &sec.right})
+          for (const auto &l : *side) {
+            if (l.type != "driving") continue;
+            Pose c;
+            double ta, tb;
+            if (!odr::laneCenter(r, s, l.id, c) || !odr::laneBorders(r, s, l.id, ta, tb)) continue;
+            const double g = opt.terrain->ground_at(c.x, c.y);
+            if (!std::isnan(g)) dev.push_back(std::abs(odr::surfaceZ(r, s, 0.5 * (ta + tb)) - g));
+          }
+      }
+    }
+    // steep spots: real (the measured ground is as steep) or artefacts of the profile fit
+    for (const RoadMeta &m : metas) {
+      if (m.roadIndex < 0) continue;
+      const odr::Road &r = od.roads[m.roadIndex];
+      for (double s = 5.0; s < r.length() - 5.0; s += 5.0) {
+        const double g = std::abs(odr::elevationSlopeAt(r, s));
+        if (g <= 0.20) continue;
+        ++rep.steepSpots;
+        const Pose a = r.planView.eval(s - 5.0), b = r.planView.eval(s + 5.0);
+        const double za = opt.terrain->ground_at(a.x, a.y), zb = opt.terrain->ground_at(b.x, b.y);
+        bool structure = false;
+        for (const auto *rg : {&m.bridges, &m.tunnels})
+          for (const auto &[x0, x1] : *rg) structure |= s + m.trimStart >= x0 - 10 && s + m.trimStart <= x1 + 10;
+        if (structure || std::isnan(za) || std::isnan(zb) || g - std::abs(zb - za) / 10.0 > 0.03) {
+          ++rep.steepNotInTerrain;
+          if (std::getenv("ODRFORGE_DEBUG_GRADE"))
+            std::fprintf(stderr, "steep road %s s=%.0f grade %.3f terrain %.3f\n", r.id.c_str(), s, g,
+                         std::abs(zb - za) / 10.0);
+        }
+      }
+    }
+    if (!dev.empty()) {
+      std::sort(dev.begin(), dev.end());
+      double sum = 0;
+      for (double d : dev) sum += d;
+      rep.elevMeanDev = sum / dev.size();
+      rep.elevP95Dev = dev[static_cast<size_t>(0.95 * (dev.size() - 1))];
+      rep.elevMaxDev = dev.back();
+      rep.elevSamples = static_cast<int>(dev.size());
+    }
+  }
   if (!fitDev.empty()) {
     std::sort(fitDev.begin(), fitDev.end());
     double sum = 0;

@@ -50,6 +50,10 @@ struct TargetProfile {
   bool trafficLightZeroOffset = true; ///< place traffic-light signals on the road surface (CARLA spawns poles)
   size_t maxIdLength = 0;             ///< CARLA: 32
   bool writeLaneOffsetForConnecting = true;
+  /// false: flat cross sections for consumers that ignore <superelevation> (LibCarla's own road
+  /// meshing: ProfilesParser does not apply it). Junction surfaces are then level, so overlapping
+  /// connecting lanes still agree exactly.
+  bool superelevation = true;
   static TargetProfile byName(const std::string &name);
 };
 

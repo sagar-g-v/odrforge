@@ -47,6 +47,9 @@ add_library(odrforge
   src/network_junctions.cpp
   src/validate.cpp
   src/odr_reader.cpp
+  src/terrain.cpp
+  src/elevation.cpp
+  src/overlap.cpp
   src/viz.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp
 )
@@ -74,7 +77,7 @@ endif()
 if(ODRFORGE_BUILD_TESTS)
   enable_testing()
   add_executable(odrforge_tests tests/test_main.cpp tests/test_geometry.cpp tests/test_projection.cpp
-    tests/test_spec.cpp tests/test_network.cpp)
+    tests/test_spec.cpp tests/test_network.cpp tests/test_elevation.cpp)
   target_link_libraries(odrforge_tests PRIVATE odrforge)
   set(ODRFORGE_TEST_OUT ${CMAKE_CURRENT_BINARY_DIR}/test_out)
   file(MAKE_DIRECTORY ${ODRFORGE_TEST_OUT})

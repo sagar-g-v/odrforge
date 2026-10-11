@@ -2,6 +2,37 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-11
+
+### Added
+- **Real elevation from open data.**
+  - `tools/make_terrain.py` builds ground and bridge-deck grids (`.odrz`, with stacked deck levels)
+    from a DEM plus lidar.
+  - `osm2xodr --terrain/--structures` uses them. Roads follow their measured surface, chosen by
+    dynamic programming over ground and deck levels.
+  - Grade separation keeps 4.5 m clearance.
+  - Covered ways and tunnels are not read from the surface above them.
+  - The terrain crossfall is written as `superelevation`.
+- **Junction surfaces.** Each junction is one plane chosen by consensus of the measured evidence.
+  Roads are re-fitted to it (C1), and connecting roads take height and banking from it.
+- **Overlap resolution** for near-parallel roads drawn too close in OSM: a bounded, tapered extra
+  `laneOffset`.
+- **`--clip`:** cuts the network to a lat/lon box, with ways split exactly at the boundary.
+- **`--no-superelevation`:** flat cross sections and level junctions for consumers that ignore
+  `superelevation`.
+- **Quality rules:** `elevation_c1`, `superelevation_c0`, `max_grade`, `link_grade`,
+  `junction_surface`, `road_overlap`.
+- **ASAM XSD conformance test.** OpenDRIVE 1.8.1 schemas are included; `xmlschema` is needed.
+- **Tests (42 cases):** terrain grid, sloped terrain, bridge deck, overlap, clip, covered way,
+  wall-top outlier, flat mode, untagged crossing.
+
+### Fixed
+- Junction nodes on different measured levels (for example a street and a trenched freeway joined
+  by a ramp) are no longer merged into one junction.
+- Freeway and ramp ends may be trimmed back up to 160 m, so gores no longer overlap.
+- `roadMark` `height` is only written when it is positive (XSD).
+- Header `userData` order (XSD).
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

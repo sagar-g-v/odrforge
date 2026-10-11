@@ -42,12 +42,13 @@ The research behind this design is in `docs/research/`:
 | collect segments | Selects road ways (`highway` set, `service` exclusions, `access`) and splits them at shared nodes. Builds the cross-section from tags (`lanes.cpp`). |
 | junction nodes | Marks nodes with 3+ segment ends, and 2-end nodes where two oneways conflict. |
 | chains | Joins pass-through segments into roads, oriented along the oneway traffic. |
-| cluster junctions | Union-find merges intersection nodes joined by segments shorter than the sum of their carriageway half-widths plus slack, which turns dual-carriageway crossings into one junction. Internal segments are dropped. |
+| cluster junctions | Union-find merges intersection nodes joined by segments shorter than the sum of their carriageway half-widths plus slack, which turns dual-carriageway crossings into one junction. Internal segments are dropped. With terrain, two nodes merge only if some measured surface at each (ground or a deck level) is within a junction grade of the other, so a ramp between a street and a trenched freeway stays a road. |
 | reference lines | Fits a clothoid spline through each chain polyline (`clothoid_fit.cpp`). Lane sections start at way joints, and every OSM node gets its `s`. |
-| trim roads | Scans each road end outward from its junction until neither carriageway edge overlaps another road of the junction, then adds the stop-line setback and the curb return. |
+| trim roads | Scans each road end outward from its junction until neither carriageway edge overlaps another road of the junction, then adds the stop-line setback and the curb return. Freeways and ramps may be trimmed back up to 160 m, because ramps leave at shallow angles. |
+| resolve overlaps | Near-parallel roads on the same layer that OSM draws closer than their lanes are wide get pushed apart by a smooth extra `laneOffset`: at most 3 m, tapered at no more than about 5 %. Gores (two roads converging into the same junction) are left to the junction. |
 | roads | Builds lane sections with tapers and lane links, `laneOffset` held across one-sided changes, road types, speeds, and bridges and tunnels. |
-| elevation | Samples the terrain function every 5 m, interpolates bridges and tunnels between their ends, smooths, and fits C1 cubic Hermite `elevation` records. |
-| junctions | Builds connecting roads per movement: a single G1 clothoid, or a curvature-continuous 2-piece curve when it would be tighter than `minConnectingRadius`. Width and `laneOffset` follow cubics, and elevation is a Hermite between the two road ends. |
+| elevation | Fits measured terrain to the roads (see [Real elevation](#real-elevation-elevationcpp)). The output is C1 cubic Hermite `elevation` records and `superelevation` (crossfall). |
+| junctions | Builds connecting roads per movement: a single G1 clothoid, or a curvature-continuous 2-piece curve when it would be tighter than `minConnectingRadius`. Width and `laneOffset` follow cubics. Height and banking come from the junction surface, so every connecting road of a junction lies on one plane. |
 | signals | Creates traffic lights, controllers and junction references, stop and give-way signs, and speed-limit signs. |
 | objects | Adds crosswalks (mapped crossings, plus every approach of signalised junctions), street lamps and trees. |
 
@@ -87,6 +88,57 @@ Unit tests (`tests/test_geometry.cpp`) cover:
 | Placement | `placement` / `placement:forward` (`left_of`, `middle_of`, `right_of`) sets `laneOffset`. The default is the middle of the carriageway. |
 | Road marks | Broken lines between same-direction lanes; the centre line by country style (US `solid solid` yellow); solid edge lines next to bike and parking lanes and on motorways; `bold` edges for bus lanes. |
 
+## Real elevation (`elevation.cpp`)
+
+Heights come from open data. Use national lidar where it exists (USGS 3DEP, UK EA, NL AHN, FR IGN
+LiDAR HD) and a DEM elsewhere (3DEP 1 m, or Copernicus GLO-30 / FABDEM worldwide).
+`tools/make_terrain.py` converts these into two grids in the OdrForge frame:
+- **ground:** the bare-earth DEM, refined by lidar ground points that agree with it within 0.5 m.
+- **decks:** lidar class 17, plus "ground" points more than 2 m above the DEM (overpasses the
+  classifier missed). Stacked decks are kept as up to 4 levels per cell.
+
+From those grids, heights are built in nine steps:
+
+1. **Candidates.** Every 2 m along a road, the ground and every deck level at the carriageway centre
+   are candidate surfaces. OSM bridges may only use decks. Tunnels and `covered=yes` ways have no
+   candidates, so the surface above them never becomes the road.
+2. **Surface choice.** Dynamic programming along the road picks the candidate sequence with the
+   fewest jumps. Unobserved stretches are allowed (skip states), and grades above 30 % are penalised.
+3. **Grade separation.** Roads that overlap in plan without a junction keep 4.5 m clearance. The
+   lower OSM layer gives way; the layer within 30 m counts, because bridge ways often end short of
+   the crossing. If neither road is tagged, the one already lower gives way, and on a tie the lower
+   road class. An excluded level continues along the lower road while its surface stays in the band
+   (shoulders and gores of the upper structure).
+4. **Smoothing.** A Whittaker smoother (second differences, banded LDLᵀ) with Tukey reweighting
+   rejects walls, kerbs and vehicles. A grade guard adds smoothing where the profile is steeper than
+   the terrain supports.
+5. **Crossfall.** The terrain cross slope over the carriageway becomes `superelevation`, smoothed and
+   limited to 8 %.
+6. **Junction surfaces.** Each junction is one plane. Its level is the height supported by the most
+   evidence: road ends weighted by class and by how close to the junction they were measured, plus
+   the ground at the centre. An end counts as agreeing if a 12 % grade can reach it. The plane is
+   then fitted through the agreeing ends and the measured ground on that level (robust, gradient
+   ≤ 15 %).
+7. **Re-fit to the planes.** Every road's measured profile is fitted again with the planes' heights
+   and gradients as boundary conditions, so a level difference spreads over the road instead of
+   forming a step. A short C1 Hermite blend removes the centimetre residue. Stubs shorter than 6 m
+   simply continue the plane.
+8. **Connecting roads.** Height and banking are sampled from the plane every 2 m, so all lanes of a
+   junction share one surface and match the road ends exactly.
+9. **Flat cross sections (`--no-superelevation`).** For consumers that ignore `superelevation`
+   (LibCarla's own meshing), there is no crossfall and junctions are level, so overlapping lanes
+   still agree. This mode is steeper next to junctions on hills.
+
+Measured on downtown Los Angeles with USGS 3DEP 1 m and LA County 2023 lidar:
+- lane centres sit 0.09 m from the measured ground on average (p95 0.20 m);
+- 0 junction-surface mismatches;
+- link height gaps under 1 cm;
+- 0 position jumps in CARLA (previously 133 vertical and 190 horizontal);
+- 0 ASAM 1.8.1 XSD errors.
+
+The remaining grades above 20 % are private garage ramps and driveways through the Bunker Hill
+slope, where the measured terrain itself is that steep.
+
 ## Measured on Los Angeles downtown (16 MB OSM, CARLA target, US rules)
 
 Both files were loaded with CARLA's own parser (LibCarla 0.10 Python API). Every driving lane was then
@@ -115,7 +167,9 @@ walked in 1 m steps: `scripts/compare_xodr_carla.py` in MirrorMile.
   areas, and destination signs.
 - **Signals:** per-lane-group heads, signal groups for protected turns, and `dependency` /
   `reference` links.
-- **Inputs:** OSM PBF via libosmium, and terrain from GeoTIFF through a small raster reader (today
-  terrain comes as a callback).
+- **Inputs:** OSM PBF via libosmium, and GeoTIFF terrain read directly (today it goes through
+  `make_terrain.py` to `.odrz`).
+- **Gores as lane-level merges:** model freeway exits and entries as a widening lane on the
+  freeway, instead of trimming both roads back. This would remove the last overlap reports.
 - **Python bindings (pybind11)** and MirrorMile integration, replacing steps 01–02f.
 - **More country rule files,** plus the US state and EU zone speed tables.

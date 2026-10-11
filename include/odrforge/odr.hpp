@@ -167,6 +167,7 @@ struct Header {
   std::string name, version = "1", vendor = "OdrForge", date;
   double north = 0, south = 0, east = 0, west = 0;
   std::string geoReference;  ///< PROJ string
+  std::map<std::string, std::string> userData;  ///< e.g. verticalDatum
   double offX = 0, offY = 0, offZ = 0, offHdg = 0;
 };
 
@@ -193,6 +194,9 @@ bool laneCenter(const Road &r, double s, int laneId, Pose &out);
 const Lane *findLane(const LaneSection &sec, int laneId);
 double elevationAt(const Road &r, double s);
 double elevationSlopeAt(const Road &r, double s);
+double superelevationAt(const Road &r, double s);  ///< rad; positive: the road falls to the right
+/// Road surface height at (s, t): elevation + t * tan(superelevation) (lane height not included).
+double surfaceZ(const Road &r, double s, double t);
 
 /// Read an OpenDRIVE file (1.4 - 1.8; line, arc, spiral, poly3, paramPoly3; width or border lanes).
 OpenDrive read(const std::string &path);
