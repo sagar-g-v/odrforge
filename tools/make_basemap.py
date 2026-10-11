@@ -340,6 +340,7 @@ def main():
     ap.add_argument("--naip-service", default="https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer",
                     help="image service (USGSNAIPPlus has up to 0.3 m where HRO exists but is often overloaded)")
     ap.add_argument("--naip-res", type=float, default=0.6, help="metres per pixel of the stored imagery (NAIP is 0.6 m)")
+    ap.add_argument("--naip-dir", default="naip", help="folder of the imagery pyramid (written fresh, then listed)")
     a = ap.parse_args()
     lat0, lon0 = map(float, a.origin.split(","))
     b = list(map(float, a.bounds.split(",")))
@@ -365,15 +366,17 @@ def main():
                          "x0": x0, "y1": y1, "res": a.res, "tile": 512, "levels": levels,
                          "attribution": "Map data © OpenStreetMap contributors (ODbL), rendered by OdrForge"}
     if a.naip:
-        print("downloading USGS NAIP Plus ...")
+        plus = "NAIPPlus" in a.naip_service
+        print(f"downloading USGS {'NAIP Plus' if plus else 'NAIP'} at {a.naip_res} m/px ...")
         nres = a.naip_res
         nx1 = x0 + math.ceil((x1 - x0) / nres) * nres
         ny0 = y1 - math.ceil((y1 - y0) / nres) * nres
         img = fetch_naip(x0, ny0, nx1, y1, nres, lat0, lon0, a.naip_service)
-        levels = write_pyramid(img, a.out, "naip", "jpg")
-        layers["naip"] = {"id": "naip", "name": "HD satellite (offline, USGS NAIP)", "dir": "naip", "ext": "jpg",
+        levels = write_pyramid(img, a.out, a.naip_dir, "jpg")
+        src = "USGS NAIP Plus" if plus else "USGS NAIP"
+        layers["naip"] = {"id": "naip", "name": f"HD satellite (offline, {src} {nres:g} m)", "dir": a.naip_dir, "ext": "jpg",
                           "x0": x0, "y1": y1, "res": nres, "tile": 512, "levels": levels,
-                          "attribution": "Imagery: USGS / USDA NAIP, The National Map (public domain)"}
+                          "attribution": f"Imagery: {src} (USDA / USGS), The National Map (public domain)"}
     # merge with what is on disk now (another run may have added a layer meanwhile)
     if os.path.exists(meta_path):
         for l in json.load(open(meta_path))["layers"]:
