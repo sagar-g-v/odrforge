@@ -72,6 +72,15 @@ canvas.drag { cursor: grabbing; }
 #scale { position: absolute; left: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--line);
   border-radius: 6px; padding: 3px 8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #menu { position: absolute; left: 12px; top: 12px; display: none; }
+#attrib { position: absolute; right: 0; bottom: 0; background: color-mix(in srgb, var(--panel) 85%, transparent);
+  padding: 2px 6px; font-size: 11px; color: var(--muted); display: none; border-top-left-radius: 6px; }
+#attrib a { color: var(--accent); }
+#mapctl { display: none; margin-top: 6px; padding: 8px; background: var(--panel-2); border-radius: 8px; }
+#mapctl label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; margin: 2px 0; }
+#mapctl input[type=range] { width: 120px; accent-color: var(--accent); }
+#mapctl input[type=text] { width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); font: 11px ui-monospace, monospace; margin-top: 4px; }
+#mapctl .note { color: var(--muted); font-size: 11px; margin-top: 4px; }
 @media (max-width: 760px) {
   #side { position: absolute; z-index: 5; left: 0; top: 0; bottom: 0; width: min(300px, 86vw); transform: translateX(-100%); transition: transform .2s; }
   #side.open { transform: none; box-shadow: 0 0 30px rgba(0,0,0,.4); }
@@ -99,6 +108,13 @@ canvas.drag { cursor: grabbing; }
       <section>
         <h2>Layers</h2>
         <div id="layers"></div>
+        <div id="mapctl">
+          <label>Map opacity <input type="range" id="mapop" min="0" max="1" step="0.05" value="0.9"></label>
+          <label>Road opacity <input type="range" id="roadop" min="0.1" max="1" step="0.05" value="0.55"></label>
+          <input type="text" id="tileurl" title="Tile URL template ({z}/{x}/{y})">
+          <div class="note" id="mapnote">Tiles are placed with this file's own projection, under the roads in the
+            same place: a gap or an offset between the two is a difference to look at.</div>
+        </div>
       </section>
       <section>
         <h2>Lane types</h2>
@@ -125,6 +141,7 @@ canvas.drag { cursor: grabbing; }
       <button id="theme" title="Toggle theme">◐</button>
     </div>
     <div id="scale"></div>
+    <div id="attrib">&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
     <div id="tip"></div>
   </div>
 </div>
@@ -222,16 +239,100 @@ $("stats").innerHTML = statItems.map(([k, v]) => `<div class="stat"><b>${Number(
 if (S.valErrors !== undefined)
   $("valid").innerHTML = `Validation <span class="badge ${S.valErrors ? "err" : "ok"}">${S.valErrors} errors · ${S.valWarnings} warnings</span>` +
     `<div class="sub" style="margin-top:4px">max lane-link gap ${(S.maxLinkGap * 100).toFixed(1)} cm</div>`;
-const layers = { lanes: true, junctions: true, marks: true, ref: false, heat: false, signals: true, objects: true };
-const layerNames = { lanes: "Lanes", junctions: "Junction areas", marks: "Road marks", ref: "Reference lines",
-  heat: "Curvature heat map", signals: "Signals and signs", objects: "Objects (crosswalks, lamps, trees)" };
+const layers = { basemap: false, lanes: true, junctions: true, marks: true, ref: false, heat: false, signals: true, objects: true };
+const layerNames = { basemap: "OpenStreetMap (Carto) underneath", lanes: "Lanes", junctions: "Junction areas", marks: "Road marks",
+  ref: "Reference lines", heat: "Curvature heat map", signals: "Signals and signs", objects: "Objects (crosswalks, lamps, trees)" };
 $("layers").innerHTML = Object.keys(layers).map((k) =>
   `<label class="tog"><input type="checkbox" data-k="${k}" ${layers[k] ? "checked" : ""}>${layerNames[k]}</label>`).join("");
-$("layers").addEventListener("change", (e) => { layers[e.target.dataset.k] = e.target.checked; draw(); });
+$("layers").addEventListener("change", (e) => { layers[e.target.dataset.k] = e.target.checked; mapUi(); draw(); });
 function legend() {
   $("legend").innerHTML = LANE_TYPES.slice(0, 8).map((t, i) => `<div><span class="sw" style="background:${css(LANE_VARS[i])}"></span>${t}</div>`).join("");
 }
 legend();
+
+// ---------- optional basemap: OpenStreetMap raster tiles underneath the network. The tiles are
+// placed with the file's own transverse Mercator (header geoReference), so the generated roads and
+// the map can be compared directly. Off by default: it is the only thing that fetches from the web.
+const GEO = (() => {
+  const g = DATA.geo || "";
+  if (!/\+proj=tmerc/.test(g)) return null;
+  const num = (k, d) => { const m = g.match(new RegExp("\\+" + k + "=([-0-9.eE+]+)")); return m ? parseFloat(m[1]) : d; };
+  return { lat0: num("lat_0", 0), lon0: num("lon_0", 0), k0: num("k", num("k_0", 1)), x0: num("x_0", 0), y0: num("y_0", 0) };
+})();
+const ORIGIN = DATA.origin || [0, 0];
+const WGS = { a: 6378137, e2: (1 / 298.257223563) * (2 - 1 / 298.257223563) };
+WGS.ep2 = WGS.e2 / (1 - WGS.e2);
+function meridian(phi) { // meridian arc length (Snyder 3-21)
+  const { a, e2 } = WGS, e4 = e2 * e2, e6 = e4 * e2;
+  return a * ((1 - e2 / 4 - 3 * e4 / 64 - 5 * e6 / 256) * phi - (3 * e2 / 8 + 3 * e4 / 32 + 45 * e6 / 1024) * Math.sin(2 * phi)
+    + (15 * e4 / 256 + 45 * e6 / 1024) * Math.sin(4 * phi) - (35 * e6 / 3072) * Math.sin(6 * phi));
+}
+function geoToWorld(lat, lon) { // transverse Mercator forward (Snyder 8-9 / 8-10), then the viewer's origin
+  const { a, e2, ep2 } = WGS, d = Math.PI / 180, phi = lat * d, sn = Math.sin(phi), cs = Math.cos(phi), tn = Math.tan(phi);
+  const N = a / Math.sqrt(1 - e2 * sn * sn), T = tn * tn, C = ep2 * cs * cs, A = (lon - GEO.lon0) * d * cs;
+  const x = GEO.k0 * N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T * T + 72 * C - 58 * ep2) * A ** 5 / 120);
+  const y = GEO.k0 * (meridian(phi) - meridian(GEO.lat0 * d) + N * tn * (A * A / 2 + (5 - T + 9 * C + 4 * C * C) * A ** 4 / 24
+    + (61 - 58 * T + T * T + 600 * C - 330 * ep2) * A ** 6 / 720));
+  return [x + GEO.x0 - ORIGIN[0], y + GEO.y0 - ORIGIN[1]];
+}
+function worldToGeoApprox(x, y) { // linearised at the origin: only to choose which tiles to fetch
+  const d = Math.PI / 180, phi = GEO.lat0 * d, sn = Math.sin(phi), { a, e2 } = WGS;
+  const N = a / Math.sqrt(1 - e2 * sn * sn), M = a * (1 - e2) / Math.pow(1 - e2 * sn * sn, 1.5);
+  return [GEO.lat0 + (y + ORIGIN[1] - GEO.y0) / (GEO.k0 * M) / d, GEO.lon0 + (x + ORIGIN[0] - GEO.x0) / (GEO.k0 * N * Math.cos(phi)) / d];
+}
+const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private window: not kept */ } } };
+const basemap = { url: store.get("odrforge.tileurl") || OSM_TILES, opacity: 0.9, roads: 0.55, tiles: new Map() };
+$("tileurl").value = basemap.url;
+$("mapop").addEventListener("input", (e) => { basemap.opacity = +e.target.value; draw(); });
+$("roadop").addEventListener("input", (e) => { basemap.roads = +e.target.value; draw(); });
+$("tileurl").addEventListener("change", (e) => {
+  basemap.url = e.target.value.trim() || OSM_TILES; store.set("odrforge.tileurl", basemap.url); basemap.tiles.clear(); draw();
+});
+function mapUi() {
+  $("mapctl").style.display = layers.basemap ? "block" : "none";
+  $("attrib").style.display = layers.basemap ? "block" : "none";
+  if (!GEO) $("mapnote").textContent = "This file has no transverse Mercator geoReference: the map cannot be placed.";
+}
+function tileImage(z, x, y) {
+  const k = z + "/" + x + "/" + y;
+  let t = basemap.tiles.get(k);
+  if (!t) {
+    t = new Image();
+    t.onload = draw;
+    t.onerror = () => { t.failed = true; };
+    t.src = basemap.url.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+    basemap.tiles.set(k, t);
+    if (basemap.tiles.size > 800) basemap.tiles.delete(basemap.tiles.keys().next().value);
+  }
+  return t;
+}
+function drawBasemap(view) {
+  if (!GEO) return;
+  const [la0, lo0] = worldToGeoApprox(view[0], view[1]), [la1, lo1] = worldToGeoApprox(view[2], view[3]);
+  const latc = 0.5 * (la0 + la1), d = Math.PI / 180;
+  // one tile pixel about one device pixel (256 px tiles: 156543.03 m per pixel at zoom 0)
+  const z = Math.max(2, Math.min(19, Math.round(Math.log2(156543.03392 * Math.cos(latc * d) * scale * dpr))));
+  const n = 2 ** z;
+  const tx = (lon) => Math.floor((lon + 180) / 360 * n);
+  const ty = (lat) => Math.floor((1 - Math.log(Math.tan(lat * d) + 1 / Math.cos(lat * d)) / Math.PI) / 2 * n);
+  const xa = tx(Math.min(lo0, lo1)) - 1, xb = tx(Math.max(lo0, lo1)) + 1, ya = ty(Math.max(la0, la1)) - 1, yb = ty(Math.min(la0, la1)) + 1;
+  if ((xb - xa + 1) * (yb - ya + 1) > 600) return;
+  const tlon = (x) => x / n * 360 - 180, tlat = (y) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) / d;
+  const scr = (w) => [(w[0] - cx) * scale + vw / 2, vh / 2 - (w[1] - cy) * scale];
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.globalAlpha = basemap.opacity;
+  for (let x = Math.max(0, xa); x <= Math.min(n - 1, xb); x++)
+    for (let y = Math.max(0, ya); y <= Math.min(n - 1, yb); y++) {
+      const img = tileImage(z, x, y);
+      if (!img.complete || img.failed || !img.naturalWidth) continue;
+      const p = scr(geoToWorld(tlat(y), tlon(x))), q = scr(geoToWorld(tlat(y + 1), tlon(x + 1)));
+      ctx.drawImage(img, p[0], p[1], q[0] - p[0] + 0.5, q[1] - p[1] + 0.5);  // half a pixel overlap: no seams
+    }
+  ctx.restore();
+}
 
 // ---------- view
 const cv = $("cv"), ctx = cv.getContext("2d");
@@ -250,8 +351,10 @@ function render() {
   const C = {}; for (const v of LANE_VARS.concat(["--lane-junction", "--mark-white", "--mark-yellow", "--ref", "--bg", "--accent", "--text"])) C[v] = css(v);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = C["--bg"]; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.setTransform(scale * dpr, 0, 0, -scale * dpr, (vw / 2 - cx * scale) * dpr, (vh / 2 + cy * scale) * dpr);
   const [x0, y1] = toWorld(0, 0), [x1, y0] = toWorld(vw, vh), view = [x0, y0, x1, y1];
+  if (layers.basemap) drawBasemap(view);
+  const roadAlpha = layers.basemap ? basemap.roads : 1;
+  ctx.setTransform(scale * dpr, 0, 0, -scale * dpr, (vw / 2 - cx * scale) * dpr, (vh / 2 + cy * scale) * dpr);
   const px = 1 / scale; // one screen pixel in metres
   if (layers.lanes) {
     for (const l of lanes) {
@@ -259,7 +362,7 @@ function render() {
       const j = roads[l.road].junction !== "-1";
       if (j && !layers.junctions) continue;
       ctx.fillStyle = j && l.type === 0 ? C["--lane-junction"] : C[LANE_VARS[l.type]];
-      ctx.globalAlpha = j ? 0.55 : 1;
+      ctx.globalAlpha = (j ? 0.55 : 1) * roadAlpha;
       ctx.fill(l.path);
     }
     ctx.globalAlpha = 1;

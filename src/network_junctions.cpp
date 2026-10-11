@@ -36,6 +36,13 @@ ReferenceLine connectionPath(const Pose &a, const Pose &b) {
   auto consider = [&](std::vector<GeomElement> els) {
     ReferenceLine l;
     l.elements = std::move(els);
+    // numerically straight pieces (solver noise, curvature ~1e-8) become exact lines: readers evaluate
+    // arcs about their centre and LibCarla does it in 32-bit floats (a 10^7 m radius lands on a 1 m
+    // grid). Only where the heading change is under 1e-5 rad (the bulge then under 0.1 mm per 20 m)
+    for (auto &e : l.elements) {
+      const double k = std::max(std::abs(e.k0), std::abs(e.k1));
+      if (k > 0 && k * e.length < 1e-5) e.k0 = e.k1 = 0.0;  // heading change negligible (validator 1e-4)
+    }
     l.finalize();
     const double score = maxCurvature(l) + 0.002 * l.length();
     if (score < bestScore) bestScore = score, best = l;

@@ -2,6 +2,24 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-10-11
+
+### Added
+- **Viewer: optional OpenStreetMap basemap underneath the network** (the "OpenStreetMap (Carto)
+  underneath" layer). Use it to find missed paths and differences.
+  - Tiles are placed with the file's own transverse Mercator geoReference (ellipsoidal forward
+    projection).
+  - Map and road opacity are adjustable, and the tile URL is configurable (kept per browser).
+  - The OSM attribution is shown while the layer is on.
+  - Off by default: it is the only part of the viewer that fetches from the web.
+- `xodrviz` prints the validation rule counts (and every message with `ODRFORGE_VERBOSE`).
+
+### Fixed
+- Connecting roads that are numerically straight (solver noise, curvature ~1e-8) are exact lines.
+  LibCarla evaluates arcs about their centre in 32-bit floats, and a radius of 10^7 m landed on a
+  1 m grid. The in-memory geometry is changed, so the file stays self-consistent.
+- The viewer's origin is written at full precision.
+
 ## [0.5.0] - 2026-10-11
 
 ### Added

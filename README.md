@@ -79,7 +79,9 @@ osm2xodr area.osm out.xodr --country US --viz out.html
 xodrviz any.xodr view.html
 ```
 
-Both commands write one self-contained HTML file, with no external resources:
+Both commands write one self-contained HTML file. Nothing is fetched from the web unless you turn
+on the optional OpenStreetMap layer (tiles placed with the file's projection, to compare the
+generated roads with the map):
 - pan and zoom, plus layer toggles: lanes by type, junction areas, road marks, reference lines,
   curvature heat map, signals, objects
 - hover and click inspection of lanes and roads, and road search

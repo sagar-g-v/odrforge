@@ -235,6 +235,7 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
         default: ++nPoly;
       }
   std::ostringstream data;
+  data.precision(15);  // the origin places the optional map tiles: full precision
   data << "{\"title\":\"" << esc(opt.title) << "\",\"generator\":\"OdrForge " << ODRFORGE_VERSION << "\",\"rev\":\"1."
        << od.header.revMinor << "\",\"bbox\":[0,0," << std::lround((maxX - minX) * 10) << "," << std::lround((maxY - minY) * 10)
        << "],\"origin\":[" << minX << "," << minY << "],\"geo\":\"" << esc(od.header.geoReference) << "\""

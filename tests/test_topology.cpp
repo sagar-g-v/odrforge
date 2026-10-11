@@ -306,3 +306,18 @@ TEST_CASE("geometry: a sharp corner after a short leg stays near the mapped corn
   (void)d;
   CHECK(worst < 0.3);
 }
+
+TEST_CASE("geometry: no near-straight arcs anywhere (LibCarla evaluates arcs in 32-bit floats about the centre)") {
+  OsmB b;
+  const OsmId c = b.node(0, 0);
+  const Tags street{{"highway", "secondary"}, {"lanes", "2"}};
+  b.way({b.node(-150, 0.002), c}, street);  // straight through, with a sub-millimetre drawing wiggle
+  b.way({c, b.node(150, -0.002)}, street);
+  b.way({b.node(0, -150), c}, street);
+  b.way({c, b.node(0, 150)}, street);
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  for (const auto &r : od.roads)
+    for (const auto &e : r.planView.elements)
+      if (e.type() == GeomType::Arc) CHECK(std::abs(e.k0) >= 1e-5);  // radius at most 100 km: float error under 6 mm
+}

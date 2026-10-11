@@ -16,11 +16,6 @@ GeomType GeomElement::type() const {
   if (cubic) return cubic->param ? GeomType::ParamPoly3 : GeomType::Poly3;
   constexpr double eps = 1e-9;
   if (std::abs(k0) < eps && std::abs(k1) < eps) return GeomType::Line;
-  // practically straight: a line. Readers evaluate arcs about their centre, LibCarla in 32-bit
-  // floats (error ~ 6e-8 R): an arc of radius 10^7 m lands on a 1 m grid. Lateral offset of the
-  // element from its chord ~ k L^2 / 2: under 1 mm, or under 5 cm with a radius beyond 1000 km
-  const double kMax = std::max(std::abs(k0), std::abs(k1)), offset = 0.5 * kMax * length * length;
-  if (offset < 1e-3 || (kMax < 1e-6 && offset < 0.05)) return GeomType::Line;
   if (std::abs(k1 - k0) < eps) return GeomType::Arc;
   return GeomType::Spiral;
 }
