@@ -56,14 +56,16 @@ void Builder::resolveOverlaps() {
   const double step = 2.0, cell = 25.0, margin = 0.2, maxShift = 3.0, maxDepth = 6.0, goreLength = 40.0;
   std::map<int, std::vector<odr::Poly3>> original;  // laneOffset before any shift
   std::map<int, std::vector<double>> total;         // accumulated shift per sample
-  // the two roads end in the same junction within goreLength of these positions
-  auto nearSharedEnd = [&](int mi, double sa, int mj, double sb) {
+  // the two roads leave (enter) the same junction together within goreLength of these positions,
+  // heading the same way from it (`c`: cosine of the angle between their headings there) - not a
+  // road that loops back alongside the other
+  auto nearSharedEnd = [&](int mi, double sa, int mj, double sb, double c) {
     const Chain &ca = chains[metas[mi].chain], &cb = chains[metas[mj].chain];
     const double La = od.roads[metas[mi].roadIndex].length(), Lb = od.roads[metas[mj].roadIndex].length();
     for (int ea : {0, 1})
       for (int eb : {0, 1}) {
         const int ka = ea ? ca.c1 : ca.c0, kb = eb ? cb.c1 : cb.c0;
-        if (ka < 0 || ka != kb) continue;
+        if (ka < 0 || ka != kb || (ea == eb) != (c > 0)) continue;
         if ((ea ? La - sa : sa) < goreLength && (eb ? Lb - sb : sb) < goreLength) return true;
       }
     return false;
@@ -146,7 +148,7 @@ void Builder::resolveOverlaps() {
               // the side of a that faces away from b (in a's frame, +1 = left)
               const double away = ((0.5 * (lo + hi) >= 0.5 * (blo + bhi)) ? 1.0 : -1.0) * (c > 0 ? 1.0 : -1.0);
               std::vector<double> &room = away > 0 ? roomR : roomL;  // b lies on the other side
-              const bool gore = nearSharedEnd(mi, s, mj, sb);        // merges in the junction: never pushed from
+              const bool gore = nearSharedEnd(mi, s, mj, sb, c);     // merges in the junction: never pushed from
               if (gore || overlap <= 0 || overlap > maxDepth) {
                 room[i] = std::min(room[i], std::max(0.0, -overlap - margin));
                 continue;
@@ -182,16 +184,46 @@ void Builder::resolveOverlaps() {
       }
       // smooth envelope: keep the required shift, spread it with C1 ramps of at least 60 m and a
       // taper of at most ~2 % (smoothstep peak slope 1.5 push / ramp length): a realignment, not a
-      // wiggle; never more than the free room on that side
+      // wiggle; never more than the free room on that side. Where lanes are added or dropped the
+      // lanes kept run straight: a ramp that would run into such a taper ends before it, as short as
+      // a shifting taper at the posted speed (MUTCD 6C: mean rate 2/S, below 45 mph 120/S^2)
+      std::vector<std::pair<int, int>> tapers;  // sample ranges of lane additions / drops
+      {
+        auto driving = [](const odr::LaneSection &sec) {
+          int c = 0;
+          for (const auto *side : {&sec.left, &sec.right})
+            for (const auto &l : *side) c += l.type == "driving";
+          return c;
+        };
+        for (size_t k = 1; k < a.lanes.size(); ++k) {
+          if (driving(a.lanes[k]) == driving(a.lanes[k - 1])) continue;
+          // a lane drops over a taper before the boundary, a new one grows after it
+          const bool drop = driving(a.lanes[k]) < driving(a.lanes[k - 1]);
+          const double sb = a.lanes[k].s, next = k + 1 < a.lanes.size() ? a.lanes[k + 1].s : L;
+          const double s0 = sb - (drop ? std::min(opt.taperLength, 0.8 * (sb - a.lanes[k - 1].s)) : 0.0) - 5.0;
+          const double s1 = sb + (drop ? 0.0 : std::min(opt.taperLength, 0.8 * (next - sb))) + 5.0;
+          tapers.push_back({static_cast<int>(std::floor(s0 / L * (n - 1))), static_cast<int>(std::ceil(s1 / L * (n - 1)))});
+        }
+      }
       std::vector<double> sm(n, 0.0);
       for (int i = 0; i < n; ++i) {
         if (std::abs(push[i]) < 1e-6) continue;
         push[i] = std::clamp(push[i], -maxShift, maxShift);
         const int ramp = std::max(1, static_cast<int>(std::max(60.0, 75.0 * std::abs(push[i])) / step));
-        for (int k = -ramp; k <= ramp; ++k) {
+        double mph = 25.0;
+        for (const auto &t : a.types)
+          if (t.s <= L * i / (n - 1) + 1e-6 && t.speedMax) mph = t.speedUnit == "mph" ? *t.speedMax : *t.speedMax / 1.609344;
+        const double S = std::max(20.0, mph), rate = S >= 45.0 ? 2.0 / S : 120.0 / (S * S);
+        const int shortest = static_cast<int>(std::ceil(1.5 * std::abs(push[i]) / rate / step)) + 1;  // (with room to spare)
+        int rampBack = ramp, rampOn = ramp;
+        for (const auto &[t0, t1] : tapers) {
+          if (t1 < i && i - t1 >= shortest) rampBack = std::min(rampBack, i - t1);
+          if (t0 > i && t0 - i >= shortest) rampOn = std::min(rampOn, t0 - i);
+        }
+        for (int k = -rampBack; k <= rampOn; ++k) {
           const int j = i + k;
           if (j < 0 || j >= n) continue;
-          const double u = 1.0 - std::abs(k) / static_cast<double>(ramp + 1);
+          const double u = 1.0 - std::abs(k) / static_cast<double>((k < 0 ? rampBack : rampOn) + 1);
           const double v = push[i] * (u * u * (3 - 2 * u));
           if (std::abs(v) > std::abs(sm[j])) sm[j] = v;
         }

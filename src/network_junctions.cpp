@@ -322,11 +322,28 @@ void Builder::buildJunctions() {
             }
           }
           const int ns = partitioned ? 0 : static_cast<int>(src.size());
+          // a single lane going straight on across a short gap (less than a taper: no room to move
+          // over) continues in the outgoing lane its centre lies in - the lanes added beside it begin
+          // there, on whichever side; otherwise (a wide junction, ends that do not face each other)
+          // the lanes keep their order
+          auto lineUp = [&](int li, int fallback) {
+            const odr::Road &ro0 = od.roads[metas[tg.end->road].roadIndex];
+            const double s0 = tg.end->atEnd ? ro0.length() : 0.0;
+            const Pose p0 = ro0.planView.eval(s0);
+            Pose a;
+            if (!odr::laneCenter(ri, sIn, li, a) || (a.pos() - p0.pos()).norm() > opt.taperLength) return fallback;
+            const double t = Vec2(-std::sin(p0.hdg), std::cos(p0.hdg)).dot(a.pos() - p0.pos());
+            for (int o = 0; o < nOut; ++o) {
+              double ta, tb;
+              if (odr::laneBorders(ro0, s0, tg.lanes[o], ta, tb) && t > std::min(ta, tb) && t < std::max(ta, tb)) return o;
+            }
+            return fallback;
+          };
           for (int k = 0; k < ns; ++k) {
             int o;
             if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
             else if (tg.turn == Turn::Left) o = k;                    // align on the left
-            else o = ns == 1 ? std::min(nOut - 1, src[k] * nOut / std::max(1, nIn))
+            else o = ns == 1 ? lineUp(byLeft[src[k]], std::min(nOut - 1, src[k] * nOut / std::max(1, nIn)))
                              : static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
             o = std::clamp(o, 0, nOut - 1);
             pairs.push_back({byLeft[src[k]], tg.lanes[o]});
@@ -355,7 +372,10 @@ void Builder::buildJunctions() {
           {
             // sanity: a connecting path never turns much more than its end headings differ, nor
             // runs much longer than the gap it bridges (a looping clothoid root slipped through);
-            // otherwise the simplest path: the chord (a few cm between nearly touching road ends)
+            // otherwise the simplest path: the chord (a few cm between nearly touching road ends).
+            // A chord that leaves or meets a lane at an angle stands for a circular turn of radius
+            // chord / (2 sin angle); one tighter than any vehicle turns (5 m: road ends that both
+            // stop inside the junction, a metre apart at a right angle) is no drivable connection
             double turning = 0;
             for (const auto &e : line.elements) turning += 0.5 * (e.k0 + e.k1) * e.length;
             const double chord = (b.pos() - a.pos()).norm(), dh = std::abs(normalizeAngle(b.hdg - a.hdg));
@@ -364,9 +384,11 @@ void Builder::buildJunctions() {
                 std::fprintf(stderr, "connecting %s->%s lanes %d->%d: path turning %.2f rad over %.2f m for gap %.2f m, dh %.2f\n",
                              ri.id.c_str(), ro.id.c_str(), li, lo, turning, line.length(), chord, dh);
               line = ReferenceLine{};
-              if (chord > 1e-3) {
+              const double hc = std::atan2(b.y - a.y, b.x - a.x);
+              const double minTurnRadius = 5.0, bend = std::max(std::abs(normalizeAngle(hc - a.hdg)), std::abs(normalizeAngle(hc - b.hdg)));
+              if (chord > 1e-3 && bend < 0.5 * kPi && 2.0 * minTurnRadius * std::sin(bend) <= chord) {
                 GeomElement e;
-                e.x = a.x, e.y = a.y, e.hdg = std::atan2(b.y - a.y, b.x - a.x), e.length = chord;
+                e.x = a.x, e.y = a.y, e.hdg = hc, e.length = chord;
                 line.elements.push_back(e);
                 line.finalize();
               }

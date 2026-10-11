@@ -51,8 +51,9 @@ struct RoadMeta {
   struct LayerRange {
     double s0, s1;
     int layer;
+    double maxHeight = 0.0;  ///< signed headroom (OSM maxheight), 0: not tagged
   };
-  std::vector<LayerRange> layers;  ///< OSM layer (bridge without layer = 1, tunnel = -1) per s range
+  std::vector<LayerRange> layers;  ///< OSM layer (bridge without layer = 1, tunnel = -1, building passage = 0) per s range
   std::vector<std::pair<OsmId, double>> nodeS;  ///< OSM nodes of the chain with their s on the full line
   OsmId wayStart = 0, wayEnd = 0;
   double trimStart = 0.0, trimEnd = 0.0;

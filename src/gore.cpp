@@ -309,7 +309,7 @@ void Builder::buildGores() {
           const double a = remap(old, lr.s0, C), b = remap(old, lr.s1, C);
           for (auto [dst, off, L] : {std::tuple{&nT, offT, LT}, std::tuple{&nA, offA, LA}}) {
             const double ra = std::max(a - off, 0.0), rb = std::min(b - off, L);
-            if (rb - ra > 0.5) dst->layers.push_back({ra, rb, lr.layer});
+            if (rb - ra > 0.5) dst->layers.push_back({ra, rb, lr.layer, lr.maxHeight});
           }
         }
       }

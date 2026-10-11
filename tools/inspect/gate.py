@@ -13,6 +13,7 @@ Reference areas (chosen to cover different road cultures, not to tune for one ci
   london          central London: left-hand traffic, irregular junctions
   frankfurt_kreuz Frankfurter Kreuz: complex motorway interchange, many gores
   stelvio         Stelvio pass: mountain hairpins
+  tokyo           Shibuya, Tokyo: left-hand traffic, Japanese tagging, elevated Shuto expressway over streets
 
 A regression is any (area, finding kind) whose count grows by more than --tolerance, any new
 validation error rule count, a failing unit test, a conversion crash, new CARLA sideways
@@ -50,6 +51,7 @@ AREAS = {
     "london": dict(country="GB", origin="51.511,-0.125", clip="51.505,-0.135,51.517,-0.115"),
     "frankfurt_kreuz": dict(country="DE", origin="50.0525,8.600", clip="50.045,8.585,50.060,8.615"),
     "stelvio": dict(country="IT", origin="46.525,10.4525", clip="46.515,10.440,46.535,10.465"),
+    "tokyo": dict(country="JP", origin="35.658,139.699", clip="35.652,139.690,35.664,139.708"),
 }
 for _k, _a in AREAS.items():
     if "args" not in _a:

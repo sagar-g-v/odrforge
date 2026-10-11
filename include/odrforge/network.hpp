@@ -46,6 +46,10 @@ struct BuildOptions {
   bool streetFurniture = true;      ///< street lamps, trees near roads as objects
   ElevationFn elevation;            ///< optional terrain function; flat (z = 0) when empty and no terrain
   const Terrain *terrain = nullptr; ///< ground + structure (bridge deck) grids; preferred over `elevation`
+  /// without terrain or `elevation`: the ground is flat and only left where roads of different OSM
+  /// layers cross without a junction, one storey apart: this height (clearance plus deck), or the
+  /// lower road's maxheight plus 1 m where tagged
+  double levelHeight = 6.0;
   double elevationStep = 2.0;       ///< profile sampling step along the carriageway centre (m)
   double elevationSmoothing = 8.0;  ///< Whittaker smoothing (lambda at 1 m spacing); larger = smoother grades
   double elevationKnotSpacing = 10.0; ///< spacing of the cubic elevation records (m)

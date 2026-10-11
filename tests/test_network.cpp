@@ -232,6 +232,49 @@ TEST_CASE("network: curved road keeps G1/G2 continuity and follows the OSM nodes
     CHECK_NEAR(L.elements[i - 1].end().kappa, L.elements[i].k0, 1e-4);  // curvature continuous
 }
 
+TEST_CASE("network: an inner lane that merges away from the divider ends there, the others run straight (RHT and LHT)") {
+  // a three-lane oneway whose inner lane merges outward (turn:lanes merge_to_right, in LHT
+  // merge_to_left on the rightmost lane) continues with two lanes: the inner lane tapers out and the
+  // outer two keep their line instead of the outermost lane ending and the others shifting over
+  for (const char *country : {"US", "GB"}) {
+    const bool lht = std::string(country) == "GB";
+    OsmBuilder b;
+    const OsmId m = b.node(0, 0);
+    b.way({b.node(-200, 0), b.node(-100, 0), m},
+          {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "3"}, {"turn:lanes", lht ? "none|none|merge_to_left" : "merge_to_right|none|none"}});
+    b.way({m, b.node(100, 0), b.node(200, 0)}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "2"}});
+    const Result r = build(b, country);
+    CHECK(r.val.errors == 0);
+    CHECK(r.od.roads.size() == 1);
+    if (r.od.roads.size() != 1) continue;
+    const auto &road = r.od.roads[0];
+    CHECK(road.lanes.size() == 2);
+    if (road.lanes.size() != 2) continue;
+    const auto &before = lht ? road.lanes[0].left : road.lanes[0].right;
+    int ended = 0, outer = 0;
+    for (const auto &l : before)
+      if (l.type == "driving") {
+        if (!l.link.successor) ended = l.id;
+        if (std::abs(l.id) > std::abs(outer)) outer = l.id;
+      }
+    CHECK(std::abs(ended) == 1);  // the inner lane ends
+    // the outer edge of the carriageway runs straight through the drop, without a step
+    double a0, b0, a1, b1, pa = 0, pb = 0, worstStep = 0;
+    CHECK(odr::laneBorders(road, 10.0, outer, a0, b0));
+    CHECK(odr::laneBorders(road, road.length() - 10.0, outer > 0 ? outer - 1 : outer + 1, a1, b1));
+    CHECK_NEAR(b0, b1, 1e-6);
+    for (double s = 0; s <= road.length(); s += 0.1) {
+      const int id = s < road.lanes[1].s ? outer : (outer > 0 ? outer - 1 : outer + 1);
+      double a, bb;
+      CHECK(odr::laneBorders(road, s, id, a, bb));
+      if (s > 0) worstStep = std::max(worstStep, std::abs(bb - pb));
+      pa = a, pb = bb;
+    }
+    (void)pa;
+    CHECK(worstStep < 0.01);
+  }
+}
+
 TEST_CASE("network: roundabout with three arms") {
   OsmBuilder b;
   std::vector<OsmId> ring;
@@ -254,4 +297,46 @@ TEST_CASE("network: roundabout with three arms") {
   CHECK(r.od.junctions.size() == 3);
   // the ring is oneway: its connecting roads only lead in the ring direction
   CHECK(count(r.od, true) >= 6);
+}
+
+TEST_CASE("network: a lane width change between ways blends across the boundary (no border step), RHT and LHT") {
+  for (const char *country : {"US", "GB"}) {
+    OsmBuilder b;
+    const OsmId m = b.node(0, 0);
+    // the same two lanes, 4 m wide on the first way and 3.25 m on the second (width tags)
+    b.way({b.node(-200, 0), b.node(-100, 0), m}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "2"}, {"width", "8"}});
+    b.way({m, b.node(100, 0), b.node(200, 0)}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "2"}, {"width", "6.5"}});
+    const Result r = build(b, country);
+    CHECK(r.val.errors == 0);
+    CHECK(r.od.roads.size() == 1);
+    const auto &road = r.od.roads[0];
+    CHECK(road.lanes.size() == 2);
+    if (road.lanes.size() != 2) continue;
+    const double sb = road.lanes[1].s;
+    std::vector<int> ids;
+    for (const auto *side : {&road.lanes[0].left, &road.lanes[0].right})
+      for (const auto &l : *side)
+        if (l.type == "driving") ids.push_back(l.id);
+    CHECK(ids.size() == 2);
+    double worstStep = 0;
+    for (int id : ids) {
+      double pa = 0, pb = 0;
+      for (double s = 0; s <= road.length(); s += 0.1) {
+        double a, bb;
+        CHECK(odr::laneBorders(road, s, id, a, bb));
+        if (s > 0) worstStep = std::max({worstStep, std::abs(a - pa), std::abs(bb - pb)});
+        pa = a, pb = bb;
+      }
+      // the old width up to half a taper before the boundary, the mean at it, the new one half a taper after
+      auto width = [&](double s) {
+        double a, bb;
+        odr::laneBorders(road, s, id, a, bb);
+        return std::abs(bb - a);
+      };
+      CHECK_NEAR(width(sb - 20.0), 4.0, 1e-6);
+      CHECK_NEAR(width(sb), 3.625, 1e-3);
+      CHECK_NEAR(width(sb + 20.0), 3.25, 1e-6);
+    }
+    CHECK(worstStep < 0.01);  // 0.1 m apart: a step at the boundary would be 0.75 m
+  }
 }

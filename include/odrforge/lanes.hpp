@@ -50,6 +50,9 @@ struct LaneOptions {
   bool shoulders = true;
 };
 
+/// Parse an OSM length value ("3.5", "3.5 m", "12'6\"", "14 ft") into metres (0.5 - 60 m, else none).
+std::optional<double> lengthTag(const std::string &v);
+
 /// Parse an OSM speed value ("50", "30 mph", "DE:urban", "walk", "none") into m/s.
 std::optional<double> parseSpeed(const std::string &v, const CountryProfile &c);
 

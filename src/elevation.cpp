@@ -11,6 +11,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <tuple>
 
 #include "network_internal.hpp"
 
@@ -81,8 +82,8 @@ std::vector<double> whittaker(const std::vector<double> &y, const std::vector<do
   return z;
 }
 
-/// lateral position of the carriageway centre (driving lanes) at s
-double carriagewayCentre(const odr::Road &r, double s) {
+/// lateral position of the carriageway centre (driving lanes) at s, and optionally its half width
+double carriagewayCentre(const odr::Road &r, double s, double *half = nullptr) {
   double lo = 1e9, hi = -1e9;
   const odr::LaneSection &sec = odr::sectionAt(r, s);
   for (const auto *side : {&sec.left, &sec.right})
@@ -93,10 +94,50 @@ double carriagewayCentre(const odr::Road &r, double s) {
       lo = std::min({lo, a, b});
       hi = std::max({hi, a, b});
     }
+  if (half) *half = lo > hi ? 0.0 : 0.5 * (hi - lo);
   return lo > hi ? odr::laneOffsetAt(r, s) : 0.5 * (lo + hi);
 }
 
 double smoothstepC1(double u) { return u * u * (3.0 - 2.0 * u); }
+
+/// heights along a road on flat ground (z = 0) where some samples are pinned to a level (NaN: free).
+/// Runs of samples pinned to one height are plateaus; a plateau meets the ground through a C1 ramp
+/// on either side that is nowhere steeper than `grade` (a smoothstep is steepest in its middle, at
+/// 1.5 times its mean grade), and two plateaus closer than their ramps are joined directly.
+std::vector<double> levelProfile(const std::vector<double> &s, const std::vector<double> &pin, double grade) {
+  const size_t n = s.size();
+  std::vector<double> z(n, 0.0);
+  struct Run {
+    size_t i0, i1;
+    double z;
+  };
+  std::vector<Run> runs;
+  for (size_t i = 0; i < n; ++i) {
+    if (std::isnan(pin[i])) continue;
+    if (!runs.empty() && runs.back().i1 + 1 == i && runs.back().z == pin[i]) runs.back().i1 = i;
+    else runs.push_back({i, i, pin[i]});
+    z[i] = pin[i];
+  }
+  // free samples between run a (or the road start) and run b (or the road end)
+  for (size_t k = 0; k <= runs.size(); ++k) {
+    const Run *a = k > 0 ? &runs[k - 1] : nullptr, *b = k < runs.size() ? &runs[k] : nullptr;
+    const size_t i0 = a ? a->i1 + 1 : 0, i1 = b ? b->i0 : n;
+    if (i0 >= i1 || (!a && !b)) continue;
+    const double sa = a ? s[a->i1] : 0.0, sb = b ? s[b->i0] : 0.0, za = a ? a->z : 0.0, zb = b ? b->z : 0.0;
+    const double ra = 1.5 * std::abs(za) / grade, rb = 1.5 * std::abs(zb) / grade;
+    for (size_t i = i0; i < i1; ++i) {
+      if (a && b && sb - sa < ra + rb) {
+        z[i] = za + (zb - za) * smoothstepC1((s[i] - sa) / (sb - sa));
+        continue;
+      }
+      double v = 0.0;
+      if (a && s[i] - sa < ra) v += za * (1.0 - smoothstepC1((s[i] - sa) / ra));
+      if (b && sb - s[i] < rb) v += zb * (1.0 - smoothstepC1((sb - s[i]) / rb));
+      z[i] = v;
+    }
+  }
+  return z;
+}
 
 }  // namespace
 
@@ -109,6 +150,8 @@ void Builder::sampleElevation() {
     std::vector<std::vector<Cand>> cand;
     std::vector<Vec2> xy;
     std::vector<int> layer;
+    std::vector<double> headroom;  // OSM maxheight per sample (0: not tagged)
+    std::vector<double> half;      // carriageway half width per sample
     std::vector<std::vector<std::pair<double, double>>> excl;  // forbidden z intervals per sample
     std::vector<double> chosen;
     std::vector<double> tc, cross, groundC;  // carriageway centre t, raw cross slope, ground at centre
@@ -127,6 +170,8 @@ void Builder::sampleElevation() {
     pf.cand.resize(n);
     pf.xy.resize(n);
     pf.layer.assign(n, 0);
+    pf.headroom.assign(n, 0.0);
+    pf.half.assign(n, 0.0);
     pf.tc.assign(n, 0.0);
     pf.cross.assign(n, kNaN);
     pf.groundC.assign(n, kNaN);
@@ -153,7 +198,7 @@ void Builder::sampleElevation() {
       const double s = L * i / (n - 1);
       m.zs[i] = s;
       const Pose p = r.planView.eval(s);
-      const double tcen = carriagewayCentre(r, s);
+      const double tcen = carriagewayCentre(r, s, &pf.half[i]);
       const Vec2 q = p.offset(tcen);
       pf.xy[i] = q;
       pf.tc[i] = tcen;
@@ -165,7 +210,7 @@ void Builder::sampleElevation() {
         if (!std::isnan(zl) && !std::isnan(zr)) pf.cross[i] = (zl - zr) / (2.0 * h);
       }
       for (const auto &lr : m.layers)
-        if (s + m.trimStart >= lr.s0 - 1e-6 && s + m.trimStart <= lr.s1 + 1e-6) pf.layer[i] = lr.layer;
+        if (s + m.trimStart >= lr.s0 - 1e-6 && s + m.trimStart <= lr.s1 + 1e-6) pf.layer[i] = lr.layer, pf.headroom[i] = lr.maxHeight;
       if (!haveTerrain) continue;
       const bool bridge = inRanges(m.bridges, s), tunnel = inRanges(m.tunnels, s) || inRanges(m.covered, s);
       // the terrain above a tunnel or a covered way (under a building, through a hillside) is not the
@@ -291,6 +336,432 @@ void Builder::sampleElevation() {
       for (size_t k = last + 1; k < n; ++k) z[k] = p.chosen[last];
     return z;
   };
+  // ---- 3a. no elevation data: the ground is flat (z = 0) and the OSM layers are the only evidence.
+  //          Where a road's carriageway overlaps another road of another layer without a junction,
+  //          both are pinned to their levels and ramps lead there from the ground; a ramp that reaches
+  //          a junction lifts (lowers) the junction and continues on its other roads. Nothing else is
+  //          invented (a bridge over a river stays level).
+  if (!haveTerrain) {
+    const double goreLength = 40.0;
+    // design grade of an invented ramp by road class (at its steepest): a motorway climbs gently, a
+    // garage ramp steeply
+    auto rampGrade = [&](size_t mi) {
+      const int r = metas[mi].rank;
+      return r >= 9 ? 0.05 : r >= 6 ? 0.06 : r >= 4 ? 0.08 : 0.12;
+    };
+    // where structures leave less room a ramp may be half as steep again (15 % at most): the mean
+    // grade between two levels whose smoothstep then reaches that at its steepest
+    auto steepMean = [&](size_t mi) { return std::min(1.5 * rampGrade(mi), 0.15) / 1.5; };
+    // roads that leave one junction side by side (a split, a merge) share its level there
+    auto nearSharedEnd = [&](size_t mi, size_t i, size_t mj, size_t j) {
+      const Chain &ca = chains[metas[mi].chain], &cb = chains[metas[mj].chain];
+      const double sa = metas[mi].zs[i], sb = metas[mj].zs[j];
+      for (int ea : {0, 1})
+        for (int eb : {0, 1}) {
+          const int ka = ea ? ca.c1 : ca.c0, kb = eb ? cb.c1 : cb.c0;
+          if (ka < 0 || ka != kb) continue;
+          if ((ea ? metas[mi].zs.back() - sa : sa) < goreLength && (eb ? metas[mj].zs.back() - sb : sb) < goreLength) return true;
+        }
+      return false;
+    };
+    std::map<std::pair<long, long>, std::vector<std::pair<size_t, size_t>>> grid;
+    for (size_t mi = 0; mi < P.size(); ++mi)
+      for (size_t i = 0; i < P[mi].xy.size(); ++i)
+        grid[{static_cast<long>(std::floor(P[mi].xy[i].x / cell)), static_cast<long>(std::floor(P[mi].xy[i].y / cell))}]
+            .push_back({mi, i});
+    // 1. levels where roads cross. OSM layers are an order, not heights: a structure rises one storey
+    //    above each road it crosses that lies below it (a bridge over a street: one storey; over a
+    //    lower bridge: on top of that one) and stays on the ground when only tunnels pass beneath; a
+    //    tunnel sinks one storey below each road above it. A storey is the headroom of the lower road
+    //    plus the deck: levelHeight, or the signed maxheight (below the real headroom) plus 1 m and at
+    //    least 3 m (stacked garage decks). Every crossing has a level of its own - a viaduct, or a
+    //    ramp mapped as one bridge, is not one height along its length -, tied to the other levels
+    //    along the road by its grade (3.).
+    auto storey = [&](double headroom) { return headroom > 0.0 ? std::clamp(headroom + 1.0, 3.0, opt.levelHeight) : opt.levelHeight; };
+    std::vector<std::vector<size_t>> stretchOf(P.size());  // stretch of constant layer of each sample
+    for (size_t mi = 0; mi < P.size(); ++mi) {
+      const auto &ly = P[mi].layer;
+      stretchOf[mi].resize(ly.size());
+      for (size_t i = 1; i < ly.size(); ++i) stretchOf[mi][i] = stretchOf[mi][i - 1] + (ly[i] != ly[i - 1]);
+    }
+    // the stretch of layer l at sample i of road mi or, where the tag ends short of the crossing, the
+    // nearest one of that layer
+    auto stretchAt = [&](size_t mi, size_t i, int l) {
+      const auto &ly = P[mi].layer;
+      size_t k = i;
+      for (size_t d = 0; d < ly.size() && ly[k] != l; ++d) {
+        if (i >= d && ly[i - d] == l) k = i - d;
+        else if (i + d < ly.size() && ly[i + d] == l) k = i + d;
+      }
+      return stretchOf[mi][k];
+    };
+    // the levels: 0 is the ground, then one per crossing of a road stretch over or under another road
+    // - the height of the structure there, or the ceiling of a street (layer 0) under a structure
+    std::vector<double> x0{0.0};  // preferred heights
+    std::vector<int> layerOf{0};
+    std::vector<size_t> stretchOfVar{0}, roadOfVar{0};
+    std::vector<Vec2> where{Vec2()};                     // a place of each level, for the report
+    std::vector<std::pair<double, double>> span{{0, 0}};  // the samples of the crossing along its road
+    std::map<std::tuple<size_t, size_t, size_t>, std::vector<size_t>> varsOf;  // (road, stretch, road crossed)
+    auto var = [&](size_t mi, size_t i, int l, size_t mj) {
+      const size_t k = stretchAt(mi, i, l);
+      const double s = metas[mi].zs[i];
+      std::vector<size_t> &vs = varsOf[std::make_tuple(mi, k, mj)];
+      // samples of one crossing within a few metres share a level: a road that crosses another twice,
+      // or runs above (below) it for a while, has a level every few metres, free to ramp in between
+      for (size_t v : vs)
+        if (std::max(span[v].second, s) - std::min(span[v].first, s) <= cell) {
+          span[v] = {std::min(span[v].first, s), std::max(span[v].second, s)};
+          return v;
+        }
+      vs.push_back(x0.size());
+      x0.push_back(0.0), layerOf.push_back(l), stretchOfVar.push_back(k), roadOfVar.push_back(mi), where.push_back(P[mi].xy[i]);
+      span.push_back({s, s});
+      return vs.back();
+    };
+    struct Crossing {
+      size_t road, i, v;  // the level at sample i of the road
+      bool operator<(const Crossing &o) const { return std::tie(road, i, v) < std::tie(o.road, o.i, o.v); }
+    };
+    std::set<Crossing> crossings;
+    std::map<std::pair<size_t, size_t>, double> below;  // (lower, upper) -> storey between them
+    for (size_t mi = 0; mi < P.size(); ++mi) {
+      if (metas[mi].roadIndex < 0) continue;
+      const Prof &a = P[mi];
+      for (size_t i = 0; i < a.xy.size(); ++i) {
+        const long cx = static_cast<long>(std::floor(a.xy[i].x / cell)), cy = static_cast<long>(std::floor(a.xy[i].y / cell));
+        for (long dx = -1; dx <= 1; ++dx)
+          for (long dy = -1; dy <= 1; ++dy) {
+            auto it = grid.find({cx + dx, cy + dy});
+            if (it == grid.end()) continue;
+            for (const auto &[mj, j] : it->second) {
+              const Prof &b = P[mj];
+              if (mj == mi || (a.xy[i] - b.xy[j]).norm() > b.half[j] + 1.0) continue;  // a's centre on b
+              int la = a.layer[i], lb = b.layer[j];
+              // a bridge / tunnel way that ends a few metres short of the crossing still decides
+              if (la == lb && crossing(a, i, b, j)) {
+                if (layerHi[mi][i] != layerHi[mj][j]) la = layerHi[mi][i], lb = layerHi[mj][j];
+                else if (layerLo[mi][i] != layerLo[mj][j]) la = layerLo[mi][i], lb = layerLo[mj][j];
+              }
+              if (la == lb || nearSharedEnd(mi, i, mj, j)) continue;  // one level: nothing to separate
+              if (const char *dbg = std::getenv("ODRFORGE_DEBUG_ROAD"); dbg && od.roads[metas[mi].roadIndex].id == dbg)
+                std::fprintf(stderr, "s=%6.1f layer %d crosses road %s (layer %d)\n", metas[mi].zs[i], la,
+                             od.roads[metas[mj].roadIndex].id.c_str(), lb);
+              // a street over a tunnel stays on the ground (level 0)
+              const size_t va = la == 0 && lb < 0 ? 0 : var(mi, i, la, mj), vb = lb == 0 && la < 0 ? 0 : var(mj, j, lb, mi);
+              const double h = storey(la < lb ? a.headroom[i] : b.headroom[j]);
+              const auto key = la < lb ? std::make_pair(va, vb) : std::make_pair(vb, va);
+              below[key] = std::max(below[key], h);
+              if (va != 0) crossings.insert({mi, i, va});
+              if (vb != 0) crossings.insert({mj, j, vb});
+            }
+          }
+      }
+    }
+    // preferred heights: structures above the ground bottom up, then tunnels top down; streets stay
+    // on the ground. The stretches of one layer that meet in junctions (a viaduct and its ramps, the
+    // aisles of a garage deck) are one structure: it keeps its level where nothing beneath needs it
+    // (over a tunnel, between its crossings) - only a preference, 3. ramps it where it has to
+    {
+      std::vector<size_t> first(P.size() + 1, 0);  // index of each road's first stretch
+      for (size_t mi = 0; mi < P.size(); ++mi) first[mi + 1] = first[mi] + (stretchOf[mi].empty() ? 0 : stretchOf[mi].back() + 1);
+      std::vector<size_t> parent(first.back());
+      for (size_t k = 0; k < parent.size(); ++k) parent[k] = k;
+      auto root = [&](size_t k) {
+        while (parent[k] != k) k = parent[k] = parent[parent[k]];
+        return k;
+      };
+      std::map<std::pair<int, int>, size_t> atJunction;  // (cluster, layer) -> a stretch ending there
+      for (size_t mi = 0; mi < P.size(); ++mi) {
+        if (metas[mi].roadIndex < 0 || P[mi].layer.empty()) continue;
+        const Chain &ch = chains[metas[mi].chain];
+        for (const auto &[c, i] : {std::pair<int, size_t>{ch.c0, 0}, {ch.c1, P[mi].layer.size() - 1}}) {
+          if (c < 0 || P[mi].layer[i] == 0) continue;
+          const size_t k = first[mi] + stretchOf[mi][i];
+          const auto [it, added] = atJunction.emplace(std::make_pair(c, P[mi].layer[i]), k);
+          if (!added) parent[root(k)] = root(it->second);
+        }
+      }
+      std::map<int, std::vector<size_t>> byLayer;
+      for (size_t v = 1; v < x0.size(); ++v)
+        if (layerOf[v] != 0) byLayer[layerOf[v]].push_back(v);
+      std::vector<int> order;
+      for (const auto &[l, vs] : byLayer) order.push_back(l);
+      std::sort(order.begin(), order.end(), [](int p, int q) { return (p > 0) != (q > 0) ? p > 0 : (p > 0 ? p < q : p > q); });
+      for (const int l : order) {
+        const bool up = l > 0;
+        std::map<size_t, double> extreme;  // per structure
+        for (size_t v : byLayer[l]) {
+          double z = 0.0;
+          for (const auto &[key, h] : below) {
+            if (up && key.second == v && layerOf[key.first] >= 0) z = std::max(z, x0[key.first] + h);
+            if (!up && key.first == v) z = std::min(z, x0[key.second] - h);
+          }
+          x0[v] = z;
+          const size_t g = root(first[roadOfVar[v]] + stretchOfVar[v]);
+          const auto [it, added] = extreme.emplace(g, z);
+          if (!added) it->second = up ? std::max(it->second, z) : std::min(it->second, z);
+        }
+        for (size_t v : byLayer[l]) x0[v] = extreme[root(first[roadOfVar[v]] + stretchOfVar[v])];
+      }
+    }
+    // a structure is pinned to its level where it crosses; a street under a structure must not rise
+    // above its ceiling there
+    std::vector<std::vector<double>> pins(P.size()), ceiling(P.size());
+    std::vector<std::vector<size_t>> pinStretch(P.size());  // stretch of the structure pinned at a sample
+    auto place = [&](const std::vector<double> &x) {
+      for (size_t mi = 0; mi < P.size(); ++mi)
+        pins[mi].assign(P[mi].xy.size(), kNaN), ceiling[mi].assign(P[mi].xy.size(), kNaN), pinStretch[mi].assign(P[mi].xy.size(), 0);
+      for (const Crossing &c : crossings) {
+        const bool street = layerOf[c.v] == 0;
+        double &v = street ? ceiling[c.road][c.i] : pins[c.road][c.i];
+        if (std::isnan(v) || (street ? x[c.v] < v : std::abs(x[c.v]) > std::abs(v))) v = x[c.v];
+        if (!street) pinStretch[c.road][c.i] = stretchOfVar[c.v];
+      }
+    };
+    place(x0);
+    // 2. junction levels: a ramp that reaches a road end sets its junction's level and the other roads
+    //    of the junction start their ramps there (the largest level wins; repeated until stable). A
+    //    road pinned near the junction bounds that level: it must reach its pin within its steepest
+    //    grade (steepMean).
+    const double inf = std::numeric_limits<double>::infinity();
+    std::vector<double> lo(clusters.size(), -inf), hi(clusters.size(), inf);
+    for (size_t mi = 0; mi < P.size(); ++mi) {
+      if (metas[mi].roadIndex < 0) continue;
+      const Chain &ch = chains[metas[mi].chain];
+      const std::vector<double> &zs = metas[mi].zs, &pin = pins[mi], &ceil = ceiling[mi];
+      for (int e : {0, 1}) {
+        const int c = e ? ch.c1 : ch.c0;
+        if (c < 0) continue;
+        for (size_t i = 0; i < pin.size(); ++i) {
+          const double room = steepMean(mi) * std::abs(zs[i] - (e ? zs.back() : 0.0));
+          if (!std::isnan(pin[i])) lo[c] = std::max(lo[c], pin[i] - room), hi[c] = std::min(hi[c], pin[i] + room);
+          if (!std::isnan(ceil[i])) hi[c] = std::min(hi[c], ceil[i] + room);
+        }
+      }
+    }
+    // a road between two junctions bounds their difference the same way (propagated through the network)
+    for (int it = 0; it < 200; ++it) {
+      bool changed = false;
+      for (size_t mi = 0; mi < P.size(); ++mi) {
+        const Chain &ch = chains[metas[mi].chain];
+        if (metas[mi].roadIndex < 0 || ch.c0 < 0 || ch.c1 < 0 || ch.c0 == ch.c1) continue;
+        const double slack = steepMean(mi) * metas[mi].zs.back();
+        for (const auto &[c, o] : {std::pair<int, int>{ch.c0, ch.c1}, {ch.c1, ch.c0}}) {
+          const double l = std::max(lo[c], lo[o] - slack), h = std::min(hi[c], hi[o] + slack);
+          if (l > h) continue;  // contradictory evidence: resolved in 3.
+          if (l > lo[c] + 1e-6 || h < hi[c] - 1e-6) lo[c] = l, hi[c] = h, changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    std::vector<double> level(clusters.size(), 0.0);
+    // profiles with the ends at their junction levels (`all`: also at level 0, the final pass)
+    auto profile = [&](size_t mi, bool all) {
+      const Chain &ch = chains[metas[mi].chain];
+      const std::vector<double> &zs = metas[mi].zs;
+      std::vector<double> pin = pins[mi];
+      // a structure stays up (down) between two of its crossings instead of ramping back to the ground
+      for (size_t i = 0, last = 0, have = 0; i < pin.size(); ++i) {
+        if (std::isnan(pins[mi][i])) continue;
+        if (have && pinStretch[mi][last] == pinStretch[mi][i])
+          for (size_t k = last + 1; k < i; ++k)
+            pin[k] = pins[mi][last] + (pins[mi][i] - pins[mi][last]) * smoothstepC1((zs[k] - zs[last]) / (zs[i] - zs[last]));
+        last = i, have = 1;
+      }
+      if (ch.c0 >= 0 && std::isnan(pin.front()) && (all || level[ch.c0] != 0.0)) pin.front() = level[ch.c0];
+      if (ch.c1 >= 0 && std::isnan(pin.back()) && (all || level[ch.c1] != 0.0)) pin.back() = level[ch.c1];
+      std::vector<double> z = levelProfile(zs, pin, rampGrade(mi));
+      // a road that would rise into a structure above stays at its ceiling there: the deepest ceiling
+      // first, as the ramps from it may already pass under the next one (a street under two bridges
+      // a few metres apart is not pulled up between them)
+      for (size_t k = 0; k < z.size(); ++k) {
+        double deepest = kNaN;
+        for (size_t i = 0; i < z.size(); ++i)
+          if (!std::isnan(ceiling[mi][i]) && std::isnan(pin[i]) && z[i] > ceiling[mi][i] + 1e-6 && !(ceiling[mi][i] >= deepest))
+            deepest = ceiling[mi][i];
+        if (std::isnan(deepest)) break;
+        for (size_t i = 0; i < z.size(); ++i)
+          if (ceiling[mi][i] == deepest && std::isnan(pin[i]) && z[i] > deepest + 1e-6) pin[i] = deepest;
+        z = levelProfile(zs, pin, rampGrade(mi));
+      }
+      return z;
+    };
+    for (int it = 0; it < 32; ++it) {
+      std::vector<double> want(clusters.size(), 0.0);
+      for (size_t mi = 0; mi < P.size(); ++mi) {
+        if (metas[mi].roadIndex < 0) continue;
+        const Chain &ch = chains[metas[mi].chain];
+        const std::vector<double> z = profile(mi, false);
+        for (const auto &[c, v] : {std::pair<int, double>{ch.c0, z.front()}, {ch.c1, z.back()}})
+          if (c >= 0 && std::abs(v) > std::abs(want[c])) want[c] = v;
+      }
+      bool changed = false;
+      for (size_t c = 0; c < clusters.size(); ++c) {
+        const double v = lo[c] <= hi[c] ? std::clamp(want[c], lo[c], hi[c]) : 0.5 * (lo[c] + hi[c]);
+        if (std::abs(v - level[c]) > 1e-3) level[c] = v, changed = true;
+      }
+      if (!changed) break;
+    }
+    // 3. the levels together. They are difference constraints x_a - x_b <= k: a storey between
+    //    crossing roads; along a road the steepest ramp grade (steepMean) between its junctions and
+    //    crossings; structures above the ground never below it, tunnels never above it, streets on it.
+    //    The least levels these allow are found upward from the ground, then everything is lowered
+    //    from the preferred levels (1., 2.) only as far as the constraints require (Bellman-Ford both
+    //    ways): a ramp that cannot climb a storey lifts the junction at its foot rather than pulling
+    //    the structure - and everything beneath it - down. OSM structures can lie closer than any
+    //    such ramp (a street that passes under one bridge and, a few metres on, over another; a ramp
+    //    mapped beside the road it joins as if above it): the constraints then form a negative cycle
+    //    and no level satisfies them. The cycle is loosened as little as needed - its streets dip
+    //    into a cutting at most a storey deep, then its storeys shrink (both reported) - and the
+    //    levels are solved again.
+    {
+      const size_t nCrossing = x0.size();
+      std::vector<size_t> levelVar(clusters.size());
+      for (size_t c = 0; c < clusters.size(); ++c)
+        levelVar[c] = x0.size(), x0.push_back(level[c]), layerOf.push_back(0), where.push_back(clusters[c].center);
+      enum Kind { Bound, Grade, Cut, Storey };
+      struct Diff {
+        size_t a, b;
+        double k;
+        Kind kind;
+        double cap = 0.0;  // the loosest k a contradiction may relax a Cut or a Storey to
+      };
+      std::vector<Diff> cons;
+      std::vector<double> storeyAbove(x0.size(), 0.0);
+      for (const auto &[key, h] : below) {
+        cons.push_back({key.first, key.second, -h, Storey, 0.0});
+        storeyAbove[key.first] = std::max(storeyAbove[key.first], h);
+      }
+      for (size_t v = 1; v < nCrossing; ++v) {
+        if (layerOf[v] > 0) cons.push_back({0, v, 0.0, Bound, 0.0});
+        if (layerOf[v] <= 0) cons.push_back({v, 0, 0.0, Bound, 0.0});
+        if (layerOf[v] == 0) cons.push_back({0, v, 0.0, Cut, storeyAbove[v]});
+      }
+      // along a road: junction levels and pinned structures bound each other both ways, a ceiling
+      // bounds its nearest two-sided neighbours from above
+      struct Anchor {
+        double s;
+        size_t var;
+        bool both;
+      };
+      std::vector<std::vector<Anchor>> anchors(P.size());
+      for (const Crossing &c : crossings) anchors[c.road].push_back({metas[c.road].zs[c.i], c.v, layerOf[c.v] != 0});
+      for (size_t mi = 0; mi < P.size(); ++mi) {
+        if (metas[mi].roadIndex < 0) continue;
+        const Chain &ch = chains[metas[mi].chain];
+        auto &an = anchors[mi];
+        if (ch.c0 >= 0) an.push_back({0.0, levelVar[ch.c0], true});
+        if (ch.c1 >= 0) an.push_back({metas[mi].zs.back(), levelVar[ch.c1], true});
+        std::sort(an.begin(), an.end(), [](const Anchor &p, const Anchor &q) { return p.s < q.s; });
+        const double g = steepMean(mi);
+        auto ramp = [&](size_t a, size_t b, double d) { cons.push_back({a, b, g * d, Grade}); };
+        long last = -1;  // previous two-sided anchor
+        for (size_t k = 0; k < an.size(); ++k) {
+          if (!an[k].both) {
+            if (last >= 0) ramp(an[last].var, an[k].var, an[k].s - an[last].s);
+            continue;
+          }
+          if (last >= 0 && an[last].var != an[k].var) {
+            ramp(an[k].var, an[last].var, an[k].s - an[last].s);
+            ramp(an[last].var, an[k].var, an[k].s - an[last].s);
+          }
+          for (long j = static_cast<long>(k) - 1; j > last; --j)  // ceilings since the previous one
+            ramp(an[k].var, an[j].var, an[k].s - an[j].s);
+          last = static_cast<long>(k);
+        }
+      }
+      // Bellman-Ford from x: `up` raises each x_b to at least x_a - k (the least levels above x),
+      // otherwise each x_a is lowered to at most x_b + k (the greatest below x). Returns the
+      // constraints of a negative cycle met on the way; none: x satisfies all of them
+      auto relax = [&](std::vector<double> &x, bool up) {
+        std::vector<long> pred(x.size(), -1);  // the constraint that last moved each level
+        // the constraints along a cycle of the predecessor graph; empty if none
+        auto predCycle = [&] {
+          auto next = [&](size_t v) { return up ? cons[static_cast<size_t>(pred[v])].a : cons[static_cast<size_t>(pred[v])].b; };
+          std::vector<size_t> seen(x.size(), 0), cycle;
+          for (size_t v0 = 1; v0 <= x.size() && cycle.empty(); ++v0) {
+            size_t v = v0 - 1;
+            while (!seen[v] && pred[v] >= 0) seen[v] = v0, v = next(v);
+            if (seen[v] != v0) continue;  // a level without predecessor, or one walked before
+            for (size_t u = v; cycle.empty() || u != v; u = next(u)) cycle.push_back(static_cast<size_t>(pred[u]));
+          }
+          return cycle;
+        };
+        for (size_t pass = 0; pass <= x.size(); ++pass) {
+          bool changed = false;
+          for (size_t ci = 0; ci < cons.size(); ++ci) {
+            const Diff &c = cons[ci];
+            if (up && x[c.a] - c.k > x[c.b] + 1e-6) x[c.b] = x[c.a] - c.k, pred[c.b] = static_cast<long>(ci), changed = true;
+            if (!up && x[c.a] > x[c.b] + c.k + 1e-6) x[c.a] = x[c.b] + c.k, pred[c.a] = static_cast<long>(ci), changed = true;
+          }
+          if (!changed) return std::vector<size_t>{};
+          if (std::vector<size_t> cycle = predCycle(); !cycle.empty()) return cycle;
+        }
+        return predCycle();
+      };
+      // loosen a negative cycle by what it lacks, kind by kind; false if it has nothing to give
+      auto loosen = [&](const std::vector<size_t> &cycle) {
+        double need = 0.0;  // what the cycle lacks
+        for (size_t ci : cycle) need -= cons[ci].k;
+        for (const Kind kind : {Cut, Storey}) {
+          double room = 0.0;
+          for (size_t ci : cycle)
+            if (cons[ci].kind == kind) room += cons[ci].cap - cons[ci].k;
+          if (need <= 1e-9 || room <= 1e-9) continue;
+          const double t = std::min(1.0, (need + 1e-3) / room);  // a little more: closed for good
+          size_t most = cycle.front();
+          double moved = 0.0;
+          for (size_t ci : cycle)
+            if (cons[ci].kind == kind && t * (cons[ci].cap - cons[ci].k) > moved) moved = t * (cons[ci].cap - cons[ci].k), most = ci;
+          const Diff &w = cons[most];
+          const Vec2 at = where[w.a == 0 ? w.b : w.a];
+          char msg[200];
+          if (kind == Cut)
+            std::snprintf(msg, sizeof msg, "structures near (%.0f, %.0f) lie closer than a ramp can climb: street lowered %.1f m into a cutting",
+                          at.x, at.y, w.k + moved);
+          else
+            std::snprintf(msg, sizeof msg, "structures near (%.0f, %.0f) lie closer than a ramp can climb: storey reduced from %.1f m to %.1f m",
+                          at.x, at.y, -w.k, -(w.k + moved));
+          rep.warnings.push_back(msg);
+          for (size_t ci : cycle)
+            if (cons[ci].kind == kind) cons[ci].k += t * (cons[ci].cap - cons[ci].k);
+          need -= t * room;
+        }
+        return need <= 1e-9;
+      };
+      std::vector<double> x;
+      bool solved = false;
+      for (size_t round = 0; round <= cons.size() && !solved; ++round) {
+        std::vector<double> least(x0.size(), -inf);
+        least[0] = 0.0;
+        std::vector<size_t> cycle = relax(least, true);
+        if (cycle.empty()) {
+          x = x0;
+          for (size_t v = 0; v < x.size(); ++v) x[v] = std::max(x[v], least[v]);
+          cycle = relax(x, false);
+        }
+        if (cycle.empty()) solved = true;
+        else if (!loosen(cycle)) break;
+      }
+      if (!solved) {  // contradictions nothing can loosen: keep the preferred levels
+        x = x0;
+        rep.warnings.push_back("structure levels left unresolved: some structures may lie closer than a storey");
+      }
+      for (size_t c = 0; c < clusters.size(); ++c) level[c] = x[levelVar[c]];
+      place(x);
+    }
+    // the constructed profile is final (no measurement to re-fit against the junction surfaces)
+    for (size_t mi = 0; mi < P.size(); ++mi) {
+      RoadMeta &m = metas[mi];
+      if (m.roadIndex < 0) continue;
+      m.zz = profile(mi, true);
+      m.hasData = true;
+      m.xs.assign(m.zs.size(), 0.0);
+      m.obs0 = m.obs1 = 0.0;
+    }
+    return;
+  }
   for (int pass = 0; pass < 3 && opt.terrain; ++pass) {
     std::vector<std::vector<double>> zf(P.size());
     for (size_t mi = 0; mi < P.size(); ++mi) zf[mi] = filled(P[mi]);

@@ -6,24 +6,6 @@
 
 namespace odrforge {
 
-namespace {
-
-constexpr double kMph = 0.44704, kKmh = 1.0 / 3.6;
-
-bool isCarriageway(LaneKind k) {
-  return k == LaneKind::Driving || k == LaneKind::Bus || k == LaneKind::Biking || k == LaneKind::Bidirectional;
-}
-
-std::optional<int> intTag(const Tags &t, const std::string &k) {
-  if (auto v = tag(t, k)) {
-    try {
-      return std::stoi(*v);
-    } catch (...) {
-    }
-  }
-  return std::nullopt;
-}
-
 std::optional<double> lengthTag(const std::string &v) {
   // "3.5", "3.5 m", "12'6\"" (feet / inches)
   try {
@@ -40,6 +22,24 @@ std::optional<double> lengthTag(const std::string &v) {
   } catch (...) {
     return std::nullopt;
   }
+}
+
+namespace {
+
+constexpr double kMph = 0.44704, kKmh = 1.0 / 3.6;
+
+bool isCarriageway(LaneKind k) {
+  return k == LaneKind::Driving || k == LaneKind::Bus || k == LaneKind::Biking || k == LaneKind::Bidirectional;
+}
+
+std::optional<int> intTag(const Tags &t, const std::string &k) {
+  if (auto v = tag(t, k)) {
+    try {
+      return std::stoi(*v);
+    } catch (...) {
+    }
+  }
+  return std::nullopt;
 }
 
 std::string sideValue(const Tags &t, const std::string &key, const std::string &side) {

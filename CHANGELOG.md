@@ -2,6 +2,50 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Grade separations without elevation data.** Without terrain every road lay at z = 0, so bridges,
+  tunnels and stacked interchange ramps overlapped the roads they cross (Frankfurter Kreuz: 190
+  overlaps). The ground stays flat and is left only where roads of different OSM layers cross
+  without a junction: one storey apart (`BuildOptions::levelHeight`, 6 m, or the lower road's
+  `maxheight` + 1 m for garage decks), with ramps whose steepest point is a class design grade (5 %
+  motorway, 6 % primary to tertiary, 8 % residential, 12 % service). Every crossing has a level of
+  its own (a viaduct or a ramp mapped as one bridge is not one height along its length); the
+  stretches of one layer that meet in junctions prefer one level and stay up between their
+  crossings. The levels are solved as difference constraints, upward from the ground first: a ramp
+  too short to climb a storey lifts the junction at its foot instead of pulling the structure, and
+  everything beneath it, down. Structures above the ground never go below it, tunnels never above
+  it, streets stay on it. Where the mapped structures lie closer than any ramp allows, the
+  contradiction is loosened as little as needed - the street beneath dips into a cutting of at most
+  a storey, then the storey shrinks - and reported. Tokyo (Shuto expressway over Route 246): no
+  bridge below the ground (was 642 m), streets more than 3 m deep only next to tunnel portals
+  (826 m, was 3534 m).
+- **`tunnel=building_passage`** is a passage through a building at ground level: implied layer 0,
+  not -1 (it was sunk a storey under the roads around it).
+- **An inner lane that merges away from the divider** (`turn:lanes` `merge_to_right`, LHT
+  `merge_to_left`, on a oneway) ends at the inner side and the other lanes run straight, lane 0
+  following its taper; before, the outermost lane ended and the others shifted over by a lane width
+  (with `placement` against the mapped line: Frankfurter Kreuz, a trunk link pushed into the trunk).
+- **Overlap resolution:** two roads are a gore (left to their junction) only when they leave it
+  heading the same way; a road that loops back alongside another is pushed apart from it. A
+  realignment ramp ends before a lane addition or drop instead of running through its taper (no
+  shorter than a shifting taper at the posted speed).
+- **osm2xodr** prints the warnings by kind (the first three of each and a count), so a rare kind is
+  not hidden behind many of a common one.
+- **Lane width changes between ways** (different `width` / `lanes` tags) no longer step at the lane
+  section boundary (a sideways jump of the lane border for CARLA and any vehicle following the lane).
+  The width, and the lane offset with it, blends across the boundary, up to half a taper on each
+  side.
+- **No undrivable connecting roads:** where the connecting path falls back to the straight chord
+  between two nearly touching road ends, a chord that meets the lanes at an angle tighter than a
+  5 m turning circle (for example two streets cut by the clip box half a metre past the
+  intersection, a metre apart at a right angle) is left out instead of joining the lanes at an angle;
+  a chord that a vehicle can follow is kept.
+- **A single lane going straight on** into a road with more lanes across a short junction continues
+  in the outgoing lane it lines up with (the added lanes begin beside it), instead of always the
+  leftmost one: no sideways jog of a lane width inside the junction.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added

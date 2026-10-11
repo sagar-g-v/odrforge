@@ -61,6 +61,7 @@ REF_POS_TOL = 0.01    # m
 REF_HDG_TOL = math.radians(0.2)
 NEG_TOL = -0.01       # m
 WOBBLE_TOL = 0.02     # m
+PLATEAU = 5.0         # m, constant width between two width changes that makes them separate transitions
 FOLD_TOL = 1.0        # k*t
 NEAR_FOLD_R = 1.0     # m, minimum border radius on the inside of a curve
 OUTSIDE_TOL = 0.5     # m
@@ -350,14 +351,18 @@ class RoadCheck:
                     if ov > WOBBLE_TOL:
                         self.emit("width_wobble", "width_overshoot", r, sec.s + so + 0.5 * (se - so), [l.id],
                                   "major" if ov >= 0.2 else "minor", {"overshoot_m": ov, "lane_type": l.type})
-                # direction changes within the section
+                # direction changes within the section; a change of direction across a constant-width
+                # stretch (PLATEAU m or more) is two width transitions (consecutive ways tagged with
+                # different widths), not a wobble
                 w1 = W[l.id]
                 dw = np.diff(w1)
-                sg = np.sign(np.where(np.abs(dw) > 1e-4, dw, 0))
-                sg = sg[sg != 0]
-                ch = int(np.sum(sg[1:] != sg[:-1])) if len(sg) > 1 else 0
-                if ch > 1 or (ch == 1 and sg[0] < 0):  # fall-then-rise, or more than one reversal
-                    i = int(np.argmin(w1)) if sg[0] < 0 else int(np.argmax(w1))
+                nz = np.nonzero(np.abs(dw) > 1e-4)[0]
+                sg = np.sign(dw[nz])
+                flips = (sg[1:] != sg[:-1]) & (s[nz[1:]] - s[nz[:-1] + 1] < PLATEAU) if len(sg) > 1 else np.zeros(0, bool)
+                ch = int(np.sum(flips))
+                first = sg[int(np.argmax(flips))] if ch else 0  # direction before the first reversal
+                if ch > 1 or (ch == 1 and first < 0):  # fall-then-rise, or more than one reversal
+                    i = int(np.argmin(w1)) if first < 0 else int(np.argmax(w1))
                     self.emit("width_wobble", "width_reversal", r, float(s[i]), [l.id], "major",
                               {"reversals": ch, "w_min": float(w1.min()), "w_max": float(w1.max()), "lane_type": l.type})
             # steep transitions (plain roads): lateral rate of every lane border (lane 0 = laneOffset),

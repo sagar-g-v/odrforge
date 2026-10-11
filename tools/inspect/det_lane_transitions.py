@@ -606,7 +606,7 @@ class Detector:
         feed = self.contacts.get((r.id, end))
         if not feed:
             return None, None, None, k_end
-        tally = collections.Counter(o for lid, os_ in feed.items() for o in os_)
+        tally = collections.Counter(o for lid, os_ in feed.items() for o in sorted(os_))  # sorted: ties break the same way every run
         if len(tally) < 2:
             return None, None, feed, k_end
         trunk = tally.most_common(1)[0][0]

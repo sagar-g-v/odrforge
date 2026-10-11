@@ -1,6 +1,7 @@
 // osm2xodr - OpenStreetMap (.osm XML) to ASAM OpenDRIVE (.xodr) with OdrForge.
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -136,7 +137,21 @@ int main(int argc, char **argv) {
     for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
     if (std::getenv("ODRFORGE_VERBOSE"))
       for (const auto &m : vr.messages) std::printf("    %s\n", m.c_str());
-    for (size_t i = 0; i < rep.warnings.size() && i < 10; ++i) std::printf("  warn: %s\n", rep.warnings[i].c_str());
+    // warnings by kind (the message without its numbers): the first few of each, then a count, so a
+    // rare kind is not hidden behind many of a common one
+    std::vector<std::pair<std::string, std::vector<const std::string *>>> kinds;
+    for (const std::string &w : rep.warnings) {
+      std::string kind;
+      for (char ch : w)
+        if (!std::isdigit(static_cast<unsigned char>(ch)) && ch != '.' && ch != '-') kind += ch;
+      auto it = std::find_if(kinds.begin(), kinds.end(), [&](const auto &k) { return k.first == kind; });
+      if (it == kinds.end()) it = kinds.insert(kinds.end(), {kind, {}});
+      it->second.push_back(&w);
+    }
+    for (const auto &[kind, ws] : kinds) {
+      for (size_t i = 0; i < ws.size() && i < 3; ++i) std::printf("  warn: %s\n", ws[i]->c_str());
+      if (ws.size() > 3) std::printf("  warn: ... %zu more like this\n", ws.size() - 3);
+    }
     return vr.errors ? 1 : 0;
   } catch (const std::exception &e) {
     std::fprintf(stderr, "osm2xodr: %s\n", e.what());

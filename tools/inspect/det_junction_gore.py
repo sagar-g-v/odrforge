@@ -36,7 +36,7 @@ Gores / freeway splits and merges (junctions where a motorway/trunk/*_link road 
   gore_osm_sep        at that point the OSM ways themselves say otherwise: the OSM branch way is more than
                       2.5 m closer to or further from the OSM main way than the two carriageway half widths
                       (more than OSM tracing error, ~1-2 m) - the separation point is misplaced versus OSM.
-  gore_kink           a lane-level gore (connectors <= 8 m) whose connecting lanes turn (net or peak heading
+  gore_kink           a lane-level gore (connectors <= 8 m carrying lanes 1:1) whose connecting lanes turn (net or peak heading
                       deviation) more than a 100 m-radius ramp would over their length + 1 deg (AASHTO
                       minimum radius at 35 mph): the ramp's divergence angle / lateral offset is folded
                       into the 4 m junction - a notch at the gore nose. One finding per junction.
@@ -231,6 +231,34 @@ def incoming_lanes(r, at_end):
 def outgoing_lanes(r, at_end):
     s = r.length if at_end else 0.0
     return driving_ids(r, min(max(s, 1e-3), r.length - 1e-3), 1 if at_end else -1)
+
+
+def lane_level_gore(conns):
+    """a lane-level gore (src/gore.cpp, a kJunctionLength = 4 m junction): short connectors (<= 8 m)
+    that carry the lanes of one carriageway into two, or of two into one - the main road continues
+    the trunk's reference line (one of the connectors runs straight on), and each lane continues in
+    lanes of its own (gore.cpp splits the trunk lanes into a main and a branch set). Short connectors
+    that only turn, or that bring two roads into one lane (one lane into two roads), are a plain
+    compact junction (a corner of parking aisles, a merge at a right angle), not a gore"""
+    if not conns or max(c.length for c in conns) > 8.0:
+        return False
+    def net_turn(c):
+        h = np.unwrap(conn_samples(c, 0.1)[2])
+        return abs(float(h[-1] - h[0]))
+
+    if not any(net_turn(c) < T["straight"] for c in conns):
+        return False
+    other = collections.defaultdict(set)  # lane end at the junction -> roads it is connected with
+    for c in conns:
+        if c.pred is None or c.succ is None:
+            continue
+        for l in c.sections[0].left + c.sections[0].right:
+            if l.pred is not None:
+                other[("in", c.pred.id, c.pred.contact, l.pred)].add(c.succ.id)
+        for l in c.sections[-1].left + c.sections[-1].right:
+            if l.succ is not None:
+                other[("out", c.succ.id, c.succ.contact, l.succ)].add(c.pred.id)
+    return all(len(v) == 1 for v in other.values())
 
 
 def conn_samples(c, step=0.5):
@@ -539,7 +567,7 @@ class Detector:
             # lane-level gore (src/gore.cpp, a kJunctionLength = 4 m junction): the branch must start where its
             # carriageway just clears the main one (gore.cpp asks for 0.3 m), so the carried lanes run
             # straight into it; a plain junction may legitimately span a wider gap
-            lane_level = max((c.length for c in n.jconn.get(jid, [])), default=0) <= 8.0
+            lane_level = lane_level_gore(n.jconn.get(jid, []))
             gmax = T["sep_gap_gore"] if lane_level else T["sep_gap"]
             if not beyond and (gap < -T["sep_overlap"] or gap > gmax):
                 self.add("gore_separation", [B.id, M.id, T_.id], cx, cy,
@@ -675,9 +703,9 @@ class Detector:
         for jid, ends in n.jends.items():
             if len(ends) < 2:
                 continue
-            # a lane-level gore (connectors <= 8 m) sits at the separation point by design, often far
-            # from the OSM node; the gore checks judge where it sits
-            if max((c.length for c in n.jconn.get(jid, [])), default=0) <= 8.0:
+            # a lane-level gore sits at the separation point by design, often far from the OSM node;
+            # the gore checks judge where it sits
+            if lane_level_gore(n.jconn.get(jid, [])):
                 continue
             # OSM junction nodes: nodes shared by the end ways of two or more roads
             cnt = collections.Counter()
@@ -755,7 +783,7 @@ def check_gore_kink(self):
     divergence angle (or a lateral jog) folded into the junction: a kink at the gore nose"""
     n = self.n
     for jid, conns in n.jconn.items():
-        if not conns or max(c.length for c in conns) > 8.0:
+        if not lane_level_gore(conns):
             continue
         worst = None
         for c in conns:

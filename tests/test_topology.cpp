@@ -321,3 +321,58 @@ TEST_CASE("geometry: no near-straight arcs anywhere (LibCarla evaluates arcs in 
     for (const auto &e : r.planView.elements)
       if (e.type() == GeomType::Arc) CHECK(std::abs(e.k0) >= 1e-5);  // radius at most 100 km: float error under 6 mm
 }
+
+TEST_CASE("junction: a side road ending inside the junction gets no connection that turns within centimetres") {
+  OsmB b;
+  // a junction on the edge of the clip box: the street on and the side street keep only half a
+  // metre beyond the junction node, so their trimmed ends lie a metre apart at a right angle
+  const OsmId c = b.node(0, 0);
+  const Tags street{{"highway", "secondary"}, {"lanes", "2"}};
+  b.way({b.node(-120, 0), b.node(-60, 0), c}, street);
+  b.way({c, b.node(0.6, 0)}, street);
+  b.way({c, b.node(0, 0.5)}, {{"highway", "residential"}});
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.count("junctions.connection.smooth_fit") == 0);
+  CHECK(v.errors == 0);
+  // the long street still reaches both stubs
+  int fromStreet = 0;
+  for (const auto &r : od.roads)
+    if (r.junction != "-1" && r.predecessor)
+      for (const auto &q : od.roads) fromStreet += q.id == r.predecessor->elementId && q.length() > 20.0;
+  CHECK(fromStreet >= 2);
+}
+
+TEST_CASE("junction: a single lane going straight on continues in the lane it lines up with") {
+  // a one-lane oneway becomes a three-lane oneway at a side street; both ways are centred on the OSM
+  // line, so the lane continues in the middle lane (the added lanes begin on either side of it)
+  for (const char *country : {"US", "GB"}) {
+    OsmB b;
+    const OsmId c = b.node(0, 0);
+    b.way({b.node(-200, 0), b.node(-100, 0), c}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "1"}});
+    b.way({c, b.node(100, 0), b.node(200, 0)}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "3"}});
+    b.way({c, b.node(0, -100), b.node(0, -200)}, {{"highway", "residential"}});
+    BuildOptions o = opts();
+    o.country = CountryProfile::load(country);
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    const ValidationReport v = validate(od, o.target);
+    printErrors(v);
+    CHECK(v.errors == 0);
+    const odr::Road *in = roadNear(od, -50, 0), *out = roadNear(od, 50, 0);
+    CHECK(in && out);
+    if (!in || !out) continue;
+    int straight = 0;
+    for (const auto &r : od.roads) {
+      if (r.junction == "-1" || !r.predecessor || !r.successor || r.predecessor->elementId != in->id || r.successor->elementId != out->id)
+        continue;
+      ++straight;
+      const int lane = r.lanes.front().left.empty() ? r.lanes.front().right.front().id : r.lanes.front().left.front().id;
+      Pose p0, p1;
+      CHECK(odr::laneCenter(r, 0.0, lane, p0) && odr::laneCenter(r, r.length(), lane, p1));
+      CHECK(std::abs(p1.y - p0.y) < 0.5);  // no jog sideways into the outer lane
+    }
+    CHECK(straight == 1);
+  }
+}
