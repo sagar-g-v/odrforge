@@ -2,6 +2,53 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-10-11
+
+### Added
+- **Braided and chained gores.**
+  - A branch line drawn across the main line before it leaves no longer blocks a gore. An
+    excursion inside the shared carriageway is drawing noise; only a branch that fully clears the
+    other side first is a braid.
+  - A short branch that splits again right away becomes a gore once the split after it is modelled.
+    The gore stage repeats until nothing changes.
+  - Downtown Los Angeles: 49 gores and 0 road overlaps.
+- **Lane splits and merges at plain junctions divide the lanes by side.** When a road continues
+  straight on as several roads, its lanes go left to right in the order the roads leave, and merges
+  likewise; connecting lanes no longer cross.
+- **Corner fidelity.** Fillets are symmetric clothoid pairs (G2: curvature 0 on the legs), sized
+  by the class radius, a corner tolerance (`maxCornerDeviation`, 1.5 m) and the lane-fold limit.
+  Fillet tangent points keep their leg heading, so straight legs stay straight.
+  - Fit to OSM nodes: mean 0.31 → 0.22 m, p95 2.4 → 1.8 m.
+- **Topology.**
+  - The missing intersection node is added where minor roads cross on one level without one.
+  - The clip keeps a junction lying within 30 m outside the area, so roads no longer end side by
+    side at the boundary.
+- **CLI:** `--no-gores`, `--no-snap`, `--no-parking-lots`, `--no-overlap-shift`,
+  `--corner-tolerance`.
+- **8 tests (56 cases):** braid noise, chained gores, lane-split partition, clip junction, missing
+  crossing node, corner fidelity, writer length guarantee, line classification.
+
+### Fixed
+- Freeways no longer snake sideways. The overlap resolver now only acts on driving lanes, so
+  touching shoulders are allowed. Pushes on the same side within 150 m merge into one plateau,
+  tapers are at most 2 %, and a shift never goes past a bend's centre of curvature. A second pass
+  once heights are known handles roads on different OSM layers that are not really separated.
+  - Roads with wobbling edges: 46 → 23. Overlap shifts: 99 → 61.
+- At a gore, the lanes move into line with the next road over the whole stretch from the OSM node
+  to the gore, instead of in a 30 m jog.
+- A loop road with both ends at one junction was trimmed down to a 2 m stub (it overlapped
+  itself). It now keeps its length, and no movement leads back into the same road.
+- Connecting-road paths that loop are replaced (sanity check on turning and length).
+- **CARLA compatibility.**
+  - The written road length covers the written geometry, and every s position is written exactly
+    on a 2^-24 m grid, because LibCarla asserts `s <= length` strictly on (L - s0) + s0.
+  - Practically straight elements are written as lines: LibCarla evaluates an arc of radius
+    10^7 m in 32-bit floats on a 1 m grid.
+  - Downtown Los Angeles: 0 sideways discontinuities when walking every lane.
+- Geometry elements under 1 cm are folded into a neighbour.
+- Validator: for a loop road at a junction, the incoming end is taken from the connecting road's
+  link.
+
 ## [0.4.0] - 2026-10-11
 
 ### Added

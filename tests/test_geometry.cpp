@@ -91,6 +91,7 @@ TEST_CASE("L corner gets a smooth fillet, G2 continuous") {
   std::vector<Vec2> pts = {{0, 0}, {50, 0}, {50, 50}};
   PolylineFitOptions o;
   o.minCornerRadius = 12.0;
+  o.maxCornerDeviation = 0.0;  // the design radius alone (the corner tolerance is tested separately)
   const ReferenceLine L = fitPolyline(pts, o);
   // continuity of position, heading and curvature between elements
   for (size_t i = 1; i < L.elements.size(); ++i) {
@@ -122,4 +123,19 @@ TEST_CASE("project / slice / reverse round trip") {
   const ReferenceLine r = L.reversed();
   CHECK_NEAR(r.eval(0).x, L.eval(L.length()).x, 1e-6);
   CHECK_NEAR(r.eval(r.length()).y, L.eval(0).y, 1e-6);
+}
+
+TEST_CASE("geometry type: practically straight elements are lines (readers evaluate arcs about their centre)") {
+  GeomElement e;
+  e.length = 17.4;
+  e.k0 = e.k1 = -6.17e-8;  // radius 16 000 km: offset from the chord 9 micrometres
+  CHECK(e.type() == GeomType::Line);
+  e.length = 500.0;
+  e.k0 = e.k1 = 1e-7;      // radius 10 000 km, offset 1.25 cm: a line too
+  CHECK(e.type() == GeomType::Line);
+  e.k0 = e.k1 = 1e-3;      // radius 1 km, offset 125 m: an arc
+  CHECK(e.type() == GeomType::Arc);
+  e.length = 10.0;
+  e.k0 = 0.0, e.k1 = 0.05;
+  CHECK(e.type() == GeomType::Spiral);
 }

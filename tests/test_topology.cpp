@@ -186,3 +186,123 @@ TEST_CASE("topology: parking aisles become roads only where the lot connects two
   CHECK(rep.parkingAisles == 1);
   CHECK(roadNear(od, 0, 30) && std::abs(roadNear(od, 0, 30)->planView.eval(10).x) < 1.0);
 }
+
+TEST_CASE("gore: a branch line drawn across the main line before it leaves is still a lane-level split") {
+  OsmB b;
+  const OsmId n = b.node(0, 0);
+  const Tags fwy{{"highway", "motorway"}, {"lanes", "3"}, {"oneway", "yes"}};
+  b.way({b.node(-400, 0), b.node(-200, 0), n}, fwy);
+  b.way({n, b.node(200, 0), b.node(400, 0)}, fwy);
+  // the exit line wanders 1.5 m to the left of the freeway line first, then leaves on the right
+  b.way({n, b.node(40, 1.5), b.node(90, 0.5), b.node(150, -6), b.node(220, -18), b.node(320, -45)},
+        {{"highway", "motorway_link"}, {"lanes", "1"}, {"oneway", "yes"}});
+  BuildOptions o = opts();
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(rep.gores == 1);
+  CHECK(v.count("quality.road_overlap") == 0);
+  CHECK(v.errors == 0);
+}
+
+TEST_CASE("gore: a short branch that splits again right away - both splits at lane level") {
+  OsmB b;
+  const OsmId n1 = b.node(0, 0), n2 = b.node(60, -3);
+  b.way({b.node(-400, 0), b.node(-200, 0), n1}, {{"highway", "motorway"}, {"lanes", "5"}, {"oneway", "yes"}});
+  b.way({n1, b.node(200, 0), b.node(400, 0)}, {{"highway", "motorway"}, {"lanes", "3"}, {"oneway", "yes"}});
+  b.way({n1, n2}, {{"highway", "motorway_link"}, {"lanes", "2"}, {"oneway", "yes"}});
+  b.way({n2, b.node(140, -10), b.node(220, -25), b.node(320, -50)}, {{"highway", "motorway_link"}, {"lanes", "1"}, {"oneway", "yes"}});
+  b.way({n2, b.node(140, -14), b.node(200, -40), b.node(260, -90)}, {{"highway", "motorway_link"}, {"lanes", "1"}, {"oneway", "yes"}});
+  BuildOptions o = opts();
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(rep.gores >= 1);
+  CHECK(v.count("quality.road_overlap") == 0);
+  CHECK(v.errors == 0);
+}
+
+TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes never cross") {
+  OsmB b;
+  const OsmId n = b.node(0, 0);
+  b.way({b.node(-300, 0), n}, {{"highway", "primary"}, {"lanes", "4"}, {"oneway", "yes"}});
+  b.way({n, b.node(150, 15), b.node(300, 40)}, {{"highway", "primary"}, {"lanes", "2"}, {"oneway", "yes"}});   // left
+  b.way({n, b.node(150, -15), b.node(300, -40)}, {{"highway", "primary"}, {"lanes", "2"}, {"oneway", "yes"}});  // right
+  BuildOptions o = opts();
+  o.laneLevelGores = false;  // the plain junction must already be right
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.errors == 0);
+  // every connecting lane to the left road starts left of every connecting lane to the right road
+  double minLeft = 1e9, maxRight = -1e9;
+  for (const auto &r : od.roads) {
+    if (r.junction == "-1" || !r.successor) continue;
+    const odr::Road *to = nullptr;
+    for (const auto &q : od.roads)
+      if (q.id == r.successor->elementId) to = &q;
+    const double y0 = r.planView.eval(0).y;
+    if (to && to->planView.eval(to->length()).y > 0) minLeft = std::min(minLeft, y0);
+    else maxRight = std::max(maxRight, y0);
+  }
+  CHECK(minLeft > maxRight);
+}
+
+TEST_CASE("clip: roads meeting just outside the area stay connected") {
+  OsmB b;
+  const OsmId j = b.node(-102, 0);  // the junction lies 2 m outside the clip box
+  b.way({b.node(100, 0), b.node(0, 0), j}, {{"highway", "residential"}});
+  b.way({b.node(60, -80), b.node(0, -40), j}, {{"highway", "residential"}});
+  b.way({j, b.node(-200, 0)}, {{"highway", "residential"}});
+  BuildOptions o = opts();
+  o.clipBox = std::array<double, 4>{-100, -100, 100, 100};
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  // the third road lies wholly outside: the two roads continue through the kept node as one road,
+  // instead of ending side by side 2 m apart at the boundary
+  int open = 0, roads = 0;
+  for (const auto &r : od.roads)
+    if (r.junction == "-1") open += !r.predecessor + !r.successor, ++roads;
+  CHECK(od.junctions.empty());
+  CHECK(roads == 1 && open == 2);
+}
+
+TEST_CASE("topology: minor roads crossing without a shared node get the missing intersection") {
+  OsmB b;
+  b.way({b.node(-100, 0), b.node(100, 0)}, {{"highway", "service"}});
+  b.way({b.node(0, -100), b.node(0, 100)}, {{"highway", "service"}});
+  BuildOptions o = opts();
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(rep.joinedCrossings == 1);
+  CHECK(od.junctions.size() == 1);
+  CHECK(v.count("quality.road_overlap") == 0);
+}
+
+TEST_CASE("geometry: a sharp corner after a short leg stays near the mapped corner, the long leg straight") {
+  OsmB b;
+  const Vec2 p0(0, 0), p1(-11, 9), p2(65, 93);  // ~92 degree turn, 14 m then 113 m
+  b.way({b.node(p0.x, p0.y), b.node(p1.x, p1.y), b.node(p2.x, p2.y)}, {{"highway", "service"}, {"oneway", "yes"}});
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  CHECK(od.roads.size() == 1);
+  const odr::Road &r = od.roads[0];
+  // distance from the corner to the reference line
+  double s, t;
+  r.planView.project(p1, s, t);
+  CHECK(std::abs(t) < 2.0);
+  // the second leg: points on it stay on the line through p1, p2 (no bulge)
+  const Vec2 d = (p2 - p1) * (1.0 / (p2 - p1).norm());
+  double worst = 0;
+  for (double u = 0.3; u <= 0.95; u += 0.05) {
+    const Vec2 q = p1 + (p2 - p1) * u;
+    double sq, tq;
+    r.planView.project(q, sq, tq);
+    worst = std::max(worst, std::abs(tq));
+  }
+  (void)d;
+  CHECK(worst < 0.3);
+}

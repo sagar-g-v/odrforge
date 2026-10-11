@@ -16,6 +16,9 @@ struct PolylineFitOptions {
   double noiseTolerance = 0.25;   ///< Douglas-Peucker tolerance (m): OSM digitising noise to ignore
   double minCornerRadius = 8.0;   ///< sharp polyline corners are filleted with at least this radius (m)
   double cornerAngle = 0.35;      ///< corners turning more than this (rad) between short legs are filleted
+  /// a fillet stays within this distance of the mapped corner (smaller radius at sharp turns), but
+  /// never tighter than 1 / maxCurvature (lanes must not fold)
+  double maxCornerDeviation = 1.5;
   bool g2 = true;                 ///< curvature-continuous spline (else G1 with bisector headings)
   std::optional<double> startHeading, endHeading;  ///< fixed end tangents (e.g. continuation roads)
   double straightTolerance = 2e-5;  ///< |curvature| below this (1/m) becomes a line

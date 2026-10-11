@@ -87,7 +87,14 @@ void Builder::buildGores() {
   auto why = [&](size_t ci, const char *reason) {
     if (dbg) std::fprintf(stderr, "gore? cluster at (%.0f, %.0f): %s\n", clusters[ci].center.x, clusters[ci].center.y, reason);
   };
+  // repeated until nothing changes: a short branch that splits again right away becomes a gore
+  // only once the split after it has been modelled
+  std::vector<char> done(clusters.size(), 0);
+  for (bool progress = true; progress;) {
+  progress = false;
   for (size_t ci = 0; ci < clusters.size(); ++ci) {
+    if (done[ci]) continue;
+    if (const char *cap = std::getenv("ODRFORGE_MAX_GORES"); cap && rep.gores >= std::atoi(cap)) continue;  // debugging aid
     const auto &E = ends[ci];
     if (E.size() != 3) continue;
     // three oneway roads, all travelling along +s (chains are oriented with the traffic)
@@ -165,7 +172,7 @@ void Builder::buildGores() {
     drivingExtents(xsA, aL, aR);
     drivingExtents(xsB, bL, bR);
     PolylineFitOptions fo = opt.fit;
-    const double halfWidth = std::max(aL, aR) + bL + bR;
+    const double halfWidth = std::max(aL, aR);  // the main road keeps its own curvature limit
     fo.minCornerRadius = std::max({fo.minCornerRadius, classMinRadius(mA.highway), halfWidth + 3.0});
     fo.maxCurvature = 1.0 / (halfWidth + 1.5);
     const ReferenceLine C = fitPolylineLimited(pts, fo);
@@ -174,25 +181,35 @@ void Builder::buildGores() {
     // which side the branch leaves on, and where its carriageway clears the main one
     const double LB = mB.full.length();
     {
-      double sc, tc;
-      C.project(mB.full.eval(diverge ? std::min(LB, 30.0) : std::max(0.0, LB - 30.0)).pos(), sc, tc);
-      (void)sc;
-      if (std::abs(tc) < 1e-3) continue;
-      const bool left = tc > 0;
-      const double need = (left ? aL : aR) + (left ? bR : bL) + 0.3;
-      double sB = -1;
+      // the side is the one the branch clears first; an excursion to the other side smaller than
+      // a lane before that is OSM drawing noise (the lines run on top of each other near the node)
+      const double needL = aL + bR + 0.3, needR = aR + bL + 0.3;
+      double sB = -1, worstOther = 0;
+      bool left = false;
+      double maxL = 0, maxR = 0;
       for (int k = 0; k <= 300; ++k) {
         const double s = diverge ? k : LB - k;
         if (s < 0 || s > LB) break;
         double sp, tp;
         C.project(mB.full.eval(s).pos(), sp, tp);
-        if ((left ? tp : -tp) >= need) {
+        maxL = std::max(maxL, tp), maxR = std::max(maxR, -tp);
+        if (tp >= needL || -tp >= needR) {
+          left = tp >= needL;
+          worstOther = left ? maxR : maxL;
           sB = s;
           break;
         }
       }
+      // it cleared the main road on the other side first: a real braid (flyover), not a gore; an
+      // excursion inside the shared carriageway is drawing noise
+      if (sB >= 0 && worstOther >= (left ? needR : needL)) sB = -1;
+      const double need = left ? needL : needR;
+      (void)need;
+      // the branch clears the main road only where it splits again (chained splits): the gore
+      // junction sits 3 m before that, leaving a short connector to the next split
+      if (sB >= 0 && (diverge ? LB - sB : sB) < 3.0) sB = diverge ? LB - 3.0 : 3.0;
       const double used0 = diverge ? sB : LB - sB;
-      if (sB < 0 || used0 < 6.0 || (diverge ? LB - sB : sB) < 10.0) {  // separates at once, or never
+      if (sB < 0 || used0 < 6.0 || (diverge ? LB - sB : sB) < 3.0) {  // separates at once, or never
         if (dbg) std::fprintf(stderr, "gore? cluster at (%.0f, %.0f): separation sB %.1f of %.1f\n", clusters[ci].center.x, clusters[ci].center.y, sB, LB);
         continue;
       }
@@ -307,7 +324,14 @@ void Builder::buildGores() {
       cl.gore = Cluster::Gore{T, A, B, diverge, left, extra};
       used[T] = used[A] = used[B] = 1;
       ++rep.gores;
+      if (dbg)
+        std::fprintf(stderr, "gore #%d at (%.0f, %.0f) %s: trunk way %lld (L %.1f) main way %lld (L %.1f) branch way %lld sB %.1f extra %d %s\n",
+                     rep.gores, cl.center.x, cl.center.y, diverge ? "diverge" : "merge", static_cast<long long>(mT.wayStart),
+                     mT.full.length(), static_cast<long long>(mA.wayStart), mA.full.length(), static_cast<long long>(mB.wayStart), sB, extra,
+                     left ? "left" : "right");
+      done[ci] = 1, progress = true;
     }
+  }
   }
 }
 

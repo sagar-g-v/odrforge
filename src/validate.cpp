@@ -354,9 +354,14 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       if (cn.contactPoint != "start" && cn.contactPoint != "end") err("spec6.1.contactPoint", J_ + "connection without contactPoint");
       if (cn.laneLinks.empty()) warn("spec6.1.laneLink_required", J_ + "connection " + cn.id + " without laneLink");
       const odr::Road &in = *ir->second;
-      const bool atEnd = in.successor && in.successor->elementType == "junction" && in.successor->elementId == j.id;
-      const odr::LaneSection &secIn = odr::sectionAt(in, atEnd ? in.length() : 0.0);
       const odr::Road &con = *cr->second;
+      // the incoming road's end at this junction; a loop road touches it with both ends, so the
+      // connecting road's own link (contactPoint on the incoming road) decides
+      bool atEnd = in.successor && in.successor->elementType == "junction" && in.successor->elementId == j.id;
+      const auto &back = cn.contactPoint == "end" ? con.successor : con.predecessor;
+      if (back && back->elementType == "road" && back->elementId == in.id && !back->contactPoint.empty())
+        atEnd = back->contactPoint == "end";
+      const odr::LaneSection &secIn = odr::sectionAt(in, atEnd ? in.length() : 0.0);
       if (con.lanes.empty()) continue;
       const odr::LaneSection &secCon = cn.contactPoint == "end" ? con.lanes.back() : con.lanes.front();
       for (const auto &ll : cn.laneLinks) {

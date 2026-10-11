@@ -16,13 +16,15 @@ namespace detail {
 
 namespace {
 
-/// lateral extent of the vehicle carriageway (no sidewalks) at s
+/// lateral extent of the travelled way at s: driving, bus, bike and bidirectional lanes. Shoulders,
+/// parking and borders of adjacent carriageways may touch (they do on real roads); moving a whole
+/// carriageway for them would bend it for nothing
 bool extent(const odr::Road &r, double s, double &lo, double &hi) {
   lo = 1e9, hi = -1e9;
   const odr::LaneSection &sec = odr::sectionAt(r, s);
   for (const auto *side : {&sec.left, &sec.right})
     for (const auto &l : *side) {
-      if (l.type == "sidewalk" || l.type == "walking") continue;
+      if (l.type != "driving" && l.type != "bus" && l.type != "biking" && l.type != "bidirectional") continue;
       double a, b;
       if (!odr::laneBorders(r, s, l.id, a, b) || std::abs(b - a) < 0.05) continue;
       lo = std::min({lo, a, b});
@@ -40,7 +42,14 @@ int layerAt(const RoadMeta &m, double s) {
 
 }  // namespace
 
+void Builder::resolveLevelOverlaps() {
+  overlapLevelPass = true;
+  resolveOverlaps();
+  overlapLevelPass = false;
+}
+
 void Builder::resolveOverlaps() {
+  if (!opt.resolveOverlaps) return;
   // a drawing offset is corrected, a merge is not: OSM lines a few metres too close are pushed apart
   // (at most maxShift in total, tapered at most ~5 %); deeper overlaps and roads converging into a
   // shared junction (gores) are left to the junction
@@ -87,6 +96,21 @@ void Builder::resolveOverlaps() {
         double alo, ahi;
         if (!extent(a, s, alo, ahi)) continue;
         const Pose pa = a.planView.eval(s);
+        // on the inside of a bend the lanes (all of them, sidewalks too) must stay clear of the
+        // centre of curvature: a shift toward it may not bring the inner edge within 1 m of it
+        if (std::abs(pa.kappa) > 1e-4) {
+          double flo = 0, fhi = 0;
+          const odr::LaneSection &sec = odr::sectionAt(a, s);
+          for (const auto *side : {&sec.left, &sec.right})
+            for (const auto &l : *side) {
+              double u, v;
+              if (!odr::laneBorders(a, s, l.id, u, v)) continue;
+              flo = std::min({flo, u, v}), fhi = std::max({fhi, u, v});
+            }
+          const double R = 1.0 / std::abs(pa.kappa);
+          if (pa.kappa > 0) roomL[i] = std::min(roomL[i], std::max(0.0, R - 1.0 - fhi));
+          else roomR[i] = std::min(roomR[i], std::max(0.0, R - 1.0 + flo));
+        }
         const int la = layerAt(m, s);
         const long cx = static_cast<long>(std::floor(pa.x / cell)), cy = static_cast<long>(std::floor(pa.y / cell));
         std::map<int, bool> seen;
@@ -108,7 +132,12 @@ void Builder::resolveOverlaps() {
               if (std::abs((pa.pos() - pb.pos()).dot(pb.dir())) > 0.5) continue;
               const double c = std::cos(pa.hdg - pb.hdg);
               if (std::abs(c) < std::cos(30.0 * kPi / 180.0)) continue;  // crossing, not side by side
-              if (layerAt(mb, sb) != la) continue;                        // grade separated
+              // grade separated: by OSM layer before the heights are known; afterwards only pairs on
+              // different layers that are not really apart vertically (< 4.5 m) are handled
+              const bool otherLayer = layerAt(mb, sb) != la;
+              if (overlapLevelPass ? (!otherLayer || std::abs(odr::elevationAt(a, s) - odr::elevationAt(b, sb)) >= 4.5)
+                                   : otherLayer)
+                continue;
               double blo, bhi;
               if (!extent(b, sb, blo, bhi)) continue;
               // a's carriageway in b's lateral frame
@@ -133,14 +162,32 @@ void Builder::resolveOverlaps() {
         if (needR > 0) push[i] = -needR, any = true;
       }
       if (!any) continue;
-      // smooth envelope: keep the required shift, spread it with C1 ramps of at least 20 m and a
-      // taper of at most ~5 % (smoothstep peak slope 1.5 push / ramp length); never more than the
-      // free room on that side
+      // pushes the same way within 150 m become one plateau (a road does not move out and back in
+      // between two pinch points)
+      {
+        const int R = static_cast<int>(150.0 / step);
+        for (double sgn : {1.0, -1.0}) {
+          std::vector<double> fwd(n, 0.0), bwd(n, 0.0);
+          std::vector<double> v(n);
+          for (int i = 0; i < n; ++i) v[i] = std::max(0.0, sgn * push[i]);
+          for (int i = 0; i < n; ++i)
+            for (int j = std::max(0, i - R); j <= i; ++j) fwd[i] = std::max(fwd[i], v[j]);
+          for (int i = 0; i < n; ++i)
+            for (int j = i; j <= std::min(n - 1, i + R); ++j) bwd[i] = std::max(bwd[i], v[j]);
+          for (int i = 0; i < n; ++i) {
+            const double bridge = std::min(fwd[i], bwd[i]);
+            if (bridge > std::abs(push[i]) && (push[i] == 0.0 || push[i] * sgn > 0)) push[i] = sgn * bridge;
+          }
+        }
+      }
+      // smooth envelope: keep the required shift, spread it with C1 ramps of at least 60 m and a
+      // taper of at most ~2 % (smoothstep peak slope 1.5 push / ramp length): a realignment, not a
+      // wiggle; never more than the free room on that side
       std::vector<double> sm(n, 0.0);
       for (int i = 0; i < n; ++i) {
         if (std::abs(push[i]) < 1e-6) continue;
         push[i] = std::clamp(push[i], -maxShift, maxShift);
-        const int ramp = std::max(1, static_cast<int>(std::max(20.0, 30.0 * std::abs(push[i])) / step));
+        const int ramp = std::max(1, static_cast<int>(std::max(60.0, 75.0 * std::abs(push[i])) / step));
         for (int k = -ramp; k <= ramp; ++k) {
           const int j = i + k;
           if (j < 0 || j >= n) continue;
@@ -152,10 +199,14 @@ void Builder::resolveOverlaps() {
       // limit by the room, then re-smooth the limit so the taper stays gentle
       std::vector<double> lim(n);
       for (int i = 0; i < n; ++i) lim[i] = sm[i] >= 0 ? roomL[i] : roomR[i];
-      const double dLim = 0.05 * step;  // the limit changes by at most 5 % per metre
+      const double dLim = 0.02 * step;  // the limit changes by at most 2 % per metre
       for (int i = 1; i < n; ++i) lim[i] = std::min(lim[i], lim[i - 1] + dLim);
       for (int i = n - 2; i >= 0; --i) lim[i] = std::min(lim[i], lim[i + 1] + dLim);
       for (int i = 0; i < n; ++i) sm[i] = std::clamp(sm[i], -lim[i], lim[i]);
+      if (const char *dbgRoad = std::getenv("ODRFORGE_DEBUG_ROAD"); dbgRoad && a.id == dbgRoad)
+        for (int i = 0; i < n; ++i)
+          std::fprintf(stderr, "overlap road %s pass level %d s %.1f push %.2f roomL %.2f roomR %.2f lim %.2f sm %.2f k %.4f\n", a.id.c_str(),
+                       overlapLevelPass, L * i / (n - 1), push[i], roomL[i], roomR[i], lim[i], sm[i], a.planView.eval(L * i / (n - 1)).kappa);
       // new laneOffset = original + accumulated shift (bounded), as C1 cubic pieces every ~10 m
       if (!original.count(mi)) original[mi] = a.laneOffset, total[mi].assign(n, 0.0);
       std::vector<double> &acc = total[mi];

@@ -31,14 +31,29 @@ struct Ctx {
     std::snprintf(b, sizeof(b), "%.*g", prec, v);
     return b;
   }
+  /// positions along a road (s, sOffset, lengths along s): on a 2^-24 m grid, written exactly, so a
+  /// reader's own differences and sums of them are exact (L - s0 + s0 == L; LibCarla asserts
+  /// s <= road length strictly)
+  static double snapS(double v, bool up = false) {
+    const double q = 16777216.0;  // 2^24
+    return (up ? std::ceil(v * q - 1e-6) : std::round(v * q)) / q;
+  }
+  static std::string sNum(double v, bool up = false) {
+    v = snapS(v, up);
+    if (std::abs(v) < 1e-15) v = 0.0;
+    char b[40];
+    std::snprintf(b, sizeof(b), "%.17g", v);
+    return b;
+  }
 };
 
 void attr(pugi::xml_node n, const char *k, const std::string &v) { n.append_attribute(k) = v.c_str(); }
 void attrN(pugi::xml_node n, const Ctx &c, const char *k, double v) { attr(n, k, c.num(v)); }
+void attrS(pugi::xml_node n, const char *k, double v) { attr(n, k, Ctx::sNum(v)); }
 
 void poly(pugi::xml_node parent, const char *name, const Poly3 &p, const Ctx &c, const char *sName = "s") {
   auto n = parent.append_child(name);
-  attrN(n, c, sName, p.s);
+  attrS(n, sName, p.s);
   attrN(n, c, "a", p.a);
   attrN(n, c, "b", p.b);
   attrN(n, c, "c", p.c);
@@ -66,7 +81,7 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     for (const auto &w : l.widths) poly(n, "width", w, c, "sOffset");
   for (const auto &m : l.roadMarks) {
     auto r = n.append_child("roadMark");
-    attrN(r, c, "sOffset", m.sOffset);
+    attrS(r, "sOffset", m.sOffset);
     attr(r, "type", m.type);
     attr(r, "weight", m.weight);
     attr(r, "color", m.color);
@@ -122,7 +137,21 @@ void writeValidity(pugi::xml_node n, const std::vector<ValidityRange> &v) {
 void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   auto n = root.append_child("road");
   attr(n, "name", r.name);
-  attrN(n, c, "length", r.length());
+  {
+    // the written length must not be shorter than the written geometries add up to (s + length of
+    // the last element, each rounded to the output precision): readers that check s <= length
+    // strictly (LibCarla Lane::ComputeTransform) otherwise reject the road end
+    auto parsed = [&](double v) { return Ctx::snapS(v); };
+    double need = r.length();
+    if (!r.planView.elements.empty()) {
+      const auto &g = r.planView.elements.back();
+      need = std::max(need, parsed(g.s) + parsed(g.length));
+      double sum = 0;  // readers may also accumulate the element lengths themselves
+      for (const auto &e : r.planView.elements) sum += parsed(e.length);
+      need = std::max(need, sum);
+    }
+    attr(n, "length", Ctx::sNum(need, true));
+  }
   attr(n, "id", r.id);
   attr(n, "junction", r.junction);
   if (!r.rule.empty() && c.revMinor >= 5) attr(n, "rule", r.rule);
@@ -139,7 +168,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   }
   for (const auto &t : r.types) {
     auto e = n.append_child("type");
-    attrN(e, c, "s", t.s);
+    attrS(e, "s", t.s);
     attr(e, "type", t.type);
     if (!t.country.empty() && c.revMinor >= 6) attr(e, "country", t.country);
     if (t.speedMax) {
@@ -151,11 +180,11 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   auto pv = n.append_child("planView");
   for (const auto &g : r.planView.elements) {
     auto e = pv.append_child("geometry");
-    attrN(e, c, "s", g.s);
+    attrS(e, "s", g.s);
     attrN(e, c, "x", g.x);
     attrN(e, c, "y", g.y);
     attrN(e, c, "hdg", g.hdg);
-    attrN(e, c, "length", g.length);
+    attrS(e, "length", g.length);
     switch (g.type()) {
       case GeomType::Line: e.append_child("line"); break;
       case GeomType::Arc: attrN(e.append_child("arc"), c, "curvature", g.k0); break;
@@ -192,7 +221,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   for (const auto &o : r.laneOffset) poly(lanes, "laneOffset", o, c);
   for (const auto &sec : r.lanes) {
     auto sn = lanes.append_child("laneSection");
-    attrN(sn, c, "s", sec.s);
+    attrS(sn, "s", sec.s);
     if (!sec.left.empty()) {
       auto l = sn.append_child("left");
       for (auto it = sec.left.rbegin(); it != sec.left.rend(); ++it) writeLane(l, *it, c);  // outermost first
@@ -210,7 +239,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     attr(e, "name", o.name);
     attr(e, "type", o.type);
     if (!o.subtype.empty()) attr(e, "subtype", o.subtype);
-    attrN(e, c, "s", o.s);
+    attrS(e, "s", o.s);
     attrN(e, c, "t", o.t);
     attrN(e, c, "zOffset", o.zOffset);
     attrN(e, c, "hdg", o.hdg);
@@ -243,16 +272,16 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   }
   for (const auto &b : r.bridges) {
     auto e = objs.append_child("bridge");
-    attrN(e, c, "s", b.s);
-    attrN(e, c, "length", b.length);
+    attrS(e, "s", b.s);
+    attrS(e, "length", b.length);
     attr(e, "name", b.name);
     attr(e, "id", b.id);
     attr(e, "type", b.type.empty() ? "concrete" : b.type);
   }
   for (const auto &b : r.tunnels) {
     auto e = objs.append_child("tunnel");
-    attrN(e, c, "s", b.s);
-    attrN(e, c, "length", b.length);
+    attrS(e, "s", b.s);
+    attrS(e, "length", b.length);
     attr(e, "name", b.name);
     attr(e, "id", b.id);
     attr(e, "type", b.type.empty() ? "standard" : b.type);
@@ -262,7 +291,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   auto sigs = n.append_child("signals");
   for (const auto &s : r.signals) {
     auto e = sigs.append_child("signal");
-    attrN(e, c, "s", s.s);
+    attrS(e, "s", s.s);
     attrN(e, c, "t", s.t);
     attr(e, "id", s.id);
     attr(e, "name", s.name);
@@ -285,7 +314,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   }
   for (const auto &s : r.signalReferences) {
     auto e = sigs.append_child("signalReference");
-    attrN(e, c, "s", s.s);
+    attrS(e, "s", s.s);
     attrN(e, c, "t", s.t);
     attr(e, "id", s.id);
     attr(e, "orientation", s.orientation);

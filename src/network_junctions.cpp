@@ -159,7 +159,9 @@ void Builder::buildJunctions() {
       };
       std::vector<Target> targets;
       for (const RoadEnd &out : cl.ends) {
-        if (out.road == in.road && out.atEnd == in.atEnd) continue;
+        // never back into the same road: its own end (a U-turn) or, for a loop road with both ends
+        // here, its start (driving round again through the junction)
+        if (out.road == in.road) continue;
         const RoadMeta &mo = metas[out.road];
         const odr::Road &ro = od.roads[mo.roadIndex];
         std::vector<int> ol = endLanes(ro, out.atEnd, false);
@@ -241,7 +243,78 @@ void Builder::buildJunctions() {
           std::vector<int> src;
           for (int i = 0; i < nIn; ++i)
             if (perm[i].count(tg.turn)) src.push_back(i);
-          const int ns = static_cast<int>(src.size());
+          auto prop = [](int i, int n, int m) {
+            return n == m || n <= 1 || m <= 1 ? std::min(i, m - 1) : static_cast<int>(std::lround(i * (m - 1) / double(n - 1)));
+          };
+          // a point a little way along a road from its end at this junction (which side it lies on)
+          auto awayPoint = [&](const RoadEnd &e) {
+            const odr::Road &r = od.roads[metas[e.road].roadIndex];
+            const double d = std::min(10.0, r.length());
+            return r.planView.eval(e.atEnd ? r.length() - d : d).pos();
+          };
+          // lane split: one road continuing straight on as several roads - its lanes are divided
+          // left to right in the order the roads leave (no crossing connecting lanes)
+          std::vector<const Target *> straight;
+          for (const Target &t : targets)
+            if (t.turn == Turn::Straight) straight.push_back(&t);
+          bool partitioned = false;
+          if (tg.turn == Turn::Straight && straight.size() >= 2 && !src.empty()) {
+            const Vec2 dIn(std::cos(hIn), std::sin(hIn)), p0 = pin.pos();
+            std::sort(straight.begin(), straight.end(), [&](const Target *a, const Target *b) {
+              return dIn.cross(awayPoint(*a->end) - p0) > dIn.cross(awayPoint(*b->end) - p0);
+            });
+            int total = 0, c = 0;
+            for (const Target *t : straight) total += static_cast<int>(t->lanes.size());
+            for (const Target *t : straight) {
+              if (t == &tg) break;
+              c += static_cast<int>(t->lanes.size());
+            }
+            const int ns = static_cast<int>(src.size());
+            std::vector<int> mine;
+            for (int k = 0; k < ns; ++k) {
+              const int q = static_cast<int>((k + 0.5) * total / ns);
+              if (q >= c && q < c + nOut) mine.push_back(src[k]);
+            }
+            if (mine.empty()) mine.push_back(src[std::clamp(static_cast<int>((c + 0.5 * nOut) * ns / total), 0, ns - 1)]);
+            for (int k = 0; k < static_cast<int>(mine.size()); ++k)
+              pairs.push_back({byLeft[mine[k]], tg.lanes[prop(k, static_cast<int>(mine.size()), nOut)]});
+            partitioned = true;
+          }
+          // lane merge: several roads continuing straight on into one - each takes the outgoing
+          // lanes on its side
+          if (!partitioned && tg.turn == Turn::Straight) {
+            const odr::Road &ro0 = od.roads[metas[tg.end->road].roadIndex];
+            const Pose po0 = ro0.planView.eval(tg.end->atEnd ? ro0.length() : 0.0);
+            const double hOut0 = tg.end->atEnd ? po0.hdg + kPi : po0.hdg;
+            const Vec2 dOut(std::cos(hOut0), std::sin(hOut0));
+            std::vector<std::pair<double, int>> ins;  // (lateral, lane count) of straight incoming roads
+            double mine = 0;
+            for (const RoadEnd &e : cl.ends) {
+              if (e.road == tg.end->road && e.atEnd == tg.end->atEnd) continue;
+              const int n = static_cast<int>(endLanes(od.roads[metas[e.road].roadIndex], e.atEnd, true).size());
+              if (!n) continue;
+              const odr::Road &re = od.roads[metas[e.road].roadIndex];
+              const Pose pe = re.planView.eval(e.atEnd ? re.length() : 0.0);
+              const double he = e.atEnd ? pe.hdg : pe.hdg + kPi;
+              if (classify(normalizeAngle(hOut0 - he)) != Turn::Straight) continue;
+              const double lat = dOut.cross(awayPoint(e) - po0.pos());
+              ins.push_back({lat, n});
+              if (e.road == in.road && e.atEnd == in.atEnd) mine = lat;
+            }
+            if (ins.size() >= 2 && static_cast<int>(src.size()) == nIn) {
+              std::sort(ins.begin(), ins.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+              int total = 0, c = 0;
+              for (const auto &x : ins) total += x.second;
+              for (const auto &x : ins) {
+                if (x.first == mine) break;
+                c += x.second;
+              }
+              for (int i = 0; i < nIn; ++i)
+                pairs.push_back({byLeft[i], tg.lanes[std::clamp(static_cast<int>((c + i + 0.5) * nOut / total), 0, nOut - 1)]});
+              partitioned = true;
+            }
+          }
+          const int ns = partitioned ? 0 : static_cast<int>(src.size());
           for (int k = 0; k < ns; ++k) {
             int o;
             if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
@@ -268,6 +341,30 @@ void Builder::buildJunctions() {
           const double w0 = std::abs(tb - ta), w1 = std::abs(ub - ua);
           // geometry: single clothoid when it is a reasonable curve, else a G2 two-piece curve
           ReferenceLine line = connectionPath(a, b);
+          if (const char *dc = std::getenv("ODRFORGE_DEBUG_CONN"); dc && ri.id == dc) {
+            std::fprintf(stderr, "conn %s->%s a (%.3f %.3f %.3f) b (%.3f %.3f %.3f)\n", ri.id.c_str(), ro.id.c_str(), a.x, a.y, a.hdg, b.x, b.y, b.hdg);
+            for (const auto &e : line.elements) std::fprintf(stderr, "   el L %.4f k0 %.4f k1 %.4f\n", e.length, e.k0, e.k1);
+          }
+          {
+            // sanity: a connecting path never turns much more than its end headings differ, nor
+            // runs much longer than the gap it bridges (a looping clothoid root slipped through);
+            // otherwise the simplest path: the chord (a few cm between nearly touching road ends)
+            double turning = 0;
+            for (const auto &e : line.elements) turning += 0.5 * (e.k0 + e.k1) * e.length;
+            const double chord = (b.pos() - a.pos()).norm(), dh = std::abs(normalizeAngle(b.hdg - a.hdg));
+            if (line.elements.empty() || std::abs(turning) > dh + 0.5 * kPi || line.length() > 4.0 * chord + 10.0) {
+              if (std::getenv("ODRFORGE_DEBUG_CONN"))
+                std::fprintf(stderr, "connecting %s->%s lanes %d->%d: path turning %.2f rad over %.2f m for gap %.2f m, dh %.2f\n",
+                             ri.id.c_str(), ro.id.c_str(), li, lo, turning, line.length(), chord, dh);
+              line = ReferenceLine{};
+              if (chord > 1e-3) {
+                GeomElement e;
+                e.x = a.x, e.y = a.y, e.hdg = std::atan2(b.y - a.y, b.x - a.x), e.length = chord;
+                line.elements.push_back(e);
+                line.finalize();
+              }
+            }
+          }
           if (line.elements.empty() || line.length() < 0.05) continue;
           odr::Road c;
           c.id = std::to_string(nextConnId++);

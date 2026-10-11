@@ -77,7 +77,7 @@ class ReferenceLine {
   /// Merge nearly-straight / nearly-constant-curvature elements, drop zero-length ones.
   void simplify(double kTol = 1e-5);
   /// Fold elements shorter than minLen into a neighbour (spec 2: avoid geometries below ~1 mm).
-  void dropTiny(double minLen = 1e-3);
+  void dropTiny(double minLen = 0.01);  // elements under 1 cm are folded into a neighbour (validator rule spec2.min_geometry_length)
 };
 
 }  // namespace odrforge

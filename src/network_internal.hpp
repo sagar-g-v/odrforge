@@ -98,7 +98,9 @@ bool isRoadWay(const OsmData &osm, const OsmWay &w, const BuildOptions &opt);
 /// parking aisles of lots that connect two or more road attachment points (BuildOptions::connectParkingLots)
 std::set<OsmId> throughParkingAisles(const OsmData &osm, const BuildOptions &opt);
 /// joins way ends that stop short of another road (see BuildOptions::snapDanglingEnds)
-OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped);
+/// ... and inserts the missing node where minor roads cross on the same level (crossings: count)
+OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped,
+                         int *crossings = nullptr);
 
 struct Builder {
   const OsmData &osm;
@@ -134,6 +136,8 @@ struct Builder {
   void trimRoads();
   void buildRoads();
   void resolveOverlaps();    // overlap.cpp
+  void resolveLevelOverlaps();  // overlap.cpp: second pass once heights are known
+  bool overlapLevelPass = false;
   void sampleElevation();    // elevation.cpp
   void junctionSurfaces();
   void fitRoadElevation();

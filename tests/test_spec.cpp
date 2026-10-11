@@ -371,3 +371,22 @@ TEST_CASE("validator catches spec violations (negative tests)") {
   // and a clean model passes
   CHECK(validate(sampleNetwork()).errors == 0);
 }
+
+TEST_CASE("writer: road length is never shorter than the written geometry (strict readers)") {
+  // LibCarla checks s <= road length strictly: the written length must cover the written s + length
+  // of the last geometry even after each value is rounded to the output precision
+  odr::OpenDrive od = sampleNetwork();
+  auto &els = od.roads[0].planView.elements;
+  els[0].length = 0.12345678901251;
+  od.roads[0].planView.finalize();
+  for (int prec : {9, 12}) {
+    const std::string xml = odr::toString(od, {6, prec});
+    pugi::xml_document d;
+    CHECK(d.load_string(xml.c_str()));
+    for (auto road : d.child("OpenDRIVE").children("road")) {
+      const double L = road.attribute("length").as_double();
+      auto last = road.child("planView").last_child();
+      CHECK(last.attribute("s").as_double() + last.attribute("length").as_double() <= L);
+    }
+  }
+}

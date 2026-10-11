@@ -28,7 +28,12 @@ static void usage() {
       "  --structures S.odrz bridge-deck surface grid (lidar class 17) for bridge=yes roads\n"
       "  --clip MINLAT,MINLON,MAXLAT,MAXLON  cut the network to this area (ways split at the boundary)\n"
       "  --no-superelevation flat cross sections and level junctions (for consumers that ignore\n"
-      "                      <superelevation>, e.g. CARLA meshing the roads itself)\n",
+      "                      <superelevation>, e.g. CARLA meshing the roads itself)\n"
+      "  --no-gores          freeway splits / merges as plain junctions (no lane-level gores)\n"
+      "  --no-snap           do not join OSM near-misses or add missing crossing nodes\n"
+      "  --no-overlap-shift  do not move roads drawn too close apart\n"
+      "  --no-parking-lots   do not drive through parking lots that connect streets\n"
+      "  --corner-tolerance M  how far a rounded corner may leave the mapped corner (default 1.5 m)\n",
       ODRFORGE_VERSION);
 }
 
@@ -57,6 +62,11 @@ int main(int argc, char **argv) {
     else if (a == "--terrain") terrainPath = next();
     else if (a == "--structures") structuresPath = next();
     else if (a == "--no-superelevation") flat = true;
+    else if (a == "--no-gores") opt.laneLevelGores = false;
+    else if (a == "--no-overlap-shift") opt.resolveOverlaps = false;
+    else if (a == "--no-snap") opt.snapDanglingEnds = 0.0;
+    else if (a == "--no-parking-lots") opt.connectParkingLots = false;
+    else if (a == "--corner-tolerance") opt.fit.maxCornerDeviation = std::atof(next().c_str());
     else if (a == "--clip") {
       const std::string v = next();
       if (std::sscanf(v.c_str(), "%lf,%lf,%lf,%lf", &clip[0], &clip[1], &clip[2], &clip[3]) == 4) haveClip = true;
@@ -114,9 +124,10 @@ int main(int argc, char **argv) {
     if (rep.elevSamples)
       std::printf("  steep spots (> 20 %%): %d, of which not supported by the measured terrain: %d; overlap shifts %d\n",
                   rep.steepSpots, rep.steepNotInTerrain, rep.overlapShifts);
-    if (rep.snappedEnds || rep.parkingAisles)
-      std::printf("  topology: %d OSM way ends joined to the road they stop short of, %d parking-lot aisles connect streets\n",
-                  rep.snappedEnds, rep.parkingAisles);
+    if (rep.snappedEnds || rep.parkingAisles || rep.joinedCrossings)
+      std::printf("  topology: %d OSM way ends joined to the road they stop short of, %d missing crossing nodes added, "
+                  "%d parking-lot aisles connect streets\n",
+                  rep.snappedEnds, rep.joinedCrossings, rep.parkingAisles);
     if (rep.gores) std::printf("  gores: %d freeway splits / merges modelled at lane level\n", rep.gores);
     std::printf("  validation: %d errors, %d warnings\n", vr.errors, vr.warnings);
     for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());

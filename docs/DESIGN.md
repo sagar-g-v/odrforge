@@ -47,7 +47,7 @@ The research behind this design is in `docs/research/`:
 | reference lines | Fits a clothoid spline through each chain polyline (`clothoid_fit.cpp`). Lane sections start at way joints, and every OSM node gets its `s`. |
 | lane-level gores (`gore.cpp`) | A freeway split or merge at a shallow angle (three oneway roads, branches within 30°) is modelled as it is built. The freeway becomes one reference line through the OSM node, and the trunk carries the branch lanes beside the main lanes until the driving lanes separate. Those lanes are added with a taper for an exit, or dropped after an entrance. A 4 m junction sits at that point: main lanes continue 1:1, and the branch lanes become the ramp. |
 | trim roads | Scans each road end outward from its junction until neither carriageway edge overlaps another road of the junction, then adds the stop-line setback and the curb return. Freeways and ramps may be trimmed back up to 160 m, because ramps leave at shallow angles. |
-| resolve overlaps | Near-parallel roads on the same layer that OSM draws closer than their lanes are wide get pushed apart by a smooth extra `laneOffset`: at most 3 m, tapered at no more than about 5 %. A shift never exceeds the free room on that side, and a road squeezed from both sides is left in place. Gore partners count as obstacles and are never pushed apart. |
+| resolve overlaps | Near-parallel roads whose driving lanes overlap get pushed apart by a smooth extra `laneOffset`: at most 3 m, tapered at no more than 2 %, with nearby pushes merged into one plateau. A shift never exceeds the free room on either side, never goes past a bend's centre of curvature, and leaves a road squeezed from both sides in place. Gore partners count as obstacles, and touching shoulders are allowed. A second pass, once heights are known, handles roads on different OSM layers that are less than 4.5 m apart vertically. |
 | roads | Builds lane sections with tapers and lane links, `laneOffset` held across one-sided changes, road types, speeds, and bridges and tunnels. |
 | elevation | Fits measured terrain to the roads (see [Real elevation](#real-elevation-elevationcpp)). The output is C1 cubic Hermite `elevation` records and `superelevation` (crossfall). |
 | junctions | A movement sharper than 150° is a U-turn and is not built, unless it is the only way out of (or into) a road end and leads to another road; such a movement is built as a tight turn instead (for example a driveway hooking into the street at its last node). Builds connecting roads per movement: a single G1 clothoid, or a curvature-continuous 2-piece curve when it would be tighter than `minConnectingRadius`. Width and `laneOffset` follow cubics. Height and banking come from the junction surface, so every connecting road of a junction lies on one plane. |
@@ -171,8 +171,9 @@ walked in 1 m steps: `scripts/compare_xodr_carla.py` in MirrorMile.
   `reference` links.
 - **Inputs:** OSM PBF via libosmium, and GeoTIFF terrain read directly (today it goes through
   `make_terrain.py` to `.odrz`).
-- **Braided ramps:** a branch whose OSM line crosses the main line before it separates (flyover
-  ramps in the Four Level Interchange) is not a gore. It needs the vertical separation known when
-  the junction is shaped.
+- **CARLA and banking:** LibCarla ignores `superelevation`. At hillside junctions banked 12–14 %,
+  its waypoint heights step by up to 0.6 m at the lane offset (5 sites in downtown Los Angeles).
+  Meshes that apply superelevation (MirrorMile) are continuous. A CARLA-only mode could shift
+  lane heights into the elevation profile.
 - **Python bindings (pybind11)** and MirrorMile integration, replacing steps 01–02f.
 - **More country rule files,** plus the US state and EU zone speed tables.

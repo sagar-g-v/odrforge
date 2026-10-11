@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <optional>
 
 namespace odrforge {
 
@@ -52,26 +54,94 @@ void dpRecurse(const std::vector<Vec2> &p, size_t i0, size_t i1, double tol, std
   }
 }
 
-// Replace sharp corners by two tangent points so that the spline rounds them (fillet radius R).
-std::vector<Vec2> filletCorners(const std::vector<Vec2> &p, const PolylineFitOptions &o) {
+// Symmetric clothoid pair (spiral 0 -> k, spiral k -> 0) turning by `turn` (rad, > 0) with spiral
+// length 1: tangent length d1 (start point to the intersection of the two legs) and deviation dev1
+// (intersection to the pair's midpoint). The shape scales linearly with the spiral length.
+struct PairShape {
+  double d1 = 0, dev1 = 0;
+};
+PairShape clothoidPairShape(double turn) {
+  // first spiral: heading(t) = (turn / 2) t^2, t in [0, 1] (Simpson)
+  const int N = 64;
+  double x = 0, y = 0;
+  for (int i = 0; i <= N; ++i) {
+    const double t = static_cast<double>(i) / N, h = 0.5 * turn * t * t;
+    const double w = (i == 0 || i == N) ? 1.0 : (i % 2 ? 4.0 : 2.0);
+    x += w * std::cos(h), y += w * std::sin(h);
+  }
+  x /= 3.0 * N, y /= 3.0 * N;  // midpoint M of the pair, heading turn / 2 there
+  // the pair is symmetric about the corner bisector, which passes through M along the normal there;
+  // it meets leg a (the x axis) at the corner C = (x + y tan(turn / 2), 0)
+  const double hm = 0.5 * turn;
+  PairShape ps;
+  ps.d1 = x + y * std::tan(hm);
+  ps.dev1 = std::hypot(ps.d1 - x, y);
+  return ps;
+}
+
+// Replace sharp corners by two tangent points; the corner between them becomes a symmetric
+// clothoid pair (G2: curvature 0 on the legs, rising to a peak at the bisector and back).
+std::vector<Vec2> filletCorners(const std::vector<Vec2> &p, const PolylineFitOptions &o,
+                                std::vector<double> *legHeading = nullptr, std::vector<char> *pairStart = nullptr) {
+  // legHeading (same size as the result): the heading of the leg a fillet tangent point lies on,
+  // NaN for other points - a tangent point's heading is its leg's by construction; pairStart marks
+  // the first tangent point of each corner (the segment from it to the next point is the pair)
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  if (legHeading) legHeading->assign(p.size() < 3 ? p.size() : 1, nan);
+  if (pairStart) pairStart->assign(p.size() < 3 ? p.size() : 1, 0);
   if (p.size() < 3) return p;
   std::vector<Vec2> out{p.front()};
   for (size_t i = 1; i + 1 < p.size(); ++i) {
     const Vec2 a = p[i] - p[i - 1], b = p[i + 1] - p[i];
     const double la = a.norm(), lb = b.norm();
     const double turn = std::abs(normalizeAngle(std::atan2(b.y, b.x) - std::atan2(a.y, a.x)));
-    if (turn < o.cornerAngle || la < 1e-6 || lb < 1e-6) {
+    if (turn < o.cornerAngle || la < 1e-6 || lb < 1e-6 || turn > 3.0) {
       out.push_back(p[i]);
+      if (legHeading) legHeading->push_back(nan);
+      if (pairStart) pairStart->push_back(0);
       continue;
     }
-    // tangent length of a fillet with radius R; limited so neighbouring fillets do not overlap
-    double d = o.minCornerRadius * std::tan(0.5 * turn);
+    // spiral length: the class radius as peak curvature (Ls = turn R), shortened so the pair stays
+    // within maxCornerDeviation of the mapped corner, but never so short that its peak curvature
+    // (turn / Ls) exceeds the lane-fold limit
+    const PairShape ps = clothoidPairShape(turn);
+    double Ls = turn * o.minCornerRadius;
+    if (o.maxCornerDeviation > 0 && ps.dev1 > 1e-9) Ls = std::min(Ls, o.maxCornerDeviation / ps.dev1);
+    if (o.maxCurvature > 0) Ls = std::max(Ls, turn / o.maxCurvature);
+    // tangent length; limited so neighbouring fillets do not overlap
+    double d = Ls * ps.d1;
     d = std::min({d, 0.45 * la, 0.45 * lb});
     out.push_back(p[i] - a * (d / la));
     out.push_back(p[i] + b * (d / lb));
+    if (legHeading) legHeading->push_back(std::atan2(a.y, a.x)), legHeading->push_back(std::atan2(b.y, b.x));
+    if (pairStart) pairStart->push_back(1), pairStart->push_back(0);
   }
   out.push_back(p.back());
+  if (legHeading) legHeading->push_back(nan);
+  if (pairStart) pairStart->push_back(0);
   return out;
+}
+
+/// the symmetric clothoid pair from pose (p0, h0) to the tangent point p1 with heading h1
+std::optional<std::vector<GeomElement>> clothoidPair(const Vec2 &p0, double h0, const Vec2 &p1, double h1) {
+  const double turn = normalizeAngle(h1 - h0);
+  if (std::abs(turn) < 1e-6) return std::nullopt;
+  const PairShape ps = clothoidPairShape(std::abs(turn));
+  // the tangent length of the pair equals the distance from each tangent point to the corner:
+  // solve it from the two leg lines
+  const Vec2 da(std::cos(h0), std::sin(h0)), db(std::cos(h1), std::sin(h1));
+  const double den = da.cross(db);
+  if (std::abs(den) < 1e-9) return std::nullopt;
+  const double ta = (p1 - p0).cross(db) / den;  // corner = p0 + da ta
+  if (ta <= 0) return std::nullopt;
+  const double Ls = ta / ps.d1, k = turn / Ls;
+  GeomElement e1;
+  e1.x = p0.x, e1.y = p0.y, e1.hdg = h0, e1.length = Ls, e1.k0 = 0.0, e1.k1 = k;
+  const Pose m = e1.end();
+  GeomElement e2;
+  e2.x = m.x, e2.y = m.y, e2.hdg = m.hdg, e2.length = Ls, e2.k0 = k, e2.k1 = 0.0;
+  if ((e2.end().pos() - p1).norm() > 0.05 + 0.01 * ta) return std::nullopt;  // asymmetric legs: not a pair
+  return std::vector<GeomElement>{e1, e2};
 }
 
 // Heading at interior vertex i: tangent of the circle through p[i-1], p[i], p[i+1] (exact for arcs).
@@ -207,12 +277,16 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
     if (q.empty() || (p - q.back()).norm() > 0.05) q.push_back(p);
   if (q.size() < 2) return {};
   q = simplifyPolyline(q, o.noiseTolerance);
-  q = filletCorners(q, o);
+  std::vector<double> legH;
+  std::vector<char> pairAt;
+  q = filletCorners(q, o, &legH, &pairAt);
   const size_t n = q.size();
 
-  // 2. vertex headings: circle tangents inside, fixed or extrapolated at the ends
+  // 2. vertex headings: circle tangents inside (a fillet tangent point takes its leg's heading),
+  //    fixed or extrapolated at the ends
   std::vector<double> h(n);
-  for (size_t i = 1; i + 1 < n; ++i) h[i] = circleTangent(q[i - 1], q[i], q[i + 1]);
+  for (size_t i = 1; i + 1 < n; ++i)
+    h[i] = i < legH.size() && !std::isnan(legH[i]) ? legH[i] : circleTangent(q[i - 1], q[i], q[i + 1]);
   auto chord = [&](size_t i) { return std::atan2(q[i + 1].y - q[i].y, q[i + 1].x - q[i].x); };
   if (n == 2) {
     h[0] = o.startHeading.value_or(chord(0));
@@ -228,7 +302,15 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
     segs.resize(n - 1);
     bool all = true;
     for (size_t i = 0; i + 1 < n; ++i) {
-      segs[i] = segment(q[i], hh[i], q[i + 1], hh[i + 1]);
+      segs[i] = Seg{};
+      if (i < pairAt.size() && pairAt[i])
+        if (auto pr = clothoidPair(q[i], hh[i], q[i + 1], hh[i + 1])) {
+          segs[i].ok = true;
+          segs[i].sub = *pr;
+          segs[i].e = pr->front();
+          segs[i].e.k1 = pr->back().k1;  // 0: the pair ends on the straight leg
+        }
+      if (!segs[i].ok) segs[i] = segment(q[i], hh[i], q[i + 1], hh[i + 1]);
       all = all && segs[i].ok;
     }
     return all;
@@ -237,11 +319,15 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
   bool ok = build(h, segs);
   if (ok && o.g2 && n > 2) {
     const size_t m = n - 2;  // unknowns h[1..n-2]
+    // fillet tangent points keep their leg heading (curvature may step there, G1): letting Newton
+    // turn them would bend the straight legs next to a sharp corner
+    std::vector<char> fixedV(n, 0);
+    for (size_t i = 1; i + 1 < n; ++i) fixedV[i] = i < legH.size() && !std::isnan(legH[i]);
     for (int iter = 0; iter < 30; ++iter) {
       std::vector<double> F(m);
       double norm = 0.0;
       for (size_t j = 0; j < m; ++j) {
-        F[j] = segs[j].e.k1 - segs[j + 1].e.k0;
+        F[j] = fixedV[j + 1] ? 0.0 : segs[j].e.k1 - segs[j + 1].e.k0;
         norm = std::max(norm, std::abs(F[j]));
       }
       if (norm < 1e-9) break;
@@ -264,6 +350,12 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
         if (j + 1 < m) lo[j + 1] = (b.e.k1 - segs[j + 1].e.k1) / eps;
       }
       if (!jacOk) break;
+      for (size_t j = 0; j < m; ++j)
+        if (fixedV[j + 1]) {
+          di[j] = 1.0, lo[j] = up[j] = 0.0;
+          if (j > 0) up[j - 1] = 0.0;
+          if (j + 1 < m) lo[j + 1] = 0.0;
+        }
       // Thomas algorithm
       std::vector<double> c(m), d(m), x(m);
       for (size_t j = 0; j < m; ++j) {
@@ -280,10 +372,12 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
       std::vector<Seg> s2;
       bool accepted = false;
       for (int ls = 0; ls < 8; ++ls, lambda *= 0.5) {
-        for (size_t j = 0; j < m; ++j) h2[j + 1] = h[j + 1] + lambda * std::clamp(x[j], -0.5, 0.5);
+        for (size_t j = 0; j < m; ++j)
+          if (!fixedV[j + 1]) h2[j + 1] = h[j + 1] + lambda * std::clamp(x[j], -0.5, 0.5);
         if (!build(h2, s2)) continue;
         double n2 = 0.0;
-        for (size_t j = 0; j < m; ++j) n2 = std::max(n2, std::abs(s2[j].e.k1 - s2[j + 1].e.k0));
+        for (size_t j = 0; j < m; ++j)
+          if (!fixedV[j + 1]) n2 = std::max(n2, std::abs(s2[j].e.k1 - s2[j + 1].e.k0));
         if (n2 < norm) {
           h = h2;
           segs = s2;
@@ -306,12 +400,14 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
     std::vector<double> hg1(n);
     hg1.front() = h.front();
     hg1.back() = h.back();
-    for (size_t i = 1; i + 1 < n; ++i) hg1[i] = circleTangent(q[i - 1], q[i], q[i + 1]);
+    for (size_t i = 1; i + 1 < n; ++i)
+      hg1[i] = i < legH.size() && !std::isnan(legH[i]) ? legH[i] : circleTangent(q[i - 1], q[i], q[i + 1]);
     std::vector<Seg> s1;
     if (build(hg1, s1) && maxK(segs) > 1.5 * maxK(s1) + 0.01) segs = s1;
   }
   if (!ok) {  // fall back to chord-bisector headings (always solvable)
-    for (size_t i = 1; i + 1 < n; ++i) h[i] = chord(i - 1) + 0.5 * normalizeAngle(chord(i) - chord(i - 1));
+    for (size_t i = 1; i + 1 < n; ++i)
+      h[i] = i < legH.size() && !std::isnan(legH[i]) ? legH[i] : chord(i - 1) + 0.5 * normalizeAngle(chord(i) - chord(i - 1));
     build(h, segs);
   }
 

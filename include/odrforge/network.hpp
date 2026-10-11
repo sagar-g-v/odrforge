@@ -65,6 +65,8 @@ struct BuildOptions {
   /// freeway splits / merges at a shallow angle: the trunk carries the branch lanes up to where the
   /// carriageways separate and the junction sits there (no overlapping road surfaces at gores)
   bool laneLevelGores = true;
+  /// near-parallel roads drawn closer than their lanes are wide are moved apart (bounded laneOffset)
+  bool resolveOverlaps = true;
   std::set<OsmId> includeWays;  ///< ways included regardless of the class filters (lot aisles are added here)
   std::string name = "OdrForge network";
 };
@@ -78,6 +80,7 @@ struct BuildReport {
   int elevSamples = 0;
   int snappedEnds = 0;
   int parkingAisles = 0;
+  int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added
   int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int overlapShifts = 0;
   int steepSpots = 0;        ///< samples steeper than 20 %

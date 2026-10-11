@@ -1,4 +1,4 @@
-// OdrForge - joining OSM near-misses.
+﻿// OdrForge - joining OSM near-misses.
 //
 // A way that ends a few metres short of another road without sharing a node (a driveway drawn to
 // the kerb, a street stopped at the edge of the carriageway it joins) would become a road that
@@ -10,6 +10,7 @@
 #include <cmath>
 #include <functional>
 #include <set>
+#include <tuple>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -90,8 +91,9 @@ std::set<OsmId> throughParkingAisles(const OsmData &osm, const BuildOptions &opt
   return out;
 }
 
-OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped) {
+OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped, int *crossings) {
   snapped = 0;
+  if (crossings) *crossings = 0;
   OsmData out = in;
   if (opt.snapDanglingEnds <= 0) return out;
   std::vector<const OsmWay *> roads;
@@ -207,6 +209,95 @@ OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildO
     else w.nodes.push_back(joins[k]);
     ++snapped;
   }
+  // minor roads (service, residential, living street) whose lines cross on the same level without
+  // a shared node: the intersection node is missing (parking lots, campuses); major roads crossing
+  // without a node are grade separations and are left to the elevation stage
+  if (crossings) *crossings = 0;
+  auto minor = [](const OsmWay &w) {
+    const std::string hw = tag(w.tags, "highway").value_or("");
+    return hw == "service" || hw == "residential" || hw == "living_street" || hw == "unclassified" || hw == "road";
+  };
+  auto structure = [](const OsmWay &w) {
+    return tag(w.tags, "bridge") || tag(w.tags, "tunnel") || tagYes(w.tags, "covered") || tag(w.tags, "level") ||
+           (tag(w.tags, "layer") && tag(w.tags, "layer").value() != "0");
+  };
+  std::vector<OsmWay *> mw;
+  for (auto &[id, w] : out.ways)
+    if (isRoadWay(out, w, opt) && minor(w) && !structure(w)) mw.push_back(&w);
+  std::sort(mw.begin(), mw.end(), [](const OsmWay *a, const OsmWay *b) { return a->id < b->id; });
+  auto Q = [&](OsmId n) {
+    auto it = pos.find(n);
+    if (it != pos.end()) return it->second;
+    const OsmNode *nd = out.node(n);
+    return pos[n] = proj.forward(nd->lat, nd->lon);
+  };
+  std::map<std::pair<long, long>, std::vector<std::pair<size_t, size_t>>> cells;
+  for (size_t k = 0; k < mw.size(); ++k)
+    for (size_t i = 0; i + 1 < mw[k]->nodes.size(); ++i) {
+      const Vec2 a = Q(mw[k]->nodes[i]), b = Q(mw[k]->nodes[i + 1]);
+      for (long gx = static_cast<long>(std::floor(std::min(a.x, b.x) / cell)); gx <= static_cast<long>(std::floor(std::max(a.x, b.x) / cell)); ++gx)
+        for (long gy = static_cast<long>(std::floor(std::min(a.y, b.y) / cell)); gy <= static_cast<long>(std::floor(std::max(a.y, b.y) / cell)); ++gy)
+          cells[{gx, gy}].push_back({k, i});
+    }
+  struct Cross {
+    size_t way, seg;
+    double t;
+    Vec2 p;
+    long id;  ///< crossing index (both ways share the node)
+  };
+  std::vector<Cross> cross;
+  std::set<std::tuple<size_t, size_t, size_t, size_t>> seen;
+  long nCross = 0;
+  for (const auto &[key, segsIn] : cells)
+    for (size_t x = 0; x < segsIn.size(); ++x)
+      for (size_t y = x + 1; y < segsIn.size(); ++y) {
+        auto [k1, i1] = segsIn[x];
+        auto [k2, i2] = segsIn[y];
+        if (k1 == k2) continue;
+        if (k1 > k2) std::swap(k1, k2), std::swap(i1, i2);
+        if (!seen.insert({k1, i1, k2, i2}).second) continue;
+        const OsmWay &w1 = *mw[k1], &w2 = *mw[k2];
+        const OsmId a1 = w1.nodes[i1], b1 = w1.nodes[i1 + 1], a2 = w2.nodes[i2], b2 = w2.nodes[i2 + 1];
+        if (a1 == a2 || a1 == b2 || b1 == a2 || b1 == b2) continue;  // already joined
+        const Vec2 p = Q(a1), r = Q(b1) - p, q = Q(a2), sv = Q(b2) - q;
+        const double den = r.cross(sv);
+        if (std::abs(den) < 1e-9) continue;
+        const double t = (q - p).cross(sv) / den, u = (q - p).cross(r) / den;
+        if (t <= 0.0 || t >= 1.0 || u <= 0.0 || u >= 1.0) continue;
+        const Vec2 at = p + r * t;
+        cross.push_back({k1, i1, t, at, nCross});
+        cross.push_back({k2, i2, u, at, nCross});
+        ++nCross;
+      }
+  std::vector<OsmId> crossNode(nCross, 0);
+  // nodes already near the crossing on either way are reused
+  for (const Cross &c : cross) {
+    const OsmWay &w = *mw[c.way];
+    for (OsmId n : {w.nodes[c.seg], w.nodes[c.seg + 1]})
+      if ((Q(n) - c.p).norm() < 1.0 && !crossNode[c.id]) crossNode[c.id] = n;
+  }
+  for (long c = 0; c < nCross; ++c)
+    if (!crossNode[c]) {
+      const Cross *any = nullptr;
+      for (const Cross &x : cross)
+        if (x.id == c) any = &x;
+      OsmNode nn;
+      nn.id = synth--;
+      proj.inverse(any->p, nn.lat, nn.lon);
+      out.nodes[nn.id] = nn;
+      pos[nn.id] = any->p;
+      crossNode[c] = nn.id;
+    }
+  std::sort(cross.begin(), cross.end(), [](const Cross &a, const Cross &b) {
+    return a.way != b.way ? a.way < b.way : (a.seg != b.seg ? a.seg > b.seg : a.t > b.t);
+  });
+  for (const Cross &c : cross) {
+    OsmWay &w = *mw[c.way];
+    const OsmId n = crossNode[c.id];
+    if (w.nodes[c.seg] == n || w.nodes[c.seg + 1] == n) continue;
+    w.nodes.insert(w.nodes.begin() + static_cast<long>(c.seg) + 1, n);
+  }
+  if (crossings) *crossings = static_cast<int>(nCross);
   return out;
 }
 

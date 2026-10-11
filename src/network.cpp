@@ -421,7 +421,7 @@ void Builder::trimRoads() {
         bool overlap = false;
         for (size_t fk = 0; fk < c.ends.size(); ++fk) {
           const RoadEnd &f = c.ends[fk];
-          if (f.road == e.road && f.atEnd == e.atEnd) continue;
+          if (f.road == e.road) continue;  // not against itself (a loop road with both ends here)
           const RoadMeta &n = metas[f.road];
           const double Ln = n.full.length();
           for (const Vec2 &q : probes) {
@@ -599,13 +599,29 @@ void Builder::buildRoads() {
     r.laneOffset.push_back({0.0, offs[0], 0, 0, 0});
     for (size_t k = 1; k < secs.size(); ++k) {
       const double sb = secs[k].s, target = offs[k];
+      // leaving a gore stretch (merge: main + branch lanes -> the trunk's own lanes): the lanes move
+      // to the trunk's position over the whole stretch before the boundary, not in a short jog after it
+      if (secs[k - 1].xs.holdOffset && !secs[k].xs.holdOffset && sb - secs[k - 1].s > 10.0) {
+        const double s0 = secs[k - 1].s;
+        while (r.laneOffset.size() > 1 && r.laneOffset.back().s > s0 + 1e-6) r.laneOffset.pop_back();
+        const odr::Poly3 cur = r.laneOffset.back();
+        const double v = cur.eval(s0 - cur.s), m = cur.deriv(s0 - cur.s);
+        if (std::abs(v - target) < 1e-3) continue;
+        if (cur.s >= s0 - 1e-6) r.laneOffset.pop_back();
+        r.laneOffset.push_back(odr::Poly3::hermite(s0, sb - s0, v, m, target, 0.0));
+        if (sb < len - 1e-6) r.laneOffset.push_back({sb, target, 0, 0, 0});
+        continue;
+      }
       // current value / slope at the change point (a previous transition may still be running)
       while (r.laneOffset.size() > 1 && r.laneOffset.back().s > sb + 1e-6) r.laneOffset.pop_back();
       const odr::Poly3 cur = r.laneOffset.back();
       const double v = cur.eval(sb - cur.s), m = cur.deriv(sb - cur.s);
       if (std::abs(v - target) < 1e-3 && std::abs(m) < 1e-6) continue;
       if (cur.s >= sb - 1e-6) r.laneOffset.pop_back();  // replaced by the new transition
-      const double T = std::min(opt.taperLength, std::max(1.0, len - sb - 1.0));
+      // entering a gore stretch (diverge): over the whole stretch up to the gore
+      const double room = (k + 1 < secs.size() ? secs[k + 1].s : len) - sb;
+      const double T = secs[k].xs.holdOffset && room > 10.0 ? std::max(1.0, room - 1.0)
+                                                            : std::min(opt.taperLength, std::max(1.0, len - sb - 1.0));
       r.laneOffset.push_back(odr::Poly3::hermite(sb, T, v, m, target, 0.0));
       if (sb + T < len - 1e-6) r.laneOffset.push_back({sb + T, target, 0, 0, 0});
     }
@@ -665,6 +681,18 @@ OsmData clipOsm(const OsmData &in, const Projection &proj, const std::array<doub
     out.nodes[n.id] = n;
     return n.id;
   };
+  // a junction just outside the box (roads meeting a few metres beyond the cut) is kept whole: the
+  // ways run on to it instead of ending side by side at the boundary
+  std::unordered_map<OsmId, int> highwayUse;
+  for (const auto &[id, w] : in.ways)
+    if (tag(w.tags, "highway"))
+      for (OsmId n : w.nodes) ++highwayUse[n];
+  const double keepOutside = 30.0;
+  auto keepNode = [&](OsmId n, const Vec2 &cut) {
+    if (highwayUse[n] < 2 || (pos[n] - cut).norm() > keepOutside) return false;
+    if (!out.nodes.count(n)) out.nodes[n] = *in.node(n);
+    return true;
+  };
   for (const auto &[id, w] : in.ways) {
     std::vector<std::vector<OsmId>> parts(1);
     for (size_t i = 0; i + 1 < w.nodes.size(); ++i) {
@@ -683,8 +711,8 @@ OsmData clipOsm(const OsmData &in, const Projection &proj, const std::array<doub
         if (!parts.back().empty()) parts.emplace_back();
         continue;
       }
-      const OsmId na = t0 <= 1e-12 ? w.nodes[i] : addNode(a + d * t0);
-      const OsmId nb = t1 >= 1 - 1e-12 ? w.nodes[i + 1] : addNode(a + d * t1);
+      const OsmId na = t0 <= 1e-12 || keepNode(w.nodes[i], a + d * t0) ? w.nodes[i] : addNode(a + d * t0);
+      const OsmId nb = t1 >= 1 - 1e-12 || keepNode(w.nodes[i + 1], a + d * t1) ? w.nodes[i + 1] : addNode(a + d * t1);
       if (parts.back().empty() || parts.back().back() != na) {
         if (!parts.back().empty()) parts.emplace_back();
         parts.back().push_back(na);
@@ -714,10 +742,11 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   BuildOptions o = opt;  // topology preparation: lot aisles that connect streets become roads
   if (o.connectParkingLots)
     for (OsmId w : detail::throughParkingAisles(src, o)) o.includeWays.insert(w);
-  int snapped = 0;
-  const OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped);
+  int snapped = 0, crossings = 0;
+  const OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped, &crossings);
   detail::Builder b(osm, proj, o);
   b.rep.snappedEnds = snapped;
+  b.rep.joinedCrossings = crossings;
   b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());
   const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
   auto stage = [&](const char *name, void (detail::Builder::*fn)()) {
@@ -736,6 +765,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("elevation samples", &detail::Builder::sampleElevation);
   stage("junction surfaces", &detail::Builder::junctionSurfaces);
   stage("elevation profiles", &detail::Builder::fitRoadElevation);
+  stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
   stage("junctions", &detail::Builder::buildJunctions);
   stage("signals", &detail::Builder::buildSignals);
   stage("objects", &detail::Builder::buildObjects);
