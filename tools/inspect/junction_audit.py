@@ -120,22 +120,24 @@ def audit(path):
                 ds = (r.length - sec.s) if end == "end" else 0.0
                 if into and float(l.width(np.array([ds]))[0]) > 1e-3 and l.id not in linked[(lk.id, r.id)]:
                     out["junctions.laneLink.entering_lane_without_path"].append({"junction": lk.id, "road": r.id, "lane": l.id})
-    # junctions.no_overlap: connecting-road footprints of two junctions intersect (sampled lane centres)
-    cells = collections.defaultdict(set)
+    # junctions.no_overlap: connecting-road footprints of two junctions intersect (sampled reference
+    # lines in 1 m cells) on the same level. Junctions stacked above each other (interchanges) do not
+    # overlap: OpenDRIVE 1.9 road.overlap_inside_junction excludes roads on different levels.
+    same_level = 3.0  # m, below any vertical clearance
+    cells = collections.defaultdict(list)
     for jid, rs in conn_roads.items():
         for r in rs:
             if not any(l.type in DRIVABLE for s in r.sections for l in s.lanes()):
                 continue
             for s in np.linspace(0, r.length, max(2, int(r.length / 1.0))):
                 x, y, _ = r.ref([s])
-                cells[(int(x[0] // 1.0), int(y[0] // 1.0))].add(jid)
+                cells[(int(x[0] // 1.0), int(y[0] // 1.0))].append((jid, float(r.z(np.array([s]))[0])))
     pairs = set()
-    for v in cells.values():
-        if len(v) > 1:
-            for a in v:
-                for b in v:
-                    if a < b:
-                        pairs.add((a, b))
+    for samples in cells.values():
+        for ja, za in samples:
+            for jb, zb in samples:
+                if ja < jb and abs(za - zb) < same_level:
+                    pairs.add((ja, jb))
     for a, b in sorted(pairs):
         out["junctions.no_overlap"].append({"junctions": [a, b]})
     return {"file": path, "junctions": len(jel), "counts": {k: len(v) for k, v in sorted(out.items())}, "instances": out}
