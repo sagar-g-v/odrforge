@@ -4,6 +4,7 @@
 #include <cmath>
 #include <ctime>
 #include <chrono>
+#include <execution>
 #include <functional>
 #include <limits>
 #include <numeric>
@@ -408,8 +409,10 @@ void Builder::trimRoads() {
     if (ch.c0 >= 0) clusters[ch.c0].ends.push_back({i, false});
     if (ch.c1 >= 0) clusters[ch.c1].ends.push_back({i, true});
   }
-  for (Cluster &c : clusters) {
-    if (c.ends.size() < 2) continue;
+  // every road end belongs to one cluster and the rest is read only: clusters are trimmed in
+  // parallel, with the same result as one after the other
+  std::for_each(std::execution::par, clusters.begin(), clusters.end(), [&](Cluster &c) {
+    if (c.ends.size() < 2) return;
     // the part of every road within reach of the junction (projection targets)
     std::vector<ReferenceLine> nearPart(c.ends.size());
     std::vector<double> nearStart(c.ends.size());
@@ -465,7 +468,7 @@ void Builder::trimRoads() {
       (e.atEnd ? metas[e.road].trimEnd : metas[e.road].trimStart) = trim;
     }
     makeRoomForCurbReturns(c, trimCap);
-  }
+  });
   for (RoadMeta &m : metas) {
     const double L = m.full.length();
     const double keep = std::min(2.0, 0.5 * L);
