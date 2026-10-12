@@ -1,0 +1,4105 @@
+{
+ "source": "ASAM OpenDRIVE 1.7.0 (local HTML) chapters 11-13, compared with 1.9.0 online chapters 13-15, Annex F rules and revision histories 1.8/1.9; enumerations cross-checked with tests/xsd/opendrive_1_8_1",
+ "annexF_organisation": "Annex F (1.9) lists about 275 checker rules grouped by element (F.1-F.6, e.g. F.6.16 object, F.6.19 signal). UID = asam.net:xodr:<version first introduced>:<rule_set path>.<rule_name>. There is no severity field; the text says shall/should/may. Counts: road.object.* 59, road.corner_* 10, road.curve_local.* 5, road.signal.* 20, road.railroad.* 9. Typos are part of the UIDs (validty, surfacees, 1.x.0).",
+ "chapters": [
+  {
+   "id": "11",
+   "title": "Objects",
+   "sections": [
+    {
+     "id": "11.0",
+     "title": "Objects - introduction and <object>",
+     "summary": "Objects are items that expand, delimit or supplement a road (parking spaces, crosswalks, barriers, buildings, trees, poles). Each object belongs to exactly one <road> (inside <road>/<objects>), is placed at an origin (s,t,zOffset) in that road's reference-line frame, and is rotated by hdg/pitch/roll into a local u/v/z frame. Its extent is an angular box (length,width,height) or a cylinder (radius,height). An <outline> (or 1.8+ <skeleton>) refines and supersedes the box but must stay inside it. Objects never move: 'dynamic' only means they have moving parts, such as tunnel fans or wind turbines.",
+     "concepts": [
+      "object = static road furniture tied to one road (road-relative, not inertial)",
+      "angular bounding box (length/width/height) vs circular (radius/height) - mutually exclusive, chosen by which attributes are present",
+      "local u/v/z frame (spec 6.4): u forward (= s at hdg 0), v left (= t), z up; rotations applied heading -> pitch (about v') -> roll (about u'')",
+      "orientation (+/-/none) is traffic-direction validity only; it does NOT rotate the object (hdg does)",
+      "validLength: extent of validity along s (0 = point object)",
+      "perpToRoad=true makes the object follow the road surface normal and ignores pitch/roll (new in 1.7)",
+      "dynamic=yes: object has movable parts but fixed position",
+      "only small objects may rely on a single insertion point on a curved elevation (Figure 90)",
+      "1.7 axis caveat: 1.7 table text says length along v and width along u; 1.9 corrects this to length along u (forward) and width along v (lateral). Use the 1.9 meaning."
+     ],
+     "elements": [
+      {
+       "name": "<objects>",
+       "parent": "<road>",
+       "attributes": [],
+       "multiplicity": "0..1",
+       "children": [
+        "<object>",
+        "<objectReference>",
+        "<tunnel>",
+        "<bridge>"
+       ]
+      },
+      {
+       "name": "<object>",
+       "parent": "<objects>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique id within the whole file"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s of object origin on the parent road"
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "t of object origin (lateral from reference line, not from laneOffset)"
+        },
+        {
+         "name": "zOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "origin height relative to reference-line elevation at s"
+        },
+        {
+         "name": "type",
+         "type": "e_objectType",
+         "unit": "",
+         "required": false,
+         "meaning": "category. 1.7/1.8 XSD values: none, obstacle, pole, tree, vegetation, barrier, building, parkingSpace, patch, railing, trafficIsland, crosswalk, streetLamp, gantry, soundBarrier, roadMark, roadSurface(1.8), plus deprecated car, van, bus, trailer, bike, motorbike, tram, train, pedestrian, wind. 1.8 deprecates patch->roadSurface, railing/soundBarrier->barrier, streetLamp/wind->pole"
+        },
+        {
+         "name": "subtype",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "variant of type (1.8+ defines subtype tables, e.g. barrier/guardRail, pole/trafficLight, crosswalk/zebra, roadMark/arrowLeft)"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free name"
+        },
+        {
+         "name": "dynamic",
+         "type": "t_yesNo",
+         "unit": "",
+         "required": false,
+         "meaning": "yes = has movable parts; default no"
+        },
+        {
+         "name": "orientation",
+         "type": "e_orientation",
+         "unit": "",
+         "required": false,
+         "meaning": "+ valid for travel in +s, - for -s, none for both; does not affect heading. Use +/- only if the object affects traffic rules"
+        },
+        {
+         "name": "hdg",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "heading relative to road direction at s (0 = along +s)"
+        },
+        {
+         "name": "pitch",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "pitch relative to x/y plane, applied after hdg"
+        },
+        {
+         "name": "roll",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "roll relative to x/y plane, applied after pitch"
+        },
+        {
+         "name": "perpToRoad",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": "true: object perpendicular to road surface everywhere, pitch/roll ignored; default false"
+        },
+        {
+         "name": "length",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "bounding-box extent along local u (1.9 wording; 1.7 text says v)"
+        },
+        {
+         "name": "width",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "bounding-box extent along local v (1.9 wording; 1.7 text says u)"
+        },
+        {
+         "name": "height",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "bounding-box extent along local z, upward from origin"
+        },
+        {
+         "name": "radius",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "cylinder radius in u/v; alternative to length+width"
+        },
+        {
+         "name": "validLength",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "validity along s; 0 for point object"
+        },
+        {
+         "name": "invalidated",
+         "type": "boolean",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9 only: physically invalidated (e.g. crossed out); traffic should ignore; default false"
+        },
+        {
+         "name": "temporary",
+         "type": "boolean",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9 only: temporary placement (road works); default false"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<repeat>",
+        "<outlines>/<outline>",
+        "<skeleton> (1.8)",
+        "<material>",
+        "<validity>",
+        "<parkingSpace>",
+        "<markings>",
+        "<borders>",
+        "<surface>"
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "object origin (inertial)",
+       "expr": "x0 = xr(s) - t*sin(th(s)); y0 = yr(s) + t*cos(th(s)); z0 = zr(s) + zOffset",
+       "vars": "xr,yr,th = reference-line point and heading at s (planView); zr = elevation profile at s; t = lateral offset from the reference line",
+       "notes": "t is NOT shifted by laneOffset. In 1.7 zOffset is relative to reference-line elevation; superelevation/shape are not included. On a superelevated road, the surface height at t differs from zr(s), so a writer that wants objects on the surface must add that difference to zOffset itself."
+      },
+      {
+       "name": "object world heading",
+       "expr": "H = th(s) + hdg; then pitch about v', then roll about u''",
+       "vars": "th(s) road heading at s, hdg object attribute",
+       "notes": "heading 0 = object u-axis along +s. Rotation R = Rz(H)*Ry(pitch)*Rx(roll), ISO 8855 right-handed (u fwd, v left, z up)"
+      },
+      {
+       "name": "local -> inertial",
+       "expr": "[x,y,z] = [x0,y0,z0] + Rz(H)*Ry(pitch)*Rx(roll)*[u,v,z]",
+       "vars": "u,v,z local coords of a box corner, cornerLocal or vertexLocal",
+       "notes": "with perpToRoad=true, replace pitch/roll by the road-surface orientation (slope + superelevation) at (s,t)"
+      },
+      {
+       "name": "angular bounding box",
+       "expr": "u in [-length/2,+length/2], v in [-width/2,+width/2], z in [0,height]",
+       "vars": "length/width/height of <object>",
+       "notes": "1.7 has no explicit formula. Centring the box on the origin in u/v, with z from 0 to height, is a common tool convention, not normative; document the choice."
+      },
+      {
+       "name": "cylinder",
+       "expr": "u^2+v^2 <= radius^2, z in [0,height]",
+       "vars": "radius,height",
+       "notes": "circular object"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.type_attr",
+       "level": "shall",
+       "text": "The object's category is given in @type.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "An object is either dynamic or static (1.9: it can never change position, heading, pitch or roll).",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Do not mix objects derived from ASAM OpenSCENARIO with objects described in OpenDRIVE.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.orientation",
+       "level": "shall",
+       "text": "The travel direction for which the object is valid must be specified (@orientation).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.s_t_coords",
+       "level": "shall",
+       "text": "The object origin is given in s/t coordinates of its road.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.circular_vs_angular",
+       "level": "shall",
+       "text": "Circular (radius) and angular (length/width) shapes are mutually exclusive; the attributes used define the shape.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Objects placed via elevation/lateral profiles should be small enough not to cut into or float above the road surface, and not to skew OpenCRG surfaces.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "If an outline exists, it supersedes the bounding box, but all its points must lie inside the box.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "1.9: missing @temporary/@invalidated default to false; traffic actors should ignore invalidated objects.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "building footprint from OSM building=*",
+       "how": "type=building; origin at the footprint centroid projected to the nearest road (s,t); hdg = principal-axis angle minus road heading; length/width/height from the oriented bounding box and the height/levels tags; closed <outline> of <cornerLocal> (u,v relative to origin, CCW) with height; orientation=none."
+      },
+      {
+       "case": "tree (natural=tree)",
+       "how": "type=tree (1.8+ subtype leaf/needle), radius + height cylinder; 1.8+ optional <skeleton> with trunk and crown polylines; orientation=none."
+      },
+      {
+       "case": "bollard / post",
+       "how": "type=pole (1.8 subtype bollard), radius+height, orientation=none."
+      },
+      {
+       "case": "hydrant, bench, advertising column",
+       "how": "type=obstacle with subtype; small radius or box."
+      },
+      {
+       "case": "overhead sign gantry",
+       "how": "type=gantry, box covering the span. Signals sit on it via signal <reference elementType='object'>; 1.8+ can also use boards and a skeleton."
+      }
+     ],
+     "right": [
+      "Give every object a file-unique id and a @type",
+      "Use orientation='none' for non-regulatory objects (buildings, trees, barriers)",
+      "Give hdg relative to the road heading at the object's s, not as an absolute inertial heading",
+      "Keep outline/skeleton points inside the declared bounding box",
+      "Keep s within [0, road length]"
+     ],
+     "wrong": [
+      "Using orientation to rotate the object (it only states traffic validity)",
+      "Supplying radius together with length/width",
+      "Using deprecated types (car, streetLamp, railing, soundBarrier, patch) when targeting 1.8+",
+      "Placing a large object (building) with perpToRoad on a sloped or curved road",
+      "Putting inertial x/y into s/t"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: new type roadSurface; patch->roadSurface, railing/soundBarrier->barrier, streetLamp->pole deprecated; per-type subtype and allowed-combination tables (1.9 section 13.14)",
+      "1.8: <skeleton> as an alternative or addition to outlines",
+      "1.8: 'bounding box' becomes 'bounding volume'; each face should touch the object",
+      "1.9: @invalidated, @temporary on <object>",
+      "1.9: length/width axis wording corrected (length along u, width along v)"
+     ],
+     "figures": [
+      "Figure 88: angular vs circular object. Every object is bounded by a box (length,width,height) or a cylinder (radius,height).",
+      "Figure 89: UML for objects. <objects> holds object, objectReference, tunnel and bridge; object holds repeat, outlines, material, validity, parkingSpace, markings, borders and surface.",
+      "Figure 90: a long straight object inserted at one point on a curved elevation profile cuts into and floats above the road. Only small objects may rely on the insertion point; long ones need a repeat or cornerRoad outlines."
+     ]
+    },
+    {
+     "id": "11.1",
+     "title": "Repeating objects",
+     "summary": "<repeat> clones an object along the road: discrete instances every 'distance' metres, or, with distance=0, one continuous extruded feature (guard rail, wall). Start/end values for t, zOffset, width, height, length and radius are linearly interpolated over the repeat length. Values given in <repeat> override the parent object's; omitted ones are inherited. The schema allows several <repeat> sections per object.",
+     "concepts": [
+      "discrete repeat (distance>0): instances at s+k*distance",
+      "continuous repeat (distance=0): extrude the cross-section along the road",
+      "linear interpolation of xxxStart/xxxEnd",
+      "repeat attributes override object attributes; omitted ones inherit",
+      "repeat follows reference-line curvature (1.8 detachFromReferenceLine=true -> straight chord)",
+      "1.9: cubic t(ds) via bT/cT/dT"
+     ],
+     "elements": [
+      {
+       "name": "<repeat>",
+       "parent": "<object>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start s of the repeat area; overrides object @s"
+        },
+        {
+         "name": "length",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "length of the repeat area along s"
+        },
+        {
+         "name": "distance",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "spacing between instances; 0 = continuous feature"
+        },
+        {
+         "name": "tStart",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "t of object reference point at s"
+        },
+        {
+         "name": "tEnd",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "t at s+length"
+        },
+        {
+         "name": "zOffsetStart",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "zOffset at s"
+        },
+        {
+         "name": "zOffsetEnd",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "zOffset at s+length"
+        },
+        {
+         "name": "heightStart",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "height at s"
+        },
+        {
+         "name": "heightEnd",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "height at s+length"
+        },
+        {
+         "name": "widthStart",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "width at s"
+        },
+        {
+         "name": "widthEnd",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "width at s+length"
+        },
+        {
+         "name": "lengthStart",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "length at s"
+        },
+        {
+         "name": "lengthEnd",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "length at s+length"
+        },
+        {
+         "name": "radiusStart",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "radius at s"
+        },
+        {
+         "name": "radiusEnd",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "radius at s+length"
+        },
+        {
+         "name": "detachFromReferenceLine",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": "1.8: true = run straight from start to end instead of following the reference line; default false"
+        },
+        {
+         "name": "bT",
+         "type": "double",
+         "unit": "1",
+         "required": false,
+         "meaning": "1.9: linear coefficient of cubic t(ds)"
+        },
+        {
+         "name": "cT",
+         "type": "double",
+         "unit": "1/m",
+         "required": false,
+         "meaning": "1.9: quadratic coefficient"
+        },
+        {
+         "name": "dT",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": false,
+         "meaning": "1.9: cubic coefficient"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "interpolated attribute",
+       "expr": "a(ds) = aStart + (aEnd - aStart) * ds / length,  ds in [0,length]",
+       "vars": "a = t, zOffset, width, height, length, radius; ds = distance from repeat @s along the reference line",
+       "notes": "stated explicitly in 1.9; implied in 1.7 by the Start/End naming and Figure 91"
+      },
+      {
+       "name": "1.9 cubic lateral",
+       "expr": "t(ds) = tStart + bT*ds + cT*ds^2 + dT*ds^3, with t(length) == tEnd",
+       "vars": "bT,cT,dT default 0 (then linear from tStart to tEnd)",
+       "notes": "1.9 only"
+      },
+      {
+       "name": "discrete instance positions",
+       "expr": "s_k = s + k*distance, k = 0..floor(length/distance)",
+       "vars": "distance>0",
+       "notes": "1.9: no partial instance past s+length; each instance origin lies in [s, s+length] (inclusive), but its volume may overhang. Each instance takes the road heading at s_k plus the object hdg."
+      },
+      {
+       "name": "continuous feature",
+       "expr": "swept cross-section: lateral [t(ds) - width(ds)/2, t(ds) + width(ds)/2], vertical [zr + zOffset(ds), zr + zOffset(ds) + height(ds)], ds in [0,length]",
+       "vars": "distance=0",
+       "notes": "guard rail / wall / hedge"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Parameters of the repeated object may differ from the original object.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Repeat parameters override the original object's; omitted ones come from the object.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.repeating.valid_s_length",
+       "level": "shall",
+       "text": "1.9: repeat s and length must be valid (inside the road).",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.repeating.outline_use_cornerlocal",
+       "level": "shall",
+       "text": "1.9: a repeated object that has an outline must use <cornerLocal>.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.repeating.no_widthstart_end_with_radius",
+       "level": "shall",
+       "text": "1.9: widthStart/End do not apply to radius-shaped objects.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.repeating.attributes_with_outline_skeleton",
+       "level": "shall",
+       "text": "1.9: length/width/heightStart/End do not apply to objects with outlines or a skeleton; those cannot change size.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.repeat_discretely_not_continously",
+       "level": "shall",
+       "text": "Objects with a <surface> CRG may repeat discretely but not continuously.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "guard rail (OSM barrier=guard_rail)",
+       "how": "type=barrier (1.8 subtype guardRail; 1.7 often 'railing' or 'barrier'), <repeat distance=0 s=.. length=.. tStart/tEnd=edge t heightStart/End=0.75 widthStart/End=0.3>, orientation=none."
+      },
+      {
+       "case": "street lamps along a road",
+       "how": "type=pole (1.8 subtype streetLamp; 1.7 type streetLamp), one object plus <repeat distance=30..60>."
+      },
+      {
+       "case": "wall / noise barrier / fence / hedge",
+       "how": "type=barrier, continuous repeat with height; 1.8 detachFromReferenceLine for straight runs that should not follow the road curve."
+      },
+      {
+       "case": "OSM fence diverging from the road",
+       "how": "tStart != tEnd (linear), or 1.9 bT..dT, or split into several repeat sections"
+      }
+     ],
+     "right": [
+      "Use distance=0 for linear features and distance>0 for instances",
+      "Give both Start and End values when the feature changes along s",
+      "Split a barrier that crosses road boundaries into one repeat per road"
+     ],
+     "wrong": [
+      "Setting length beyond the road end",
+      "Expecting a partial last instance",
+      "Using xxxStart/End size changes with outlines",
+      "Emitting hundreds of separate objects instead of one repeat"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: detachFromReferenceLine",
+      "1.9: bT/cT/dT cubic lateral path; explicit placement rules (floor, no partial instance); explicit linear interpolation formula; 4 new checker rules"
+     ],
+     "figures": [
+      "Figure 91: one large angular object repeated continuously. The top view shows s, length, tStart, tEnd, widthStart and widthEnd following the curve; the side view shows zOffsetStart/End and heightStart/End. Lesson: each Start/End pair interpolates linearly over ds.",
+      "Figure 92: several smaller angular objects spaced by distance",
+      "Figure 93: several smaller circular objects (radiusStart/End)"
+     ]
+    },
+    {
+     "id": "11.2",
+     "title": "Object outline (outlines, cornerRoad, cornerLocal)",
+     "summary": "An <outline> is a polygon or polyline of corner points with per-corner heights. It is used for traffic islands, irregular parking spaces, special markings and buildings. Corners are either all <cornerRoad> (s,t,dz in road coordinates) or all <cornerLocal> (u,v,z in the object's local frame), with at least two per outline. Several outlines per object are allowed via <outlines> (tree trunk + crown, pole + lamp head, logical sub-areas of an island). Readers must still accept a 1.4-style <outline> placed directly under <object>.",
+     "concepts": [
+      "closed=true -> area, else line feature",
+      "counter-clockwise order for areas",
+      "outer vs inner outlines (holes / sub-areas)",
+      "fillType: grass, concrete, cobble, asphalt, pavement, gravel, soil; 1.8 adds paint",
+      "laneType: how the application treats the area (e.g. sidewalk, border)",
+      "the outline supersedes the bounding box but must fit inside it",
+      "cornerRoad: road-relative points that follow curvature; good for shapes along the road",
+      "cornerLocal: rigid shape relative to object origin + hdg; good for buildings and islands",
+      "outline/corner ids are needed for markings and borders (cornerReference, outlineId)"
+     ],
+     "elements": [
+      {
+       "name": "<outlines>",
+       "parent": "<object>",
+       "attributes": [],
+       "multiplicity": "0..1",
+       "notes": "wrapper; 1.4 files may have <outline> directly under <object>"
+      },
+      {
+       "name": "<outline>",
+       "parent": "<outlines>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": false,
+         "meaning": "unique within the object; referenced by <border @outlineId>"
+        },
+        {
+         "name": "fillType",
+         "type": "e_outlineFillType",
+         "unit": "",
+         "required": false,
+         "meaning": "surface inside a closed outline"
+        },
+        {
+         "name": "outer",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": "true = outer outline (1.9: default true, exactly one outer)"
+        },
+        {
+         "name": "closed",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": "true = area (last point connects to the first)"
+        },
+        {
+         "name": "laneType",
+         "type": "e_laneType",
+         "unit": "",
+         "required": false,
+         "meaning": "lane type the application should treat the area as"
+        }
+       ],
+       "multiplicity": "1..*"
+      },
+      {
+       "name": "<cornerRoad>",
+       "parent": "<outline>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s of corner"
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "t of corner"
+        },
+        {
+         "name": "dz",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "corner base height relative to reference-line elevation"
+        },
+        {
+         "name": "height",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "object height at this corner"
+        },
+        {
+         "name": "id",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": false,
+         "meaning": "unique within the outline; needed if markings reference it"
+        }
+       ],
+       "multiplicity": "2..*"
+      },
+      {
+       "name": "<cornerLocal>",
+       "parent": "<outline>",
+       "attributes": [
+        {
+         "name": "u",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "local u"
+        },
+        {
+         "name": "v",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "local v"
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "local z of corner base"
+        },
+        {
+         "name": "height",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "height at corner"
+        },
+        {
+         "name": "id",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": false,
+         "meaning": "unique within the outline"
+        }
+       ],
+       "multiplicity": "2..*"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "cornerRoad to inertial",
+       "expr": "x = xr(s_i) - t_i*sin(th(s_i)); y = yr(s_i) + t_i*cos(th(s_i)); zBase = zr(s_i) + dz_i; zTop = zBase + height_i",
+       "vars": "per corner i",
+       "notes": "object hdg/pitch/roll do NOT apply to cornerRoad points"
+      },
+      {
+       "name": "cornerLocal to inertial",
+       "expr": "[x,y,zBase] = O + Rz(th(s)+hdg) * [u_i, v_i, z_i] (pitch/roll also applied if non-zero); zTop = zBase + height_i",
+       "vars": "O = object origin from (s,t,zOffset)",
+       "notes": "Figure 96 example: P(s=20, t=-30, zOffset=0), hdg=7pi/4"
+      },
+      {
+       "name": "edge interpolation (explicit in 1.9)",
+       "expr": "q(p) = q_i + (q_{i+1}-q_i)*p, p in [0,1], computed in inertial coordinates (cornerRoad) or local coordinates (cornerLocal)",
+       "vars": "q = x,y,z (and height)",
+       "notes": "cornerRoad edges are straight in x/y, NOT curved along the road, so add corners on curves"
+      },
+      {
+       "name": "polygon orientation check",
+       "expr": "signedArea = 0.5*sum(x_i*y_{i+1} - x_{i+1}*y_i) > 0 means CCW",
+       "vars": "closed outlines",
+       "notes": "reverse the corner order if negative"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.outline.outline_followed_by_corner",
+       "level": "shall",
+       "text": "An <outline> contains one or more <cornerRoad> or one or more <cornerLocal> elements (1.9 also allows <curveLocal>).",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Points of an area outline are listed counter-clockwise.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Readers must still support 1.4-style outlines without the <outlines> wrapper.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "An outline may be an area or a line. An area may be filled with a fillType. An outline may be outer or inner and may carry a laneType.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.outline.points_inside_box",
+       "level": "shall",
+       "text": "All outline points lie inside the object's bounding box.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.corner_road.element_min_amount",
+       "level": "shall",
+       "text": "At least two <cornerRoad> per outline.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_road.corner_road_local_exclusivity",
+       "level": "shall",
+       "text": "No mixing of cornerRoad and cornerLocal (and, in 1.9, curveLocal) in one outline.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.corner_local.element_min_amount",
+       "level": "shall",
+       "text": "At least two <cornerLocal> per outline.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.x.0:road.corner_local.no_mixing_road_local",
+       "level": "shall",
+       "text": "No cornerRoad next to a cornerLocal in the same outline (Annex F gives this UID a placeholder version).",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Outline id is unique per object; corner id is unique per outline.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.outline.exactly_one_outer",
+       "level": "shall",
+       "text": "1.9: exactly one outline with outer=true per object (omitted = true).",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.outline.inner_outline_touches_outer",
+       "level": "shall",
+       "text": "1.9: where an inner outline touches the outer one, the shared point must be identical.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_road.mandatory_id_with_markings",
+       "level": "shall",
+       "text": "1.9: corner @id is mandatory if the outline has <markings>.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_local.mandatory_id_with_markings",
+       "level": "shall",
+       "text": "1.9: same for cornerLocal.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_road.first_id_zero",
+       "level": "should",
+       "text": "1.9: the first corner id should be 0.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_road.sequential_id_values",
+       "level": "should",
+       "text": "1.9: corner ids should increase by 1 in listing order.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_local.first_id_zero",
+       "level": "should",
+       "text": "1.9: the first cornerLocal id should be 0.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.corner_local.sequential_id_values",
+       "level": "should",
+       "text": "1.9: cornerLocal ids should increase by 1.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "crosswalk across a road",
+       "how": "type=crosswalk, length/width box, closed outline of 4 cornerRoad points spanning the carriageway (s +/- half the crossing width, t from the outer edge on one side to the other), stripes via marking + cornerReference (11.6). For pedestrian simulation in 1.8+, also model the walking path as a <crossPath> in a junction."
+      },
+      {
+       "case": "traffic island (OSM traffic_island / area:highway)",
+       "how": "type=trafficIsland, closed outer outline (cornerRoad if aligned with the road, else cornerLocal), fillType=grass/pavement, <borders><border type='curb' width='0.15' outlineId='0'/> (11.7)."
+      },
+      {
+       "case": "parking bay",
+       "how": "type=parkingSpace, closed cornerRoad/cornerLocal outline (rectangular or rhomboid), <parkingSpace access=...>, markings on the sides."
+      },
+      {
+       "case": "building polygon",
+       "how": "type=building, closed outline of cornerLocal with constant height, outer=true; courtyards as inner outlines (outer=false)."
+      },
+      {
+       "case": "stop line as object",
+       "how": "type=roadMark (1.8 subtype signalLines), a thin closed outline across the lanes with <validity> for the affected lanes. Give it regulatory meaning with a stop-line signal referenced from the sign or light (12.3)."
+      }
+     ],
+     "right": [
+      "Use CCW order and closed=true for areas",
+      "Add cornerRoad points on curves (edges are straight lines)",
+      "Number ids from 0 consecutively",
+      "Make the bounding box enclose every outline point",
+      "Use cornerLocal for shapes defined by footprint geometry (OSM polygons)"
+     ],
+     "wrong": [
+      "Mixing cornerRoad and cornerLocal in one outline",
+      "Only one corner",
+      "Outline points outside the bounding box",
+      "Applying the object hdg to cornerRoad points",
+      "Clockwise polygons for areas"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: fillType value 'paint' (painted areas)",
+      "1.9: <curveLocal> with <line>, <arc curvature>, <paramPoly3 aU..dV pRange> for curved outlines (attributes u, v, z, height, hdg, length)",
+      "1.9: exactly-one-outer and id rules; curve continuity (road.curve_local.continuous_curve_local), length_match, paramPoly3 range rules",
+      "1.9: markings of outlined objects move inside <outline> (see 11.6)",
+      "1.9: default 'closed' per object type given in the 13.14 tables (mostly true)"
+     ],
+     "figures": [
+      "Figure 94: traffic island modelled as an object with an outline (and logical sub-areas)",
+      "Figure 95: non-linear object built from cornerRoad s/t points; the corners follow the road frame",
+      "Figure 96: object built from cornerLocal. Origin P(s=20, t=-30, zOffset=0) is projected from the road, hdg=7pi/4, and corners [u1,v1]..[u9,v9] lie in the rotated local frame. Lesson: cornerLocal is rigid relative to origin + hdg, independent of road curvature."
+     ]
+    },
+    {
+     "id": "11.3",
+     "title": "Object material",
+     "summary": "<material> gives an object (for example a patch in the road surface) its own surface code, friction and roughness, overriding the road material inside the object's outline. The values are application-defined. 1.8 adds roadMarkColor for painted objects.",
+     "concepts": [
+      "material overrides <road>/lane material only inside the object's outline",
+      "surface/friction/roughness are application-specific"
+     ],
+     "elements": [
+      {
+       "name": "<material>",
+       "parent": "<object>",
+       "attributes": [
+        {
+         "name": "surface",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "application-specific surface code"
+        },
+        {
+         "name": "friction",
+         "type": "t_grEqZero",
+         "unit": "",
+         "required": false,
+         "meaning": "friction value"
+        },
+        {
+         "name": "roughness",
+         "type": "t_grEqZero",
+         "unit": "",
+         "required": false,
+         "meaning": "roughness for sound/motion systems"
+        },
+        {
+         "name": "roadMarkColor",
+         "type": "e_roadMarkColor",
+         "unit": "",
+         "required": false,
+         "meaning": "1.8: colour of painted markings (standard, blue, green, red, white, yellow, black(1.8), orange, violet)"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.material.materials_may_differ",
+       "level": "may",
+       "text": "An object's material may differ from the surrounding road.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "asphalt patch / cobbled area in a road",
+       "how": "type=roadSurface (1.8; 1.7 patch) with an outline and <material surface='cobble' friction='0.6'/>"
+      },
+      {
+       "case": "painted area (bus lane colour, crosswalk paint)",
+       "how": "1.8: outline fillType='paint' + material roadMarkColor='red'"
+      }
+     ],
+     "right": [
+      "Use material only together with an outline/area"
+     ],
+     "wrong": [
+      "Expecting material to change the lane's own material outside the object"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: @roadMarkColor"
+     ],
+     "figures": []
+    },
+    {
+     "id": "11.4",
+     "title": "Lane validity for objects",
+     "summary": "By default an object applies to all lanes. <validity fromLane toLane> limits it to a lane-id range, and several elements may be given. @orientation (direction) and <validity> (lanes) complement each other and are not interchangeable; both should be used only for traffic-rule-relevant objects such as stop-line outlines.",
+     "concepts": [
+      "orientation = travel direction, validity = lane set",
+      "validity range must be consistent with orientation and traffic hand",
+      "use +/- orientation and validity only for objects that matter for traffic rules"
+     ],
+     "elements": [
+      {
+       "name": "<validity>",
+       "parent": "<object>",
+       "attributes": [
+        {
+         "name": "fromLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "lowest lane id the item applies to"
+        },
+        {
+         "name": "toLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "highest lane id the item applies to (fromLane <= toLane)"
+        },
+        {
+         "name": "layer",
+         "type": "e_layerType",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9 only: lane layer (default 'permanent'); valid on both permanent and temporary layers needs two <validity> elements"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "RHT consistency",
+       "expr": "orientation '+' => all [fromLane,toLane] < 0 ; '-' => all > 0 ; mixed => orientation 'none'",
+       "vars": "lane ids of the parent road",
+       "notes": "LHT: swap the signs"
+      },
+      {
+       "name": "lane membership",
+       "expr": "valid(lane) = OR_k (from_k <= lane <= to_k)",
+       "vars": "k over validity elements",
+       "notes": "lane 0 (centre lane) can technically be inside a range spanning both signs"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "An object may be valid for selected lanes, or for one lane only.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.check_parent_orientation",
+       "level": "shall",
+       "text": "The lanes covered by all <validity> elements must fall inside the parent's @orientation.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.right_hand_traffic_lane_ids",
+       "level": "shall",
+       "text": "RHT: orientation '+' -> validity only on negative lane ids; '-' -> only positive ids; both signs -> orientation must be 'none'.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.left_hand_traffic_lane_ids",
+       "level": "shall",
+       "text": "LHT: orientation '-' -> only negative ids; '+' -> only positive ids; both signs -> 'none'.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.from_lower_equal_to",
+       "level": "shall",
+       "text": "fromLane <= toLane.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use orientation '+'/'-' only if the object affects traffic rules, otherwise 'none'; use <validity> only for traffic-rule-relevant objects (e.g. stop-line outlines).",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "stop line covering right-side lanes (RHT)",
+       "how": "object roadMark with orientation='+' and <validity fromLane='-2' toLane='-1'/>"
+      },
+      {
+       "case": "tunnel or bridge that covers only some lanes",
+       "how": "<validity> child of <tunnel>/<bridge>"
+      }
+     ],
+     "right": [
+      "Check sign consistency against the header's traffic hand (rule=RHT/LHT in road @rule)"
+     ],
+     "wrong": [
+      "orientation='+' with validity on positive lanes in RHT",
+      "fromLane > toLane"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: @layer (e_layerType, default permanent) for temporary lane layers"
+     ],
+     "figures": []
+    },
+    {
+     "id": "11.5",
+     "title": "Access rules to parking spaces",
+     "summary": "A parking space is a normal <object type='parkingSpace'> whose outline (cornerRoad/cornerLocal) gives its shape (rectangular or rhomboid). An optional <parkingSpace> child restricts access to a group of users or vehicles and can carry free-text restrictions.",
+     "concepts": [
+      "shape via outline; access via <parkingSpace>",
+      "women/handicapped spaces imply vehicle type car"
+     ],
+     "elements": [
+      {
+       "name": "<parkingSpace>",
+       "parent": "<object>",
+       "attributes": [
+        {
+         "name": "access",
+         "type": "e_road_objects_object_parkingSpace_access",
+         "unit": "",
+         "required": false,
+         "meaning": "all, car, women, handicapped, bus, truck, electric, residents (required in 1.9 table)"
+        },
+        {
+         "name": "restrictions",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free text, application-defined"
+        }
+       ],
+       "multiplicity": "0..1"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Access to a parking space may be limited to a group of persons or vehicles.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Further restrictions may be defined but are outside OpenDRIVE.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM amenity=parking_space / parking lane bays",
+       "how": "type=parkingSpace, closed outline per bay, <parkingSpace access='all'/>, side markings (11.6); repeat with cornerLocal for regular bays"
+      },
+      {
+       "case": "disabled parking (OSM capacity:disabled / parking_space=disabled)",
+       "how": "access='handicapped'"
+      }
+     ],
+     "right": [
+      "Combine with markings for the painted bay lines"
+     ],
+     "wrong": [
+      "Using lane type parking alone when individual bays are needed"
+     ],
+     "changes_1_8_1_9": [
+      "1.8/1.9: parkingSpace subtypes openSpace/closedSpace; 13.14 table: width/length mandatory, radius not allowed, outline optional (closed default true)"
+     ],
+     "figures": [
+      "Figure 97: rectangular and rhomboid parking spaces described by outline corners"
+     ]
+    },
+    {
+     "id": "11.6",
+     "title": "Object marking",
+     "summary": "<markings>/<marking> describe painted lines belonging to an object (crosswalk stripes, stop lines, parking bay lines). A marking runs either along one side of the bounding box (@side) or as straight lines between referenced outline corners (<cornerReference id>). It is a dashed pattern given by lineLength and spaceLength, with width, colour and thickness (zOffset).",
+     "concepts": [
+      "bounding-box mode: side=left/right/front/rear + start/stopOffset",
+      "outline mode: cornerReference ids form the polyline",
+      "dash pattern lineLength/spaceLength (spaceLength 0 = solid)",
+      "marking zOffset = paint thickness above road"
+     ],
+     "elements": [
+      {
+       "name": "<markings>",
+       "parent": "<object> (1.9: inside <outline> when outlines exist)",
+       "attributes": [],
+       "multiplicity": "0..1"
+      },
+      {
+       "name": "<marking>",
+       "parent": "<markings>",
+       "attributes": [
+        {
+         "name": "color",
+         "type": "e_roadMarkColor",
+         "unit": "",
+         "required": true,
+         "meaning": "marking colour"
+        },
+        {
+         "name": "lineLength",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "visible dash length"
+        },
+        {
+         "name": "spaceLength",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "gap length"
+        },
+        {
+         "name": "startOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "offset along u from the start of the box side to the first dash"
+        },
+        {
+         "name": "stopOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "offset from the end of the box side where the marking stops"
+        },
+        {
+         "name": "side",
+         "type": "e_sideType",
+         "unit": "",
+         "required": false,
+         "meaning": "left/right/front/rear side of the bounding box (local u/v)"
+        },
+        {
+         "name": "weight",
+         "type": "e_roadMarkWeight",
+         "unit": "",
+         "required": false,
+         "meaning": "standard/bold"
+        },
+        {
+         "name": "width",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "line width"
+        },
+        {
+         "name": "zOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "paint thickness above the road"
+        }
+       ],
+       "multiplicity": "1..*"
+      },
+      {
+       "name": "<cornerReference>",
+       "parent": "<marking>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": true,
+         "meaning": "id of a referenced outline corner"
+        }
+       ],
+       "multiplicity": "0..* (>=2 when outline is used)"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "dash positions on a side or segment",
+       "expr": "for a segment of length L: d_k = startOffset + k*(lineLength+spaceLength), dash = [d_k, min(d_k+lineLength, L - stopOffset)] while d_k < L - stopOffset",
+       "vars": "L = side length (length or width) or the distance between referenced corners",
+       "notes": "1.7 gives no algorithm; this is the natural reading. Each dash is a rectangle of 'width' centred on the line."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "The marking of an object is defined completely or partially on its outline (1.9: complete_or_partial_on_outline).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.marking.colour",
+       "level": "shall",
+       "text": "The marking colour must be defined.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.marking.no_outline_side_attr",
+       "level": "shall",
+       "text": "Without an outline, @side is mandatory.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.marking.outline_corner_reference_count",
+       "level": "shall",
+       "text": "With an outline, at least two <cornerReference> are mandatory (1.9: or one curveLocal reference).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.marking.no_cornerreference_if_no_outline",
+       "level": "shall",
+       "text": "Without an outline, <cornerReference> must not be used.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.marking.markings_without_outline",
+       "level": "shall",
+       "text": "1.9: without outlines, <markings> sit in <object>.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.marking.markings_with_outline",
+       "level": "shall",
+       "text": "1.9: with outlines, <markings> sit inside the <outline>.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.object_marking.enclosed_outline_marking",
+       "level": "shall",
+       "text": "1.9: a marking going all round a closed outline repeats the first id at the end (two cornerReferences with the same id).",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.object_marking.include_points_between_cornerReferences",
+       "level": "shall",
+       "text": "1.9: corners between non-consecutive referenced corners must also be listed.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.object_marking.keep_id_ordered",
+       "level": "shall",
+       "text": "1.9: cornerReference ids follow the outline's point order.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "zebra crosswalk",
+       "how": "object type=crosswalk + closed cornerRoad outline (ids 0..3); two <marking> elements referencing corners 0-1 and 2-3 (edge lines) as in the 1.7 example (width 0.1, white, lineLength 0.2, spaceLength 0.05). Alternatively, for zebra bars: front/rear side marking with lineLength=bar width, spaceLength=gap, width=crossing length."
+      },
+      {
+       "case": "stop line",
+       "how": "roadMark object with marking side='front' and width 0.3-0.5, or a closed outline with fillType='paint' (1.8)"
+      },
+      {
+       "case": "parking bay lines",
+       "how": "markings on the left/right/front sides of a parkingSpace box"
+      }
+     ],
+     "right": [
+      "Use ids on corners referenced by markings",
+      "Keep marking zOffset small (a few mm)"
+     ],
+     "wrong": [
+      "Using @side and cornerReference together",
+      "Omitting colour",
+      "Referencing corner ids that do not exist"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: markings of outlined objects move into <outline>; ordering, enclosure and between-points rules; closed outline + fillType=paint for filled painted areas"
+     ],
+     "figures": [
+      "Figure 98: crosswalk trapezoid defined by cornerRoad s1=5, s2=8, s3=12, s4=15 with t=+/-3.5. The dashed slanted edge lines are markings referencing corners 0-1 and 2-3. Lesson: marking lines follow straight corner-to-corner segments."
+     ]
+    },
+    {
+     "id": "11.7",
+     "title": "Object borders",
+     "summary": "<borders>/<border> add a frame of given width and type (concrete, curb; 1.8 paint) along an outline, for example the curb of a traffic island. The frame follows the whole outline, or only the referenced corners when useCompleteOutline=false.",
+     "concepts": [
+      "border = frame along outline",
+      "outlineId selects the outline",
+      "1.9: only trafficIsland objects may have borders; the fill area shrinks by the border width"
+     ],
+     "elements": [
+      {
+       "name": "<borders>",
+       "parent": "<object>",
+       "attributes": [],
+       "multiplicity": "0..1"
+      },
+      {
+       "name": "<border>",
+       "parent": "<borders>",
+       "attributes": [
+        {
+         "name": "outlineId",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": true,
+         "meaning": "outline to use"
+        },
+        {
+         "name": "type",
+         "type": "e_borderType",
+         "unit": "",
+         "required": true,
+         "meaning": "concrete, curb (1.8: paint)"
+        },
+        {
+         "name": "useCompleteOutline",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": "default true: use all outline points"
+        },
+        {
+         "name": "width",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "frame width"
+        }
+       ],
+       "multiplicity": "1..*",
+       "children": [
+        "<cornerReference> (when useCompleteOutline=false)"
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.borders.useCompleteOutline_true",
+       "level": "shall",
+       "text": "If useCompleteOutline is true, no <cornerReference> may be defined.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "If useCompleteOutline is false, at least two <cornerReference> are required.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.borders.different_outlineids",
+       "level": "shall",
+       "text": "1.9: outlines referenced by borders must have distinct ids.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "raised traffic island with curb",
+       "how": "trafficIsland object + outline id 0 + <border outlineId='0' type='curb' width='0.15'/>"
+      }
+     ],
+     "right": [
+      "Give outlines explicit ids"
+     ],
+     "wrong": [
+      "Border on an object without an outline"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: border type 'paint'",
+      "1.9: borders restricted to trafficIsland; the fill area is reduced by the border frame"
+     ],
+     "figures": []
+    },
+    {
+     "id": "11.8",
+     "title": "Object reference",
+     "summary": "<objectReference> lets other roads (or signals/objects) reuse an object defined once on one road. Example: a crosswalk crossing several roads is defined on one and referenced, with its own s/t/zOffset and orientation, on the others. Optional <validity> children restrict the reference to some lanes.",
+     "concepts": [
+      "define once, reference elsewhere",
+      "the reference carries its own s/t/zOffset/validLength/orientation on the referencing road",
+      "an object with a CRG surface must be referenced on every road it overlaps"
+     ],
+     "elements": [
+      {
+       "name": "<objectReference>",
+       "parent": "<objects>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "id of the referenced <object>"
+        },
+        {
+         "name": "orientation",
+         "type": "e_orientation",
+         "unit": "",
+         "required": true,
+         "meaning": "validity direction on this road"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s on the referencing road"
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "t on the referencing road"
+        },
+        {
+         "name": "validLength",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "validity along s (0 = point)"
+        },
+        {
+         "name": "zOffset",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "z offset relative to reference-line elevation"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<validity>"
+       ]
+      },
+      {
+       "name": "<validity>",
+       "parent": "<objectReference>",
+       "attributes": [
+        {
+         "name": "fromLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "lowest lane id the item applies to"
+        },
+        {
+         "name": "toLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "highest lane id the item applies to (fromLane <= toLane)"
+        },
+        {
+         "name": "layer",
+         "type": "e_layerType",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9 only: lane layer (default 'permanent'); valid on both permanent and temporary layers needs two <validity> elements"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.reference.from_lower_equal_to",
+       "level": "shall",
+       "text": "fromLane <= toLane.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Referenced objects need a unique id; the validity rules are the same as for objects.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "crosswalk spanning a dual carriageway (two OSM ways)",
+       "how": "object on road A; <objectReference id=.. s,t of the crossing point on road B .. orientation='none'> on road B"
+      },
+      {
+       "case": "crosswalk at a junction leg",
+       "how": "define on the incoming road; reference from connecting roads that pass over it (1.9: or attach to the junction reference line)"
+      }
+     ],
+     "right": [
+      "Point the reference at an existing object id"
+     ],
+     "wrong": [
+      "Duplicating the same object on each road (double rendering)"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: validity @layer; objects relevant to several junction roads may be attached to the junction reference line"
+     ],
+     "figures": []
+    },
+    {
+     "id": "11.9",
+     "title": "Tunnels",
+     "summary": "<tunnel> is a special object valid over the whole cross-section of the road from s to s+length, unless <validity> narrows it. It has a type (standard, or underpass = open to daylight at the sides) and lighting/daylight factors in [0,1].",
+     "concepts": [
+      "s-range object covering the full road width",
+      "underpass vs standard"
+     ],
+     "elements": [
+      {
+       "name": "<tunnel>",
+       "parent": "<objects>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique id"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start s"
+        },
+        {
+         "name": "length",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "length along s"
+        },
+        {
+         "name": "type",
+         "type": "e_tunnelType",
+         "unit": "",
+         "required": true,
+         "meaning": "standard | underpass"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free name"
+        },
+        {
+         "name": "lighting",
+         "type": "t_zeroOne",
+         "unit": "",
+         "required": false,
+         "meaning": "degree of artificial lighting"
+        },
+        {
+         "name": "daylight",
+         "type": "t_zeroOne",
+         "unit": "",
+         "required": false,
+         "meaning": "degree of daylight entering"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<validity>"
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "tunnel range",
+       "expr": "s <= s_road <= s + length",
+       "vars": "",
+       "notes": "covers all lanes unless validity is given"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Tunnels may be restricted to some lanes via <validity>.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.tunnels.type_definition",
+       "level": "shall",
+       "text": "The tunnel @type must be given.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.tunnels.from_lower_equal_to",
+       "level": "shall",
+       "text": "fromLane <= toLane.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM tunnel=yes way",
+       "how": "split the road at the tunnel ends (or compute the s-range) and emit <tunnel s length type='standard'>; tunnel=building_passage -> underpass"
+      }
+     ],
+     "right": [
+      "Clip s+length to the road length; split across roads"
+     ],
+     "wrong": [
+      "Modelling a tunnel as a building object"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: validity @layer only"
+     ],
+     "figures": [
+      "Figure 99: a tunnel valid for the whole cross-section of the road"
+     ]
+    },
+    {
+     "id": "11.10",
+     "title": "Bridges",
+     "summary": "<bridge> is a special object valid over the whole cross-section from s to s+length, unless <validity> narrows it. Its type is concrete, steel, brick or wood.",
+     "concepts": [
+      "s-range object covering the full road width"
+     ],
+     "elements": [
+      {
+       "name": "<bridge>",
+       "parent": "<objects>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique id"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start s"
+        },
+        {
+         "name": "length",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "length along s"
+        },
+        {
+         "name": "type",
+         "type": "e_bridgeType",
+         "unit": "",
+         "required": true,
+         "meaning": "concrete | steel | brick | wood"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free name"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<validity>"
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.bridges.define_type",
+       "level": "may",
+       "text": "Bridges may be restricted to some lanes via <validity> (sic: the UID name does not match its text).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.bridges.type_definition",
+       "level": "shall",
+       "text": "The bridge @type must be given.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.bridges.from_lower_equal_to",
+       "level": "shall",
+       "text": "fromLane <= toLane.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM bridge=yes way",
+       "how": "<bridge s length type> from the bridge:structure/material tags (default concrete); elevation must come from layer/ele in the elevation profile, since the bridge element does not lift the road"
+      }
+     ],
+     "right": [
+      "Raise the road via elevationProfile; <bridge> is semantic only"
+     ],
+     "wrong": [
+      "Expecting <bridge> to create geometry or elevation"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: validity @layer only"
+     ],
+     "figures": [
+      "Figure 100: a bridge valid for the whole cross-section of the road"
+     ]
+    },
+    {
+     "id": "11.11",
+     "title": "Object surface (OpenCRG)",
+     "summary": "An angular object can carry a <surface><CRG file> that adds high-resolution height detail (manholes, cracks, patches) to the road. The CRG's u/v equal the object's local u/v, centred on the object origin, and the CRG's own reference line, position and heading are ignored. Heights are scaled by zScale. hideRoadSurfaceCRG decides whether an underlying road-surface CRG is replaced, and NaN from the CRG means 'no object here'.",
+     "concepts": [
+      "object CRG height adds to road height (negative subtracts)",
+      "object local frame = CRG frame, origin at object centre",
+      "hideRoadSurfaceCRG interaction with road CRG attachment modes",
+      "NaN = object absent at that point"
+     ],
+     "elements": [
+      {
+       "name": "<surface>",
+       "parent": "<object>",
+       "attributes": [],
+       "multiplicity": "0..1"
+      },
+      {
+       "name": "<CRG>",
+       "parent": "<surface>",
+       "attributes": [
+        {
+         "name": "file",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "CRG file name"
+        },
+        {
+         "name": "hideRoadSurfaceCRG",
+         "type": "t_bool",
+         "unit": "",
+         "required": true,
+         "meaning": "object CRG hides road surface CRG; default true"
+        },
+        {
+         "name": "zScale",
+         "type": "double",
+         "unit": "",
+         "required": true,
+         "meaning": "z scale (default 1.0)"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "object surface height",
+       "expr": "h_obj(u,v) = crgEvaluv2z(crg,u,v) * zScale",
+       "vars": "u,v local object coordinates",
+       "notes": "evaluated only inside the bounding box"
+      },
+      {
+       "name": "total height",
+       "expr": "road CRG 'attached': hide=true -> ODR + h_obj ; hide=false -> ODR + roadCRG + h_obj. Road CRG attached0/genuine/global: hide=true not allowed ; hide=false -> roadCRG + h_obj. No road CRG: ODR + h_obj",
+       "vars": "ODR = OpenDRIVE road height",
+       "notes": "NaN from crgEvaluv2z -> height as if the object were absent"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.only_for_angular_boxes",
+       "level": "shall",
+       "text": "Only angular-box objects may contain <surface>; circular or outlined objects must not.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Object CRG data outside the bounding box is ignored.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.no_bounding_box_overlap",
+       "level": "shall",
+       "text": "Bounding boxes of objects with a surface must not overlap.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.identical_local_coordinates",
+       "level": "shall",
+       "text": "The CRG local frame equals the object's; CRG reference line, inertial position, curvature and heading are ignored.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.object_reference_on_overlap",
+       "level": "shall",
+       "text": "An object with a surface must be referenced (<object>/<objectReference>) on every road it overlaps.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.only_one_crg_file",
+       "level": "shall",
+       "text": "At most one CRG file per object.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.repeat_discretely_not_continously",
+       "level": "may",
+       "text": "Surface objects may repeat discretely, not continuously.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.surface.avoid_skewed_crg_surfacees",
+       "level": "should",
+       "text": "Use perpToRoad only for objects smaller than the local radius of curvature of the road elevation (UID spelled 'surfacees').",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "@height and @zOffset are ignored for surface elevation.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.crg_hidden_on_object_overlap",
+       "level": "shall",
+       "text": "If an overlapping road-surface CRG uses any mode other than attached, hideRoadSurfaceCRG must be false.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.surface.calculate_road_height",
+       "level": "shall",
+       "text": "Where crgEvaluv2z is NaN, road height = OpenDRIVE height (+ road CRG if present), whatever hideRoadSurfaceCRG says.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "manhole cover",
+       "how": "type=roadSurface (1.8) / patch (1.7), small box, <surface><CRG file='manhole.crg' zScale='1'/>; NaN outside the circle"
+      }
+     ],
+     "right": [
+      "Keep surface objects small and non-overlapping"
+     ],
+     "wrong": [
+      "Surface on a circular or outlined object"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: road-level <crossSectionSurface> (surface strips) added elsewhere; 1.9: road CRG xOffset/yOffset"
+     ],
+     "figures": [
+      "Figure 101: CRG for objects - the s/t road frame vs the u/v CRG frame centred on the object, rotated with it",
+      "Table 73 figures (6): height combinations for attached / attached0-genuine-global / no road CRG with hideRoadSurfaceCRG true/false"
+     ]
+    },
+    {
+     "id": "11.12",
+     "title": "Object skeleton (1.8+, not in 1.7)",
+     "summary": "1.8 adds <skeleton> with one or more <polyline> of <vertexRoad> (s,t,dz) or <vertexLocal> (u,v,z) points. Each vertex has a radius (or width/length), which approximates thin objects as chains of cylinders/frustums, and intersectionPoint marks where the object meets the ground. Typical uses are poles with arms, traffic-light masts, trees (trunk + crown) and gantries.",
+     "concepts": [
+      "polyline segments are straight; radius or width/length interpolated linearly between vertices",
+      "intersectionPoint=true = ground contact",
+      "a polyline uses either radius or width/length, never both",
+      "vertexRoad and vertexLocal never mixed in one polyline"
+     ],
+     "elements": [
+      {
+       "name": "<skeleton>",
+       "parent": "<object>",
+       "attributes": [],
+       "multiplicity": "0..1",
+       "since": "1.8"
+      },
+      {
+       "name": "<polyline>",
+       "parent": "<skeleton>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "positiveInteger",
+         "unit": "",
+         "required": false,
+         "meaning": "unique within the object"
+        }
+       ],
+       "multiplicity": "1..*"
+      },
+      {
+       "name": "<vertexRoad>",
+       "parent": "<polyline>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "dz",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "height offset from reference line"
+        },
+        {
+         "name": "radius",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "local radius"
+        },
+        {
+         "name": "id",
+         "type": "positiveInteger",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "intersectionPoint",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": "ground contact; default false"
+        }
+       ],
+       "multiplicity": "2..*"
+      },
+      {
+       "name": "<vertexLocal>",
+       "parent": "<polyline>",
+       "attributes": [
+        {
+         "name": "u",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "v",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "radius",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "id",
+         "type": "positiveInteger",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "intersectionPoint",
+         "type": "t_bool",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        }
+       ],
+       "multiplicity": "2..*"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "skeleton segment",
+       "expr": "between vertices i,i+1: straight axis; r(p) = r_i + (r_{i+1}-r_i)*p",
+       "vars": "p in [0,1]",
+       "notes": "radius/width is measured perpendicular to the segment"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.polyline_followed_by_vertex",
+       "level": "shall",
+       "text": "A polyline has >=2 vertices of one kind.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.points_inside_box",
+       "level": "shall",
+       "text": "Skeleton points lie inside the bounding volume.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.skeleton.points_boundary_inside_box",
+       "level": "shall",
+       "text": "Each point's radius boundary lies at least partly inside the volume.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.points_requirements",
+       "level": "shall",
+       "text": "Points are joined by straight lines; radius/width is perpendicular to them.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.use_radius_or_width_length",
+       "level": "shall",
+       "text": "A polyline uses radius or width/length for all vertices.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.vertex_road.element_min_amount",
+       "level": "shall",
+       "text": ">=2 vertexRoad.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.vertex_road.polyline_elements",
+       "level": "shall",
+       "text": "No vertexLocal next to vertexRoad.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.vertex_road.no_radius_with_width_length",
+       "level": "shall",
+       "text": "No radius mixed with width/length.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.skeleton.vertex_road.linear_interpolation",
+       "level": "shall",
+       "text": "Values are interpolated linearly between vertices.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.vertex_local.element_min_amount",
+       "level": "shall",
+       "text": ">=2 vertexLocal.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.object.skeleton.vertex_local.no_mixing_road_local",
+       "level": "shall",
+       "text": "No vertexRoad next to vertexLocal.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.vertex_local.vertex_local_elements",
+       "level": "shall",
+       "text": "No radius mixed with width/length.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.object.skeleton.vertex_local.linear_interpolation",
+       "level": "shall",
+       "text": "Linear interpolation between vertices.",
+       "since": "1.8"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "traffic light mast with arm over the road",
+       "how": "object type=pole subtype=trafficLight; polyline 1 vertical (first vertex intersectionPoint=true), polyline 2 = arm; signals reference the pole"
+      },
+      {
+       "case": "tree",
+       "how": "type=tree; trunk polyline (ground vertex intersectionPoint) + crown polyline with radius 2"
+      }
+     ],
+     "right": [
+      "Mark the ground vertex with intersectionPoint=true"
+     ],
+     "wrong": [
+      "Using a skeleton in 1.7 output (not in the 1.7 schema)"
+     ],
+     "changes_1_8_1_9": [
+      "new in 1.8; extra rules in 1.9"
+     ],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "12",
+   "title": "Signals",
+   "sections": [
+    {
+     "id": "12.0",
+     "title": "Signals - introduction and <signal>",
+     "summary": "Signals are traffic signs, traffic lights and regulatory road markings that control traffic. Each <signal> sits in <road>/<signals> at (s,t) relative to that road. Its zOffset is the height of its bottom edge, its orientation names the traffic direction it applies to, and hOffset turns its face. It is identified by country + countryRevision + type + subtype (+ value/unit). Signals override other traffic rules, can be static or dynamic (traffic lights, with state from OpenSCENARIO), and must be placed so that the road, lanes and start of validity are unambiguous. Non-binding road marks are objects, not signals.",
+     "concepts": [
+      "signal = regulatory item; object = physical non-regulatory item",
+      "logical s = where the signal takes effect (1.7)",
+      "orientation '+': applies to traffic in +s; with hOffset=0 it faces drivers coming in +s",
+      "hOffset is applied counter-clockwise from the direction opposite to the travel direction",
+      "type/subtype unique only with country+countryRevision",
+      "value+unit mandatory together (e.g. 50 km/h)",
+      "height/width recommended for rendering",
+      "dynamic='yes' for traffic lights / VMS; the state is not in OpenDRIVE",
+      "1.8+: signal placed at its physical location; logical links via <reference>/<dependency>"
+     ],
+     "elements": [
+      {
+       "name": "<signals>",
+       "parent": "<road>",
+       "attributes": [],
+       "multiplicity": "0..1",
+       "children": [
+        "<signal>",
+        "<signalReference>"
+       ]
+      },
+      {
+       "name": "<signal>",
+       "parent": "<signals>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique in the file"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s position (1.7: where the signal takes effect)"
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "lateral position"
+        },
+        {
+         "name": "zOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "height of the signal's bottom edge relative to reference-line elevation (vertical clearance)"
+        },
+        {
+         "name": "orientation",
+         "type": "e_orientation",
+         "unit": "",
+         "required": true,
+         "meaning": "+ / - / none: traffic direction it applies to"
+        },
+        {
+         "name": "dynamic",
+         "type": "t_yesNo",
+         "unit": "",
+         "required": true,
+         "meaning": "yes for traffic lights and other state-changing signals"
+        },
+        {
+         "name": "country",
+         "type": "e_countryCode",
+         "unit": "",
+         "required": false,
+         "meaning": "ISO 3166-1 alpha-2 (e.g. DE, US). Old names (Germany, USA...) and alpha-3 are deprecated. 1.8+: 'OpenDRIVE' for generic catalogue items"
+        },
+        {
+         "name": "countryRevision",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "year of the traffic-rule edition"
+        },
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "country catalogue type id, or '-1'/'none'"
+        },
+        {
+         "name": "subtype",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "country catalogue subtype, or '-1'/'none'"
+        },
+        {
+         "name": "value",
+         "type": "double",
+         "unit": "",
+         "required": false,
+         "meaning": "value (speed etc.); unit mandatory if given"
+        },
+        {
+         "name": "unit",
+         "type": "e_unit",
+         "unit": "",
+         "required": false,
+         "meaning": "m, km, ft, mile, m/s, mph, km/h, kg, t, %"
+        },
+        {
+         "name": "hOffset",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "heading offset relative to orientation (+/-), or to the reference line if 'none'"
+        },
+        {
+         "name": "pitch",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "relative to inertial xy-plane"
+        },
+        {
+         "name": "roll",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "after pitch"
+        },
+        {
+         "name": "height",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "signal height measured from its bottom edge"
+        },
+        {
+         "name": "width",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "signal width (along local v in 1.8+)"
+        },
+        {
+         "name": "length",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "1.8: thickness along local u"
+        },
+        {
+         "name": "text",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "additional text, e.g. town name on a city-limit sign"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free name"
+        },
+        {
+         "name": "invalidated",
+         "type": "boolean",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9: crossed-out / invalid"
+        },
+        {
+         "name": "temporary",
+         "type": "boolean",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9: temporary (roadworks)"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<validity>",
+        "<dependency>",
+        "<reference>",
+        "<positionRoad>|<positionInertial> (deprecated 1.8)",
+        "1.8+: <staticBoard>,<vmsBoard>,<semantics>"
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "signal anchor",
+       "expr": "x0 = xr(s) - t*sin(th(s)); y0 = yr(s) + t*cos(th(s)); zBottom = zr(s) + zOffset; zTop = zBottom + height",
+       "vars": "same as objects",
+       "notes": "the sign plate occupies [zBottom, zTop]; the pole runs from ground to zBottom"
+      },
+      {
+       "name": "signal facing direction (normal toward the drivers it addresses)",
+       "expr": "orientation '+': psi = th(s) + pi + hOffset ; '-': psi = th(s) + hOffset ; 'none': psi = th(s) + hOffset (relative to reference line)",
+       "vars": "psi = inertial heading of the face normal; hOffset counter-clockwise",
+       "notes": "Check with the spec example: orientation '+', hOffset 5.7596 rad (330 deg = -30 deg). The sign on the right of a road heading north faces south-south-west, i.e. turned slightly toward the carriageway (Figure 104)."
+      },
+      {
+       "name": "sign plate box (1.8)",
+       "expr": "local u = face normal axis (thickness 'length'), v in [-width/2,+width/2], z in [zBottom, zBottom+height]",
+       "vars": "width,height,length",
+       "notes": "1.7 defines only width/height"
+      },
+      {
+       "name": "validity start",
+       "expr": "the signal applies from s onward in its orientation direction ('+': for s' >= s; '-': for s' <= s)",
+       "vars": "",
+       "notes": "1.7 logical position. In 1.8+ the physical position governs, and stop lines etc. mark the exact effect point"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.signal_type",
+       "level": "shall",
+       "text": "Signals have a specific type and subtype.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.priority",
+       "level": "shall",
+       "text": "Where present, signals take priority over other traffic rules.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.use_country_code",
+       "level": "shall",
+       "text": "A country code (@country) refers to country-specific rules.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "@countryRevision may give the year the rules came into force.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Signals may be valid for one or both directions and may be static or dynamic.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Signals are placed relative to a specific road using s/t.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Placement must make clear which road/lane a signal belongs to and where its validity starts; avoid ambiguity.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Consider country-specific legislation; height and width are recommended.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "If @value is given, @unit is mandatory.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "1.9: missing invalidated/temporary default to false; traffic should ignore invalidated signals.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "speed limit sign (OSM traffic_sign=DE:274 / maxspeed)",
+       "how": "<signal s=sign position t=right edge - 0.5 zOffset=2 orientation='+' dynamic='no' country='DE' countryRevision='2017' type='274' subtype='50' value='50' unit='km/h' height='0.6' width='0.6' hOffset='0'/>; 1.8+: add <semantics><speed type='maximum' value='50' unit='km/h'/></semantics>"
+      },
+      {
+       "case": "stop sign + stop line (OSM highway=stop)",
+       "how": "signal type 206 (DE) at the stop line s, orientation toward the approach. The stop line is a type 294 (DE) signal or roadMark object; in 1.8+ link them with <reference elementType='signal|object' type='stopLine'>"
+      },
+      {
+       "case": "traffic light at a junction (OSM highway=traffic_signals)",
+       "how": "one dynamic='yes' signal per approach on the INCOMING road at the stop line s (1.7 logical position), orientation toward the junction, <validity> for the controlled lanes. Group them in <controller><control signalId/></controller> per phase and list controllers in <junction><controller id sequence/>. Common practice (e.g. CARLA): country='OpenDRIVE' type='1000001' subtype='-1'. Physical mast position via 1.7 positionInertial/positionRoad, or 1.8+ by placing the signal physically and referencing a stop-line signal."
+      },
+      {
+       "case": "give way sign",
+       "how": "type 205 (DE), same pattern as stop"
+      },
+      {
+       "case": "city limit sign with name",
+       "how": "type 310 (DE), @text='City\\nName'"
+      }
+     ],
+     "right": [
+      "One signal per controlled approach/direction",
+      "Use orientation '+' for traffic travelling in +s (RHT: right side, negative t)",
+      "Give value+unit for speed limits",
+      "Use ISO alpha-2 country codes"
+     ],
+     "wrong": [
+      "Putting the sign on the outgoing road of a junction",
+      "Treating hOffset as absolute heading",
+      "orientation 'none' for a one-way sign",
+      "Signals for non-binding markings (those are objects)",
+      "Old country names like 'Germany'"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: @length; boards (staticBoard, vmsBoard, multiBoard); <semantics>; positionRoad deprecated (signals placed physically); country 'OpenDRIVE' for items from the Signal reference catalogue",
+      "1.8: header <defaultRegulations>/<signalRegulations> for file-wide traffic rules",
+      "1.9: @invalidated, @temporary; semantics <vehicle>/<person>/<animal>"
+     ],
+     "figures": [
+      "Figure 102: overview of signal kinds (signs, lights, markings)",
+      "Figure 103: signal width and height (height measured upward from the bottom edge at zOffset)",
+      "Figure 104: RHT road, a 100 km/h sign with orientation '+', zOffset = pole height to the bottom edge, and hOffset turning it counter-clockwise from the -s direction. Lesson: hOffset is relative to the opposite travel direction.",
+      "Figure 105: UML for signals"
+     ]
+    },
+    {
+     "id": "12.1",
+     "title": "Lane validity for signals",
+     "summary": "A signal applies by default to all lanes in its orientation direction. <validity fromLane toLane> narrows it to specific lanes, typically for lane-specific traffic lights or lane speed limits painted on the road. Orientation says which direction the signal applies to, validity says which lanes; they are not interchangeable. For example, a '+' speed limit still applies to a car overtaking in the oncoming lane, but one limited to the right lanes would not.",
+     "concepts": [
+      "orientation = direction, validity = lanes",
+      "use validity only when the signal really is lane-specific"
+     ],
+     "elements": [
+      {
+       "name": "<validity>",
+       "parent": "<signal>",
+       "attributes": [
+        {
+         "name": "fromLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "lowest lane id the item applies to"
+        },
+        {
+         "name": "toLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "highest lane id the item applies to (fromLane <= toLane)"
+        },
+        {
+         "name": "layer",
+         "type": "e_layerType",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9 only: lane layer (default 'permanent'); valid on both permanent and temporary layers needs two <validity> elements"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "RHT consistency",
+       "expr": "'+' => all lane ids < 0 ; '-' => all > 0 ; mixed => 'none'",
+       "vars": "",
+       "notes": "LHT swapped"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "A signal may be valid for one or more lanes.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.check_parent_orientation",
+       "level": "shall",
+       "text": "The lanes covered by all <validity> elements must fall inside the parent's @orientation.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.validity.right_hand_traffic_lane_ids",
+       "level": "shall",
+       "text": "RHT: '+' -> only negative lane ids; '-' -> only positive; both -> orientation 'none'.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.validity.left_hand_traffic_lane_ids",
+       "level": "shall",
+       "text": "LHT: '-' -> only negative ids; '+' -> only positive; both -> 'none'.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.from_lower_equal_to",
+       "level": "shall",
+       "text": "fromLane <= toLane (1.9 page cites road.object.bridges.from_lower_equal_to here, apparently a copy error).",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use <validity> only to restrict signals to specific lanes (e.g. lane traffic lights).",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "left-turn arrow light",
+       "how": "signal dynamic=yes with <validity fromLane='-1' toLane='-1'/> (RHT, innermost lane)"
+      },
+      {
+       "case": "lane speed limits shown as road marks",
+       "how": "one signal per lane with validity"
+      }
+     ],
+     "right": [
+      "Derive validity from OSM turn:lanes / traffic_signals per lane"
+     ],
+     "wrong": [
+      "validity on positive lanes with orientation '+' in RHT"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: validity @layer (permanent/temporary)"
+     ],
+     "figures": [
+      "Figure 106: lanes with lane-specific speed limits shown as road-mark signals"
+     ]
+    },
+    {
+     "id": "12.2",
+     "title": "Signal dependency",
+     "summary": "<dependency id type> inside a signal points to another signal that controls or qualifies it, for example warning lights switched by a traffic light, or a supplementary 'lorries only' plate qualifying a speed limit. The meaning of 'type' is application-defined free text. A signal may have several dependencies.",
+     "concepts": [
+      "dependency = controlled/qualified by another signal",
+      "1.9 wording: limits or extends the validity of a signal with an additional signal (supplementary plates)"
+     ],
+     "elements": [
+      {
+       "name": "<dependency>",
+       "parent": "<signal>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "id of the controlling signal"
+        },
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free text, application-defined"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.dependency.multiple_dependency",
+       "level": "may",
+       "text": "A signal may have multiple dependencies.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "The dependency type is not defined by OpenDRIVE; the application defines it.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "speed limit only for trucks",
+       "how": "signal 274/60 with <dependency id='plate'/>, where the plate is a 1048-12 'lorries only' signal at the same s/t (spec example)"
+      },
+      {
+       "case": "stop line active only when the pedestrian light is red (1.9 example)",
+       "how": "stop-line signal with <dependency id='light' type='pedestrian_trafficlight'/>"
+      }
+     ],
+     "right": [
+      "Point to existing signal ids"
+     ],
+     "wrong": [
+      "Encoding controller phases with dependencies (use controllers)"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: semantics redescribed as 'limit or extend validity'; 1.8 boards: a sign/displayArea dependency overrides the parent's"
+     ],
+     "figures": [
+      "Figure 107: lane- and type-specific speed limit (sign plus supplementary plate)"
+     ]
+    },
+    {
+     "id": "12.3",
+     "title": "Links between signals and objects (<reference>)",
+     "summary": "<reference elementType elementId type> links one signal to an object or another signal, for example a traffic light to its stop line, or a speed limit painted as a road-mark object. It applies only to that signal. The link type is free text.",
+     "concepts": [
+      "<reference> = signal -> object/signal link (do not confuse with <signalReference>, which is road -> signal)",
+      "1.8+: the main way to tie a physical signal to its stop line"
+     ],
+     "elements": [
+      {
+       "name": "<reference>",
+       "parent": "<signal>",
+       "attributes": [
+        {
+         "name": "elementType",
+         "type": "e_road_signals_signal_reference_elementType",
+         "unit": "",
+         "required": true,
+         "meaning": "object | signal"
+        },
+        {
+         "name": "elementId",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "id of the linked element"
+        },
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free text linkage type"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "A signal may be linked to an object or another signal.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "traffic light -> stop line",
+       "how": "light <reference elementType='object' elementId='stopline_obj' type='stopLine'/> or, in 1.9, elementType='signal' to a stop-line signal that has a dependency back to the light"
+      },
+      {
+       "case": "pedestrian crossing (Ex_Pedestrian_Crossing.xodr)",
+       "how": "crosswalk object referenced from the crossing signs/lights"
+      }
+     ],
+     "right": [
+      "Use when signal position != effect position (1.8+)"
+     ],
+     "wrong": [
+      "Using <reference> to make a signal valid on another road (use signalReference)"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: replaces positionRoad/positionInertial for logical vs physical placement"
+     ],
+     "figures": [
+      "Figure 109 (mentioned): a speed limit described as a road-mark object but referenced as a signal"
+     ]
+    },
+    {
+     "id": "12.4",
+     "title": "Signal positioning (logical vs physical)",
+     "summary": "In 1.7 a signal's s/t is its logical position, i.e. where it takes effect on the road it governs. If the physical mast stands elsewhere (across the junction, hanging over it, or on another road), it can be described by exactly one of <positionRoad> (roadId,s,t,zOffset,hOffset) or <positionInertial> (x,y,z,hdg). Positioning never changes the signal's content. 1.8 deprecates this: signals sit at their physical location, and relations are expressed with <reference>/<dependency>.",
+     "concepts": [
+      "logical position = effect point on the governed road",
+      "physical position = where it stands (rendering)",
+      "positionRoad xor positionInertial",
+      "rotation order heading -> pitch -> roll"
+     ],
+     "elements": [
+      {
+       "name": "<positionInertial>",
+       "parent": "<signal>",
+       "attributes": [
+        {
+         "name": "x",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "y",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "hdg",
+         "type": "double",
+         "unit": "rad",
+         "required": true,
+         "meaning": "inertial heading"
+        },
+        {
+         "name": "pitch",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "after hdg"
+        },
+        {
+         "name": "roll",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "after hdg and pitch"
+        }
+       ],
+       "multiplicity": "0..1 (xor positionRoad)",
+       "deprecated": "1.8 section deprecated"
+      },
+      {
+       "name": "<positionRoad>",
+       "parent": "<signal>",
+       "attributes": [
+        {
+         "name": "roadId",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "road the physical position is given on"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "zOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "road level to bottom edge"
+        },
+        {
+         "name": "hOffset",
+         "type": "double",
+         "unit": "rad",
+         "required": true,
+         "meaning": "relative to @orientation"
+        },
+        {
+         "name": "pitch",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "roll",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": ""
+        }
+       ],
+       "multiplicity": "0..1",
+       "deprecated": "1.8"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "physical pose via positionInertial",
+       "expr": "pose = (x,y,z) with R = Rz(hdg)*Ry(pitch)*Rx(roll)",
+       "vars": "",
+       "notes": "the logical s/t still governs validity"
+      },
+      {
+       "name": "physical pose via positionRoad",
+       "expr": "as the signal anchor formula, on road roadId with its s,t,zOffset,hOffset",
+       "vars": "",
+       "notes": ""
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "should",
+       "text": "Signals should be placed next to the road for which they are valid (logical position).",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "The physical position may deviate from the logical one; positionRoad and positionInertial are mutually exclusive.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "far-side / overhead traffic light (1.7 target)",
+       "how": "signal on the incoming road at the stop line (logical) + <positionInertial x y z hdg> of the mast (UC_LHT-Complex-TrafficLights.xodr)"
+      },
+      {
+       "case": "same for 1.8+ target",
+       "how": "place the <signal> at the mast (on the nearest road, s/t of the mast) and add <reference> to a stop-line signal/object at the effect point"
+      }
+     ],
+     "right": [
+      "Decide on the target version first: 1.7 logical + position*, 1.8+ physical + reference"
+     ],
+     "wrong": [
+      "Using both positionRoad and positionInertial",
+      "Emitting position* elements in 1.8+ files without need (deprecated)"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: <positionRoad> deprecated and the whole section marked deprecated in 1.9; signals only at physical location; use <reference>/<dependency> and the junction guideline for stop lines"
+     ],
+     "figures": [
+      "Figure 108: junction with traffic lights - the logical position is at the stop line of the approach, the physical positions are on the far side or overhead. Lesson: in 1.7, s/t of a signal is its effect point, not where the pole stands.",
+      "Figure 109: UML of physical position (positionRoad/positionInertial)"
+     ]
+    },
+    {
+     "id": "12.5",
+     "title": "Reuse of signal information / signals on multiple roads (<signalReference>)",
+     "summary": "<signalReference id s t orientation> on another road makes an existing signal also valid there, without copying it. The typical case is a junction, where a speed limit or traffic light on the incoming road also governs the connecting roads. The referencing road must state the orientation, and it may add its own <validity> lanes.",
+     "concepts": [
+      "one physical signal, many logical attachments",
+      "referenced signal must have a unique id",
+      "each signalReference has its own s/t/orientation on its road"
+     ],
+     "elements": [
+      {
+       "name": "<signalReference>",
+       "parent": "<signals>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "id of the referenced <signal>"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s on this road where it takes effect"
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "orientation",
+         "type": "e_orientation",
+         "unit": "",
+         "required": true,
+         "meaning": "direction on this road"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<validity>"
+       ]
+      },
+      {
+       "name": "<validity>",
+       "parent": "<signalReference>",
+       "attributes": [
+        {
+         "name": "fromLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "lowest lane id the item applies to"
+        },
+        {
+         "name": "toLane",
+         "type": "integer",
+         "unit": "",
+         "required": true,
+         "meaning": "highest lane id the item applies to (fromLane <= toLane)"
+        },
+        {
+         "name": "layer",
+         "type": "e_layerType",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9 only: lane layer (default 'permanent'); valid on both permanent and temporary layers needs two <validity> elements"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Each <signalReference> may have lane validity.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.reference.used_for_signals_only",
+       "level": "shall",
+       "text": "Signal references are used for signals only.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.reference.specify_direction",
+       "level": "shall",
+       "text": "The direction (orientation) for which the reused signal applies must be given.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.object.validty.check_parent_orientation",
+       "level": "shall",
+       "text": "Validity is a subset of the orientation.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.reference.right_hand_traffic_lane_ids",
+       "level": "shall",
+       "text": "RHT sign rule for validity.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.reference.left_hand_traffic_lane_ids",
+       "level": "shall",
+       "text": "LHT sign rule for validity.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.reference.from_lower_equal_to",
+       "level": "shall",
+       "text": "fromLane <= toLane.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "traffic light at a junction governing connecting roads",
+       "how": "signal on the incoming road; <signalReference id=light s=0 t=.. orientation='+'> on each connecting road starting from that approach (common in CARLA-compatible maps)"
+      },
+      {
+       "case": "speed limit continuing through a junction",
+       "how": "signalReference on each connecting road"
+      }
+     ],
+     "right": [
+      "Use signalReference rather than duplicating the signal"
+     ],
+     "wrong": [
+      "Pointing signalReference at an object id"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: validity @layer; the X-junction example (UC_X_Junction.xodr)"
+     ],
+     "figures": [
+      "Figure 110: UML of signalReference"
+     ]
+    },
+    {
+     "id": "12.6",
+     "title": "Controllers (and junction controllers)",
+     "summary": "A top-level <controller> groups dynamic signals that always share the same state (for example all lights of one phase) through <control signalId>. A <junction> lists its controllers with <controller id sequence> to order them. Phase timings are not in OpenDRIVE (OpenSCENARIO or the application provides them). Unlike dependencies, controllers are high-level and independent of other signals.",
+     "concepts": [
+      "controller = synchronised group of dynamic signals",
+      "junction <controller> = list + priority sequence of controllers in that junction",
+      "phases and timing live outside OpenDRIVE",
+      "1.9: junction controllers form a signal synchronisation group; switching one group to go switches conflicting groups to stop"
+     ],
+     "elements": [
+      {
+       "name": "<controller>",
+       "parent": "<OpenDRIVE>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique id"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "sequence",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": false,
+         "meaning": "priority among controllers of the same logical level"
+        }
+       ],
+       "multiplicity": "0..*",
+       "children": [
+        "<control>"
+       ]
+      },
+      {
+       "name": "<control>",
+       "parent": "<controller>",
+       "attributes": [
+        {
+         "name": "signalId",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "controlled signal"
+        },
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free text"
+        }
+       ],
+       "multiplicity": "1..*"
+      },
+      {
+       "name": "<controller> (junction)",
+       "parent": "<junction>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "id of a top-level controller"
+        },
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": "free text"
+        },
+        {
+         "name": "sequence",
+         "type": "nonNegativeInteger",
+         "unit": "",
+         "required": false,
+         "meaning": "order/priority in this junction"
+        }
+       ],
+       "multiplicity": "0..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.signal.controller.valid_for_signals",
+       "level": "shall",
+       "text": "A controller controls one or more signals.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "4-way signalised X junction",
+       "how": "2 controllers: N+S lights in controller 1, E+W in controller 2 (Figure 111); <junction><controller id='1' sequence='0'/><controller id='2' sequence='1'/></junction> (UC_Simple-X-Junction-TrafficLights.xodr)"
+      },
+      {
+       "case": "motorway variable speed control",
+       "how": "controller grouping the VMS speed signals"
+      }
+     ],
+     "right": [
+      "Only dynamic signals in controllers",
+      "Every <control signalId> resolves to an existing signal"
+     ],
+     "wrong": [
+      "One controller per light when they share a phase",
+      "Encoding phase durations in OpenDRIVE"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: junction controllers described as signal synchronisation groups (12.14); Annex C terms for dynamic signals"
+     ],
+     "figures": [
+      "Figure 111: junction with four traffic lights controlled by two controllers (opposite approaches share one)",
+      "Figure 112: UML of controller/control"
+     ]
+    },
+    {
+     "id": "12.7",
+     "title": "Country codes, types, dynamic signals (cross-cutting notes)",
+     "summary": "A signal's meaning in 1.7 comes from the catalogue identity country (ISO 3166-1 alpha-2) + countryRevision + type + subtype; OpenDRIVE itself does not define the catalogue ('see extra document'). Dynamic signals (dynamic='yes') change state during simulation, and the state is driven from outside (OpenSCENARIO). 1.8 adds country-neutral <semantics> so tools do not need the national catalogue.",
+     "concepts": [
+      "type/subtype strings, '-1' or 'none' when unknown",
+      "countryRevision distinguishes catalogue editions",
+      "e_countryCode: alpha-2 current; legacy names and alpha-3 deprecated",
+      "1.8: country='OpenDRIVE' + ASAM Signal reference catalogue for generic items such as traffic lights",
+      "1.8: header defaultRegulations"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Type/subtype are interpreted only together with country + countryRevision.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM traffic_sign=DE:274[60]",
+       "how": "country=DE type=274, value=60 unit=km/h; the subtype numbering depends on the catalogue edition (spec examples: 274/56 with value 60 at countryRevision 2013, 274/100 with value 100 at 2017). Always fill value/unit so consumers need not decode the subtype."
+      },
+      {
+       "case": "unknown country sign",
+       "how": "country from the map region, type='-1' subtype='-1', plus 1.8 semantics"
+      }
+     ],
+     "right": [
+      "Always emit value+unit for numeric signs",
+      "Keep a mapping table OSM tag -> (country,type,subtype)"
+     ],
+     "wrong": [
+      "Inventing type numbers without a country"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: semantics, signal reference catalogue, regulations in the header"
+     ],
+     "figures": []
+    },
+    {
+     "id": "12.8",
+     "title": "Signal boards (1.8+, not in 1.7)",
+     "summary": "1.8 adds boards so that one <signal> can carry several signs. A <staticBoard> contains <sign> children positioned by local v/z on the board (type='staticBoard', dynamic=false). A <vmsBoard> is a variable message board with <displayArea>s (type='vmsBoard', dynamic=true). A multiBoard mixes both. <vmsGroup>/<vmsBoardReference> group VMS boards on one gantry.",
+     "concepts": [
+      "board = signal container; signs located by (v,z) in the parent signal's local frame",
+      "a sign's validity/dependency overrides the parent's",
+      "the parent signal size must cover all sub-boards"
+     ],
+     "elements": [
+      {
+       "name": "<staticBoard>",
+       "parent": "<signal>",
+       "attributes": [],
+       "multiplicity": "0..*",
+       "since": "1.8"
+      },
+      {
+       "name": "<sign>",
+       "parent": "<staticBoard>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "subtype",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "dynamic",
+         "type": "t_yesNo",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "orientation",
+         "type": "e_orientation",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "v",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "local v on board"
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "local z on board"
+        },
+        {
+         "name": "width",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "height",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "length",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "value",
+         "type": "double",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "unit",
+         "type": "e_unit",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "country",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "countryRevision",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "text",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "invalidated",
+         "type": "boolean",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9"
+        },
+        {
+         "name": "temporary",
+         "type": "boolean",
+         "unit": "",
+         "required": false,
+         "meaning": "1.9"
+        }
+       ],
+       "since": "1.8"
+      },
+      {
+       "name": "<vmsBoard>",
+       "parent": "<signal>",
+       "attributes": [
+        {
+         "name": "displayType",
+         "type": "e_road_signals_displayType",
+         "unit": "",
+         "required": true,
+         "meaning": "LED, monochromGraphic, rotatingPrismHorizontal, rotatingPrismVertical, simpleMatrix, other"
+        },
+        {
+         "name": "displayHeight",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "displayWidth",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": ""
+        },
+        {
+         "name": "v",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        }
+       ],
+       "since": "1.8"
+      },
+      {
+       "name": "<displayArea>",
+       "parent": "<vmsBoard>",
+       "attributes": [
+        {
+         "name": "index",
+         "type": "int",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "v",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "width",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "height",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        }
+       ],
+       "since": "1.8"
+      },
+      {
+       "name": "<vmsGroup>",
+       "parent": "<OpenDRIVE>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        }
+       ],
+       "since": "1.8",
+       "children": [
+        "<vmsBoardReference signalId vmsIndex groupIndex>"
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "sign position on a board",
+       "expr": "P_sign = P_signal + Rz(psi)*[0, v, z]",
+       "vars": "psi = signal facing heading",
+       "notes": "v,z in the parent signal's local frame"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.8.0:road.signal.boards.static_board_use_correct_type",
+       "level": "shall",
+       "text": "A static board uses type='staticBoard' (and dynamic false).",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.signal.boards.static_boards_no_single_signal",
+       "level": "shall",
+       "text": "Static boards are not used for single signals.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.signal.boards.multi_board_have_sub_boards",
+       "level": "shall",
+       "text": "A multiBoard has >=1 static and >=1 VMS board.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.signal.boards.multi_board_use_correct_type",
+       "level": "shall",
+       "text": "A multiBoard uses type='multiBoard'.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:road.signal.boards.multi_board_use_dynamic_true",
+       "level": "shall",
+       "text": "A multiBoard has dynamic=true.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "A VMS board uses type='vmsBoard', dynamic=true.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.signal.gantry.vmsgroup_at_least_one_reference",
+       "level": "shall",
+       "text": "Each gantry has a vmsGroup with >=1 vmsBoardReference.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.signal.gantry.all_variable_boards_same_gantry",
+       "level": "shall",
+       "text": "All VMS boards of a group are on the same gantry.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "pole with speed limit + supplementary plate (1.8+)",
+       "how": "one <signal type='staticBoard'> with two <sign> at different z"
+      }
+     ],
+     "right": [
+      "Use only when targeting 1.8+"
+     ],
+     "wrong": [
+      "Boards in 1.7 files"
+     ],
+     "changes_1_8_1_9": [
+      "new in 1.8; invalidated/temporary on sign in 1.9"
+     ],
+     "figures": []
+    },
+    {
+     "id": "12.9",
+     "title": "Signal semantics (1.8+, not in 1.7)",
+     "summary": "<semantics> gives a country-independent meaning to a signal, so simulators need not decode national catalogues. Children include <speed type value unit> (maximum, minimum, recommended, zone, plus End variants), <priority type> (stop, yield, trafficLight, stopLine, priorityRoad, 4way...), <lane type>, <prohibited>, <warning>, <parking>, <routing>, <streetname>, <tourist> and supplementary qualifiers (allows, prohibits, distance, time, environment, explanatory). 1.9 adds traffic participants <vehicle>, <person> and <animal>.",
+     "concepts": [
+      "visual identity (country/type) vs behavioural meaning (semantics)",
+      "supplementary elements only qualify other semantics",
+      "semantics only where a category exists"
+     ],
+     "elements": [
+      {
+       "name": "<semantics>",
+       "parent": "<signal>",
+       "attributes": [],
+       "multiplicity": "0..1",
+       "since": "1.8",
+       "children": [
+        "<speed type value unit>",
+        "<priority type>",
+        "<lane type>",
+        "<prohibited>",
+        "<warning>",
+        "<parking>",
+        "<routing>",
+        "<streetname>",
+        "<tourist>",
+        "<supplementaryAllows>",
+        "<supplementaryProhibits>",
+        "<supplementaryDistance type unit value>",
+        "<supplementaryTime type value>",
+        "<supplementaryEnvironment type>",
+        "<supplementaryExplanatory>",
+        "1.9: <vehicle type>,<person type>,<animal>"
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.9.0:road.signal.semantics.no_semantics_without_category",
+       "level": "shall",
+       "text": "Do not specify semantics if no category exists for the behaviour.",
+       "since": "1.9"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "The enum literal 'other' is used only if nothing else fits.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "speed limit 60",
+       "how": "<semantics><speed type='maximum' value='60' unit='km/h'/></semantics>"
+      },
+      {
+       "case": "stop sign",
+       "how": "<semantics><priority type='stop'/></semantics>"
+      },
+      {
+       "case": "traffic light",
+       "how": "<semantics><priority type='trafficLight'/></semantics>"
+      }
+     ],
+     "right": [
+      "Emit semantics for every sign OdrForge understands when targeting 1.8+"
+     ],
+     "wrong": [
+      "Semantics without a matching category"
+     ],
+     "changes_1_8_1_9": [
+      "new in 1.8; 1.9 adds person/animal/vehicle and lane type 'other'"
+     ],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "13",
+   "title": "Railroads",
+   "sections": [
+    {
+     "id": "13.0",
+     "title": "Railroads - introduction",
+     "summary": "OpenDRIVE models trams and streetcars only where rails meet roads; it does not cover complex rail networks or rail signalling. Rails live on roads: each track is its own <road>, and <road>/<railroad> holds switches. In 1.9, switches are the only rail-specific element; tracks use <road> and signals use <signal>.",
+     "concepts": [
+      "one road per track",
+      "<railroad> container in <road>"
+     ],
+     "elements": [
+      {
+       "name": "<railroad>",
+       "parent": "<road>",
+       "attributes": [],
+       "multiplicity": "0..1",
+       "children": [
+        "<switch>"
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.one_rail_per_road",
+       "level": "shall",
+       "text": "Each railway track requires its own road (one tram/rail lane per road).",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM railway=tram in a street",
+       "how": "separate <road> for the tram track along the street centre, lane type 'tram'; the street road stays separate"
+      },
+      {
+       "case": "level crossing road/rail (OSM railway=level_crossing)",
+       "how": "1.7: model as a junction or overlapping roads; 1.8+: <junction type='crossing'> with <roadSection roadId sStart sEnd> per road (rules junctions.crossing.only_road_sections, only_one_high_prio, s_start_end_coverage)"
+      }
+     ],
+     "right": [
+      "Keep tram tracks out of road lanes"
+     ],
+     "wrong": [
+      "A tram lane inside a car road"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: crossing junction type for road-rail and road-road level crossings"
+     ],
+     "figures": [
+      "Figure 113: UML railroad"
+     ]
+    },
+    {
+     "id": "13.1",
+     "title": "Railroad tracks",
+     "summary": "A track is a road whose single lane has type 'rail' or 'tram'. Its reference line runs along the centre of the rail pair (use laneOffset so the lane centre lies on the reference line), and the lane is at least as wide as the vehicle.",
+     "concepts": [
+      "reference line = track centreline",
+      "lane type rail/tram",
+      "laneOffset shifts the lane so it is centred"
+     ],
+     "elements": [
+      {
+       "name": "<lane type='rail'|'tram'>",
+       "parent": "<lanes>",
+       "attributes": [],
+       "notes": "normal lane element"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "centred rail lane",
+       "expr": "laneOffset = w/2 with a single right lane -1 of width w (Figure 114)",
+       "vars": "w vehicle width",
+       "notes": "the lane then spans t in [-w/2,+w/2]"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.rail_refline_centered",
+       "level": "shall",
+       "text": "The reference line lies in the centre of the rail pair.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.one_rail_per_road",
+       "level": "shall",
+       "text": "Only one tram or rail lane per road.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.rail_lane_width_validity",
+       "level": "shall",
+       "text": "The lane is at least as wide as the rail vehicles.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "tram track",
+       "how": "road with lane -1 type tram, width 2.65, laneOffset 1.325"
+      }
+     ],
+     "right": [
+      "Centre the reference line on the track"
+     ],
+     "wrong": [
+      "Reference line at the lane edge as for roads"
+     ],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 114: road reference line at the lane edge vs railway reference line centred via laneOffset"
+     ]
+    },
+    {
+     "id": "13.2",
+     "title": "Switches (mainTrack, sideTrack, partner)",
+     "summary": "<switch> on a track's <railroad> splits it into two directions. It is dynamic (operable during simulation) or static (fixed 'straight' or 'turn'). <mainTrack id s dir> gives the switch point on the main track; <sideTrack id s dir> gives the branch road. Two switches joined by a side track are partners and must be set consistently.",
+     "concepts": [
+      "switch = 2-way split (unlike junctions)",
+      "mainTrack = this road; sideTrack connects two switches",
+      "partner switches share a side track"
+     ],
+     "elements": [
+      {
+       "name": "<switch>",
+       "parent": "<railroad>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique; preferably uint32"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "unique name"
+        },
+        {
+         "name": "position",
+         "type": "e_road_railroad_switch_position",
+         "unit": "",
+         "required": true,
+         "meaning": "dynamic | straight | turn"
+        }
+       ],
+       "multiplicity": "0..*"
+      },
+      {
+       "name": "<mainTrack>",
+       "parent": "<switch>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "road id of main track (must be the parent road)"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s of switch point"
+        },
+        {
+         "name": "dir",
+         "type": "e_elementDir",
+         "unit": "",
+         "required": true,
+         "meaning": "+/-: direction on main track to enter the side track"
+        }
+       ]
+      },
+      {
+       "name": "<sideTrack>",
+       "parent": "<switch>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "road id of side track"
+        },
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s of switch on side track"
+        },
+        {
+         "name": "dir",
+         "type": "e_elementDir",
+         "unit": "",
+         "required": true,
+         "meaning": "direction on side track after entering"
+        }
+       ]
+      },
+      {
+       "name": "<partner>",
+       "parent": "<switch>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "partner switch id"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        }
+       ],
+       "multiplicity": "0..1"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "A switch may be dynamic or static.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Main tracks shall not be used to connect two switches.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Side tracks link two switches only.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Partner switches indicate that a side track links two switches.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.switch.single_switch_no_partner",
+       "level": "shall",
+       "text": "Single switches have no partner.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.switch.check_switch_conn",
+       "level": "shall",
+       "text": "Switch connections must be consistent (Annex F).",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "tram crossover between two parallel tracks",
+       "how": "switch 12 on track 1 and switch 32 on track 3, side track road 2, partners of each other (Figure 115)"
+      }
+     ],
+     "right": [
+      "Set mainTrack id = parent road id"
+     ],
+     "wrong": [
+      "Partner on a single switch"
+     ],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 115: partner switches 12 and 32 connect main tracks 1 and 3 via side track 2"
+     ]
+    },
+    {
+     "id": "13.3",
+     "title": "Stations, platforms, segments",
+     "summary": "A top-level <station> (tram or bus) has at least one <platform>, and each platform has at least one <segment roadId sStart sEnd side>. The segments tie the platform to track or road stretches and give the side of the track it is on.",
+     "concepts": [
+      "station at OpenDRIVE level (like junctions)",
+      "platform = physical extent",
+      "segment = road s-range + side"
+     ],
+     "elements": [
+      {
+       "name": "<station>",
+       "parent": "<OpenDRIVE>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "type",
+         "type": "e_station_type",
+         "unit": "",
+         "required": false,
+         "meaning": "small | medium | large"
+        }
+       ],
+       "multiplicity": "0..*"
+      },
+      {
+       "name": "<platform>",
+       "parent": "<station>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "",
+         "required": false,
+         "meaning": ""
+        }
+       ],
+       "multiplicity": "1..*"
+      },
+      {
+       "name": "<segment>",
+       "parent": "<platform>",
+       "attributes": [
+        {
+         "name": "roadId",
+         "type": "string",
+         "unit": "",
+         "required": true,
+         "meaning": "track road"
+        },
+        {
+         "name": "sStart",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "sEnd",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "side",
+         "type": "e_station_platform_segment_side",
+         "unit": "",
+         "required": true,
+         "meaning": "left | right, seen from sStart to sEnd"
+        }
+       ],
+       "multiplicity": "1..*"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.stations.one_platform_per_station",
+       "level": "shall",
+       "text": "At least one platform per station.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.platforms.min_amount",
+       "level": "shall",
+       "text": "Each platform is referenced by >=1 track.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.platforms.min_segments",
+       "level": "shall",
+       "text": "A platform contains >=1 segment.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.railroad.segment.segments_per_platform_min_amount",
+       "level": "shall",
+       "text": ">=1 segment per platform.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM public_transport=platform for a bus/tram stop",
+       "how": "<station type='small'><platform><segment roadId sStart sEnd side='right'/></platform></station>"
+      }
+     ],
+     "right": [
+      "Use for bus stops too"
+     ],
+     "wrong": [
+      "A station without a platform"
+     ],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 116: one platform shared by roads 1 and 3 vs platform 2 split into two segments for roads 1 and 2",
+      "Figure 117: UML station"
+     ]
+    }
+   ]
+  }
+ ]
+}

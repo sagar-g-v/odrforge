@@ -1,0 +1,2318 @@
+{
+ "chapters": [
+  {
+   "id": "9",
+   "title": "Lanes",
+   "source": "ASAM OpenDRIVE 1.7.0 ch.9 (local HTML), cross-checked with 1.9.0 ch.11 online and OpenDRIVE 1.8.1 XSD (tests/xsd/opendrive_1_8_1); figures in C:/mywork/osm2carla/build/tmp/specfig/ch9/",
+   "sections": [
+    {
+     "id": "9",
+     "title": "Lanes (introduction, ids, center lane)",
+     "summary": "Every road carries lanes inside <lanes>. A zero-width center lane with id 0 is the numbering reference: ids ascend to the left (+t) and descend to the right (-t). Without a laneOffset the center lane coincides with the road reference line; on two-way roads it usually separates the driving directions, on one-way roads all lanes may sit on one side.",
+     "concepts": [
+      "center lane: id 0, no width, carries the center roadMark; it is the t-origin of the lane stack after laneOffset is applied",
+      "left lanes: ids 1,2,3... outward in +t; right lanes: ids -1,-2,-3... outward in -t",
+      "driving direction is derived from id sign and road rule (RHT: right lanes drive with s, left lanes against s; LHT reversed)",
+      "minimum road (1.7): center lane plus one lane with width > 0; 1.9 relaxes this (roads used as junction boundaries may have no width>0 lane)",
+      "number of lanes is unlimited",
+      "<lanes> contains: laneOffset*, laneSection+ (1.9: <lanes> may be repeated with @layer permanent|temporary)"
+     ],
+     "elements": [
+      {
+       "name": "<lanes>",
+       "parent": "<road>",
+       "attributes": [
+        {
+         "name": "layer",
+         "type": "e_layerType (permanent|temporary)",
+         "unit": null,
+         "required": false,
+         "meaning": "1.9 only: lane layer; omitted = permanent"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "lane direction from id",
+       "expr": "RHT: id<0 -> travels +s, id>0 -> travels -s; LHT: inverse",
+       "vars": "rule from <road @rule> (RHT default)",
+       "notes": "1.8+: @direction=reversed flips it, @direction=both = bidirectional; @type=bidirectional in 1.7"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Each road has a center lane and at least one lane with width > 0 (1.9 rephrases to: at least one lane layer with a center lane; width>0 requirement dropped).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.center_lane",
+       "level": "shall",
+       "text": "Each road has at least one lane layer with a center lane.",
+       "since": "1.9"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Roads may have as many lanes as needed.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.center_lane_no_width",
+       "level": "shall",
+       "text": "Center lane has no width; never put <width> (or <border>) on lane 0.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.center_lane_id",
+       "level": "shall",
+       "text": "Center lane id is 0.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lane_order",
+       "level": "shall",
+       "text": "Numbering starts at 1 / -1 next to the center lane; descends toward -t, ascends toward +t.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lane_order_no_gaps",
+       "level": "shall",
+       "text": "Lane ids are consecutive with no gaps (e.g. -1,-2,-3, never -1,-3).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.lane_id_unique",
+       "level": "shall",
+       "text": "Lane ids are unique per lane section (1.9: per section and layer).",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Bidirectional lanes may exist (1.7: @type=bidirectional; 1.8+: @direction=both).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lane_sect_min_amount",
+       "level": "shall",
+       "text": "<lanes> contains at least one <laneSection>.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.s_attr_value",
+       "level": "shall",
+       "text": "Every <laneSection> carries @s.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.lane_sect_first",
+       "level": "shall",
+       "text": "The first laneSection has s=0.0.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "must",
+       "text": "1.9 intro: all drivable lanes are continuous and smooth without gaps, considering plan view, profiles and lane properties (see Annex D).",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "two-way road",
+       "how": "center lane on the reference line; RHT: forward lanes are -1..-n, backward lanes 1..m"
+      },
+      {
+       "case": "one-way road (Figure 53)",
+       "how": "put all traffic lanes on one side (right side for RHT, ids -1..-n); left side may be empty or hold only non-driving lanes; or use @direction (1.8+)"
+      }
+     ],
+     "right": [
+      "<center><lane id=\"0\" type=\"none\"><roadMark .../></lane></center> with no width child",
+      "ids -1,-2,-3 contiguous, listed in XML left to right (descending id: 2,1 | 0 | -1,-2)"
+     ],
+     "wrong": [
+      "width element on lane 0",
+      "id gaps after removing a lane (renumber instead)",
+      "assuming center lane == reference line when laneOffset != 0",
+      "first laneSection at s>0"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: <lane> on left/right gets @direction (standard|reversed|both), @advisory (none|inner|outer|both), @dynamicLaneDirection, @dynamicLaneType, @roadWorks; center lane @type and @level deprecated",
+      "1.9: lane layers (<lanes layer=permanent|temporary>), id uniqueness per layer, width>0 minimum requirement removed",
+      "1.9 rule ids: road.lane.center_lane, lane_id_unique, lane_sect_first"
+     ],
+     "figures": [
+      "Figure 52 (img001): two-way road, center lane = reference line separates directions; lanes 3,2,1 | 0 | -1,-2, a right lane -3 appears via widening; lesson: ids are positional from center, new outer lane gets next id",
+      "Figure 53 (img002): one-way road, all lanes on one side of the center lane",
+      "Figure 54 (img003): UML of <lanes>"
+     ]
+    },
+    {
+     "id": "9.1",
+     "title": "Lane grouping within lane sections (left/center/right)",
+     "summary": "Within a laneSection lanes are grouped into <left>, <center>, <right>. Positive ids live in <left>, negative in <right>, id 0 in <center>. The group defines the side and (via the id sign) the default driving direction.",
+     "concepts": [
+      "<left> lane id type positiveInteger, <right> negativeInteger, <center> integer (0)",
+      "a lane group = all lanes of one side; width vs border exclusivity and border 'inner lane' semantics are per group",
+      "XML order should be descending id within each group"
+     ],
+     "elements": [
+      {
+       "name": "<left>",
+       "parent": "<laneSection>",
+       "attributes": []
+      },
+      {
+       "name": "<center>",
+       "parent": "<laneSection>",
+       "attributes": []
+      },
+      {
+       "name": "<right>",
+       "parent": "<laneSection>",
+       "attributes": []
+      },
+      {
+       "name": "<lane> (center)",
+       "parent": "<center>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "integer",
+         "unit": null,
+         "required": true,
+         "meaning": "must be 0"
+        },
+        {
+         "name": "type",
+         "type": "e_laneType",
+         "unit": null,
+         "required": false,
+         "meaning": "deprecated in 1.8 for center lane; 1.7 writers normally put type=\"none\""
+        },
+        {
+         "name": "level",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "deprecated in 1.8 for center lane"
+        }
+       ]
+      },
+      {
+       "name": "<lane> (left/right)",
+       "parent": "<left>|<right>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "positiveInteger (left) / negativeInteger (right)",
+         "unit": null,
+         "required": true,
+         "meaning": "lane id"
+        },
+        {
+         "name": "type",
+         "type": "e_laneType",
+         "unit": null,
+         "required": true,
+         "meaning": "lane type"
+        },
+        {
+         "name": "level",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "true = exclude from superelevation/shape; default false"
+        },
+        {
+         "name": "direction",
+         "type": "e_lane_direction",
+         "unit": null,
+         "required": false,
+         "meaning": "1.8+: standard|reversed|both"
+        },
+        {
+         "name": "advisory",
+         "type": "e_laneAdvisory",
+         "unit": null,
+         "required": false,
+         "meaning": "1.8+: none|inner|outer|both; lane may be used by neighbouring traffic (e.g. advisory bike lane)"
+        },
+        {
+         "name": "dynamicLaneDirection",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "1.8+: direction may change at runtime"
+        },
+        {
+         "name": "dynamicLaneType",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "1.8+: type may change at runtime"
+        },
+        {
+         "name": "roadWorks",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "1.8+: lane under construction, access restricted"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lanes_numbered_correctly",
+       "level": "shall",
+       "text": "Positive ids are left of the center lane, negative ids right.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.lane_section_drivable",
+       "level": "shall",
+       "text": "Each laneSection contains at least one <left> or <right> (1.9: valid for the whole section length).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.center_elem_definition",
+       "level": "shall",
+       "text": "Exactly one <center> per s-coordinate (with singleSide sections, the center may live in only one of overlapping sections).",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Each laneSection may contain one <center> (1.7 wording, to allow singleSide sections; element descriptions say one center shall exist per section).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lane_listing",
+       "level": "should",
+       "text": "List lanes left to right, i.e. descending id.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lane_reverse_left_right",
+       "level": "shall",
+       "text": "1.8+: @direction=reversed must not be used to switch the whole road between RHT and LHT (use road @rule).",
+       "since": "1.8"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "derive travel direction",
+       "how": "from id sign + road rule, unless type=bidirectional (1.7) / direction=both|reversed (1.8+)"
+      }
+     ],
+     "right": [
+      "<left> lanes 2 then 1, <center> 0, <right> -1 then -2"
+     ],
+     "wrong": [
+      "positive id in <right>",
+      "two <center> elements in one section",
+      "laneSection with only <center>"
+     ],
+     "changes_1_8_1_9": [
+      "1.8 lane attributes direction/advisory/dynamicLaneDirection/dynamicLaneType/roadWorks",
+      "1.8 center lane @type/@level deprecated"
+     ],
+     "figures": [
+      "Figure 55 (img004): left/center/right grouping of lanes"
+     ]
+    },
+    {
+     "id": "9.2",
+     "title": "Lane sections",
+     "summary": "A laneSection is an s-interval with a fixed set of lanes; a new section is required whenever the number of lanes changes. Sections are ascending in s, start at 0, have positive length and remain valid until the next one. @singleSide lets one side be split independently of the other.",
+     "concepts": [
+      "section length is implicit: next section s (or road length) minus this s",
+      "lane properties (width, marks, speed...) may change freely inside a section; only lane count/set (and type) forces a new section",
+      "lane type changes need a new section (type is a lane attribute, not an s-dependent child)",
+      "singleSide=true: section applies to one side only, determined by its child groups (Figure 57)",
+      "an appearing/disappearing lane is modelled with width polynomial going from/to 0 inside a section, plus a section boundary where the count changes"
+     ],
+     "elements": [
+      {
+       "name": "<laneSection>",
+       "parent": "<lanes>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start s of the section on the reference line"
+        },
+        {
+         "name": "singleSide",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "section valid for one side only (left, center or right) depending on children"
+        },
+        {
+         "name": "length",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "1.9 only: explicit length, temporary layer only"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "section extent",
+       "expr": "s in [s_i, s_{i+1}) ; last section ends at road @length",
+       "vars": "s_i = laneSection@s",
+       "notes": "1.9 temporary layer may use @length instead"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane_section.lane_sect_req",
+       "level": "shall",
+       "text": "Each road has at least one lane section.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane_section.elem_asc_order",
+       "level": "shall",
+       "text": "laneSections ascending in s.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane_section.valid_length",
+       "level": "shall",
+       "text": "Section length > 0 (distance between consecutive sections not zero).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.center_lane_singular",
+       "level": "shall",
+       "text": "Exactly one center lane at each s-position.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane_section.lane_long_zero_width",
+       "level": "should",
+       "text": "Avoid zero-width lanes over long distances.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane_section.lanesec_usage_lane_num",
+       "level": "shall",
+       "text": "New lane section each time the number of lanes changes.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "A lane section stays valid until the next one is defined (or road end).",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Lane properties inside a section may change as often as needed.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Sections may be defined for one side only via @singleSide.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.length_only_temporary",
+       "level": "shall",
+       "text": "1.9: @length only on temporary-layer sections.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane_section.lanesec_length_limit_road",
+       "level": "shall",
+       "text": "1.9: @length must not run past road end.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane_section.new_lanesec_link_temp_to_perm",
+       "level": "shall",
+       "text": "1.9: new permanent section wherever permanent lanes link to temporary lanes.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "lane added on the right (Figure 56)",
+       "how": "section A: lanes -1,-2; section B starts where widening begins: lanes -1,-2,-3 where the new lane has width a=0 and cubic b,c,d grows it; link only continuing lanes"
+      },
+      {
+       "case": "lanes change at different s on each side (Figure 57)",
+       "how": "either split both sides at every change (simplest, always valid), or use singleSide sections"
+      },
+      {
+       "case": "lane type change (exit -> offRamp)",
+       "how": "new section at the change s; link old lane to new lane"
+      }
+     ],
+     "right": [
+      "split at each lane-count change; copy unchanged lanes into the new section with links both ways",
+      "keep sections a few metres long at least (avoid micro sections)"
+     ],
+     "wrong": [
+      "two laneSections with identical s",
+      "changing lane count via width=0 without a section split",
+      "long stretches of width-0 lanes kept only to avoid splitting"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: @length (temporary layer only), permanent layer must cover road with no gaps, new rules lanesec_length_limit_road, new_lanesec_link_temp_to_perm"
+     ],
+     "figures": [
+      "Figure 56 (img005): section A has -1,-2; in section B a new outer lane grows and ids become -1,-2,-3 (new -2 grows between, old -2 becomes -3); lesson: when a lane appears, outer lanes get renumbered and a new section starts at the begin of the widening",
+      "Figure 57 (img006): left side and right side split at different s with singleSide sections"
+     ]
+    },
+    {
+     "id": "9.3",
+     "title": "Lane offset",
+     "summary": "<laneOffset> shifts the center lane laterally from the reference line by a cubic polynomial in s. It is typically used for local shifts such as left-turn pockets, so the reference line can stay smooth. Each element starts at absolute s and is valid until the next one; it is defined per road, not per section.",
+     "concepts": [
+      "laneOffset is a child of <lanes>, independent of laneSection boundaries",
+      "positive offset moves the whole lane stack to +t (left)",
+      "default offset is 0 where no laneOffset is defined (before the first element)",
+      "lane borders t-positions = laneOffset + cumulative widths",
+      "linear interpolation recommended when combined with road shape (1.7) because shape uses linear interpolation"
+     ],
+     "elements": [
+      {
+       "name": "<laneOffset>",
+       "parent": "<lanes>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "absolute start s"
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "value at ds=0"
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1",
+         "required": true,
+         "meaning": "linear coefficient"
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "quadratic coefficient"
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": true,
+         "meaning": "cubic coefficient"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "lane offset",
+       "expr": "offset(ds) = a + b*ds + c*ds^2 + d*ds^3 ; ds = s - s_start",
+       "vars": "s_start = laneOffset@s (absolute, NOT relative to laneSection)",
+       "notes": "ds restarts at 0 for each element; new element whenever polynomial changes"
+      },
+      {
+       "name": "t of lane borders (width mode)",
+       "expr": "t_outer(i) = offset(s) + sign(i) * sum_{k=1..|i|} width_k(s) ; t_inner(i) = t_outer(i - sign(i)) ; t_outer(0)=offset(s)",
+       "vars": "width_k evaluated with ds relative to section start + sOffset of the active width record",
+       "notes": "left lanes sign=+1, right lanes sign=-1; center of lane i at (t_inner+t_outer)/2"
+      },
+      {
+       "name": "smooth cubic transition of offset from 0 to D over L",
+       "expr": "a=0, b=0, c=3D/L^2, d=-2D/L^3",
+       "vars": "D target offset, L transition length",
+       "notes": "C1 at both ends (slope 0); example Ex_Simple-LaneOffset: c=3.9e-3, d=-5.2e-5 over 50 m to 3.25 m"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "1.7: laneOffset shall not be used together with road shapes (rule dropped in 1.9 text; guidance remains to use linear interpolation for consistency).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lanes.lane_offset.elem_asc_order",
+       "level": "shall",
+       "text": "laneOffset elements ascending in s.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Start a new laneOffset element when the polynomial changes.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lanes.lane_offset.no_offset_if_border_defined",
+       "level": "shall",
+       "text": "No laneOffset if any <border> definitions exist on the road.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use linear interpolation for offset when combined with shape.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "left-turn pocket / lane shift (Figure 58)",
+       "how": "laneOffset ramps the center lane to +D while a new lane -1 grows from width 0 at the center; outer lanes renumber in new sections"
+      },
+      {
+       "case": "asymmetric road from OSM (more lanes one way)",
+       "how": "keep reference line on the OSM way and use laneOffset = (w_left - w_right)/2 or put reference on the separation line"
+      }
+     ],
+     "right": [
+      "cubic with zero slope at ends for transitions",
+      "evaluate offset with absolute s"
+     ],
+     "wrong": [
+      "offset s treated as relative to laneSection",
+      "laneOffset together with <border>",
+      "step change in offset between elements (creates gap - violates Annex D)"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: each lane layer has its own laneOffset (temporary need not match permanent)",
+      "1.9 text drops the 1.7 'not with road shapes' shall-rule"
+     ],
+     "figures": [
+      "Figure 58 (img007): sections A-B-C, center lane offset from reference line via cubic; a lane appears at the center (new -1) and ids shift; lesson: offset moves the whole stack and lane appearance still needs sections+renumbering"
+     ]
+    },
+    {
+     "id": "9.4",
+     "title": "Lane linkage",
+     "summary": "Each lane can list <predecessor>/<successor> lane ids inside <link>. Predecessor = lane at the start of its section, successor = lane at the end, both in reference-line direction and independent of driving direction. Within a road the ids refer to the neighbouring section; across roads to the first/last section of the other road according to the road link contact point.",
+     "concepts": [
+      "link direction is geometric (s), not traffic direction",
+      "across roads with contactPoint=end, ids may flip sign (Figure 59: road 10 lane -1 -> road 20 lane 1 because road 20 runs opposite)",
+      "links only where both lanes have non-zero width at the touch point and are semantically connected",
+      "multiple predecessors/successors for abrupt split/merge with non-zero width",
+      "appearing lane (width 0 at start) gets no predecessor; vanishing lane (width 0 at end) no successor",
+      "lanes into a junction: no lane link on the road side; connections are in junction <laneLink>"
+     ],
+     "elements": [
+      {
+       "name": "<link>",
+       "parent": "<lane>",
+       "attributes": []
+      },
+      {
+       "name": "<predecessor>",
+       "parent": "<link>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "integer",
+         "unit": null,
+         "required": true,
+         "meaning": "id of linked lane"
+        },
+        {
+         "name": "layer",
+         "type": "e_layerType",
+         "unit": null,
+         "required": false,
+         "meaning": "1.9: permanent|temporary, default permanent"
+        }
+       ]
+      },
+      {
+       "name": "<successor>",
+       "parent": "<link>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "integer",
+         "unit": null,
+         "required": true,
+         "meaning": "id of linked lane"
+        },
+        {
+         "name": "layer",
+         "type": "e_layerType",
+         "unit": null,
+         "required": false,
+         "meaning": "1.9: permanent|temporary, default permanent"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "cross-road id mapping",
+       "expr": "if road links contact the other road at its start and both run same way: same id; if contact at other road's end (opposite direction): id_other = -id typically",
+       "vars": "contactPoint of road link",
+       "notes": "not a spec formula; derived from Figure 59/Table 27"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "A lane may have another lane as predecessor or successor.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Link only if physical connection exists at both lanes' ends, both non-zero width there, semantically connected.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.link.use_junctions",
+       "level": "shall",
+       "text": "Link only when the relationship is clear; if ambiguous use a junction.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.link.multiple_connections",
+       "level": "shall",
+       "text": "Use multiple predecessors/successors for abrupt split/merge; all connected lanes non-zero width at the connection.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.lane.link.zero_width_at_start",
+       "level": "shall",
+       "text": "Lane with width 0 at section start has no <predecessor>.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.lane.link.zero_width_at_end",
+       "level": "shall",
+       "text": "Lane with width 0 at section end has no <successor>.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.link.no_link",
+       "level": "shall",
+       "text": "Omit <link> if the lane starts/ends in a junction or has no link.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.link.lanes_across_laneSections",
+       "level": "shall",
+       "text": "A lane continuing across sections is linked in both directions.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.link.new_lane_appear",
+       "level": "shall",
+       "text": "When a new lane appears beside, link only the continuing lane to the original, not the appearing lane (no multiple successors).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.link.temporary_layer_section_link_permanent",
+       "level": "shall",
+       "text": "1.9: at start/end of a temporary layer section all drivable non-zero-width temporary lanes link to permanent lanes.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "lane continues across sections",
+       "how": "pred/succ both ways"
+      },
+      {
+       "case": "exit lane becomes offRamp",
+       "how": "link exit lane to offRamp lane (type change)"
+      },
+      {
+       "case": "roadside parking lane ends and the road continues",
+       "how": "parking lane successor = driving lane (vehicles continue)"
+      },
+      {
+       "case": "parking lane ends into grass strip",
+       "how": "no link"
+      },
+      {
+       "case": "bikeway ends, bikes continue on driving lane (Figure 60)",
+       "how": "bike lane successor = driving lane; driving lane has multiple predecessors"
+      },
+      {
+       "case": "abrupt split of one lane into two (Figure 61)",
+       "how": "one lane with two successors, both non-zero width"
+      },
+      {
+       "case": "lane appears via widening",
+       "how": "new lane: no predecessor; continuing lane links 1:1"
+      }
+     ],
+     "right": [
+      "symmetric links (A succ B <=> B pred A)",
+      "check width>0 at both ends before linking",
+      "use junction when mapping is ambiguous"
+     ],
+     "wrong": [
+      "linking a width-0 tapering lane",
+      "appearing lane as second successor of the original",
+      "lane links on road ends that enter a junction",
+      "assuming successor = downstream in traffic direction"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: @layer on predecessor/successor; temporary-layer linking rules"
+     ],
+     "figures": [
+      "Figure 59 (img008): roads 30-10-20; road 20 reversed so road10 lane -1 succ = road20 lane 1, lane 1 succ = road20 lane -1; lesson: sign flips when contactPoint=end",
+      "Figure 60 (img009): bike lane ends into driving lane (multiple links)",
+      "Figure 61 (img010): driving lane abruptly splits into two (multiple successors)",
+      "Figure 62 (img011): UML of link"
+     ]
+    },
+    {
+     "id": "9.5",
+     "title": "Lane properties (general)",
+     "summary": "Lane properties (width, border, material, speed, access, height, rule, roadMark) are children of <lane> with sOffset relative to the laneSection start. Each stays valid until the next element of the same kind or the section end, and same-kind elements are ascending. Applications may apply defaults where nothing is specified.",
+     "concepts": [
+      "s_abs = laneSection@s + sOffset",
+      "properties do not carry over to the next laneSection: repeat them",
+      "same-kind elements may not be out of order"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "absolute s of a property",
+       "expr": "s = s_section + sOffset (+ ds inside polynomial elements)",
+       "vars": "",
+       "notes": "applies to width, border, roadMark, material, speed, access, height, rule"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Properties defined relative to the start of their lane section.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "A property stays valid until another of the same type is defined or the section ends.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.lane_properties.elem_asc_order",
+       "level": "shall",
+       "text": "Same-type properties in ascending order.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [],
+     "right": [
+      "re-emit speed/roadMark/material in every section"
+     ],
+     "wrong": [
+      "sOffset as absolute s",
+      "sOffset >= section length"
+     ],
+     "changes_1_8_1_9": [
+      "1.9 splits into 11.7 lane geometry (width/border/height/level) and 11.8 lane properties (type/material/speed/access)"
+     ],
+     "figures": [
+      "Figure 63 (img012): UML of lane properties"
+     ]
+    },
+    {
+     "id": "9.5.1",
+     "title": "Lane width",
+     "summary": "<width> gives lane width as a cubic in ds measured from section start + sOffset, along the reference line (width is measured in t, perpendicular to the reference line, not to the lane). A width record must exist at sOffset=0 and widths must be >= 0. Width and border are mutually exclusive per lane group; if both exist, width wins.",
+     "concepts": [
+      "width is along t at a given s (perpendicular to reference line)",
+      "appearing lane: a=0 and growing cubic; disappearing: cubic falling to 0 at section end",
+      "if both width and border present, application must use width"
+     ],
+     "elements": [
+      {
+       "name": "<width>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to laneSection@s"
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "value at ds=0"
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1",
+         "required": true,
+         "meaning": "linear coefficient"
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "quadratic coefficient"
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": true,
+         "meaning": "cubic coefficient"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "lane width",
+       "expr": "width(ds) = a + b*ds + c*ds^2 + d*ds^3",
+       "vars": "ds = s - (s_section + sOffset)",
+       "notes": "ds restarts at 0 for each width element"
+      },
+      {
+       "name": "absolute s",
+       "expr": "s = s_section + offsetStart + ds",
+       "vars": "offsetStart = sOffset",
+       "notes": ""
+      },
+      {
+       "name": "smooth taper 0 -> W over L",
+       "expr": "a=0, b=0, c=3W/L^2, d=-2W/L^3",
+       "vars": "W final width, L taper length",
+       "notes": "C1, monotone; reverse (W -> 0): a=W, b=0, c=-3W/L^2, d=2W/L^3"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Width defined at least once per lane section.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.lane.width.width_defined_whole_section",
+       "level": "shall",
+       "text": "Width covers the full section: a <width> with sOffset=0 must exist.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.center_lane_no_width",
+       "level": "shall",
+       "text": "No <width> on the center lane.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Width valid until next width element or section end.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "New width element when the polynomial changes.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.width.no_width_with_border",
+       "level": "shall",
+       "text": "Width not combined with border in the same lane group.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.width.elem_asc_order",
+       "level": "shall",
+       "text": "<width> ascending in sOffset.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.width.lane_width_validity",
+       "level": "shall",
+       "text": "width(ds) >= 0 everywhere.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "new lane on the right (Figure 64)",
+       "how": "new section B; lane -2 has a=0 and b,c,d widening; lane -1 constant"
+      }
+     ],
+     "right": [
+      "first width sOffset=0",
+      "check cubic stays >=0 across its interval (cubic can dip negative)",
+      "continuous width between consecutive width records and across sections for continuing lanes"
+     ],
+     "wrong": [
+      "width on lane 0",
+      "negative coefficients producing width<0 mid-interval",
+      "missing width at sOffset 0",
+      "width jumps across section boundary for the same physical lane (gap, Annex D)"
+     ],
+     "changes_1_8_1_9": [
+      "1.9 rule ids; content unchanged"
+     ],
+     "figures": [
+      "Figure 64 (img013): ds restarts per section; lane -1 constant a in section A, new lane -2 starts with a=0 and widens in section B"
+     ]
+    },
+    {
+     "id": "9.5.2",
+     "title": "Lane borders",
+     "summary": "<border> alternatively gives the t-position of a lane's outer edge as a cubic in ds, independent of inner lanes (same sign, smaller |id|). Meant for measured data to avoid many sections. Exclusive with width in a lane group and with laneOffset; borders must not cross inner lanes.",
+     "concepts": [
+      "border value is a t-coordinate of the outer edge measured from the reference line (signed; right-side borders are negative in strict reading; some tools interpret differently)",
+      "inner edge of lane i = outer edge of lane i-sign(i) (or center lane)",
+      "no laneOffset allowed, so center lane = reference line"
+     ],
+     "elements": [
+      {
+       "name": "<border>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to laneSection@s"
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "value at ds=0"
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1",
+         "required": true,
+         "meaning": "linear coefficient"
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "quadratic coefficient"
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": true,
+         "meaning": "cubic coefficient"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "lane border",
+       "expr": "t_border(ds) = a + b*ds + c*ds^2 + d*ds^3",
+       "vars": "ds = s - (s_section + sOffset)",
+       "notes": "restarts per element"
+      },
+      {
+       "name": "width from borders",
+       "expr": "width_i(s) = |t_border_i(s) - t_border_{i-sign(i)}(s)|, t_border_0 = 0",
+       "vars": "",
+       "notes": ""
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.border.exclusive_width_border",
+       "level": "shall",
+       "text": "No width together with border in the same lane group.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.border.exclusive_offset_border",
+       "level": "shall",
+       "text": "No border together with laneOffset.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "New border element when polynomial changes.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.border.elem_asc_order",
+       "level": "shall",
+       "text": "<border> ascending.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.border.overlap_with_inner_lanes",
+       "level": "shall",
+       "text": "Borders do not intersect inner lanes.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "If both width and border exist, applications use width.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "measured lane edges",
+       "how": "fit border cubic per lane outer edge"
+      }
+     ],
+     "right": [
+      "prefer <width> for generated data (OdrForge): wider tool support"
+     ],
+     "wrong": [
+      "mixing width and border in one group",
+      "border + laneOffset"
+     ],
+     "changes_1_8_1_9": [
+      "none in content"
+     ],
+     "figures": [
+      "Figure 65 (img014): a_lane-2 = a_lane-1 at start (zero width), lane -2 border widens; lesson: border coordinates are absolute t-positions, independent of inner lanes"
+     ]
+    },
+    {
+     "id": "9.5.3",
+     "title": "Lane type and lane element attributes",
+     "summary": "@type states the main purpose and traffic rules of a lane. The 1.7 enum e_laneType has 28 values; 1.8 added shared, walking and slipLane and deprecated several (sidewalk, bidirectional, bus, taxi, HOV, special1-3, roadWorks, mwyEntry, mwyExit). A type change requires a new lane section.",
+     "concepts": [
+      "lane types (1.7 enum): shoulder, border, driving, stop, none, restricted, parking, median, biking, sidewalk, curb, exit, entry, onRamp, offRamp, connectingRamp, bidirectional, special1, special2, special3, roadWorks, tram, rail, bus, taxi, HOV, mwyEntry, mwyExit",
+      "shoulder: soft border at road edge (grass/gravel), not normally driven [since 1.4; non-drivable]",
+      "border: hard border at road edge, same height as driving lane [since 1.4; drivable in Annex D list]",
+      "driving: normal drivable lane not covered by other types [since 1.4; drivable]",
+      "stop: motorway hard shoulder for emergency stops [since 1.4; drivable]",
+      "none: outermost space with no content; lets apps know OpenDRIVE still exists if driver leaves road [since 1.4; non-drivable]",
+      "restricted: same height as driving lanes, cars should not drive (hatched/blocked area) [since 1.4; drivable in Annex D]",
+      "parking: lane with parking spaces [since 1.4; not in drivable list]",
+      "median: between opposite-direction driving lanes (central reservation) [since 1.4; non-drivable]",
+      "biking: reserved for cyclists [since 1.4; drivable only if advisory (Annex D)]",
+      "sidewalk: pedestrian walkway; deprecated in 1.8, use walking [since 1.4; non-drivable]",
+      "curb: curb stones, different height than adjacent drivable lane (use with <height>) [since 1.4; non-drivable]",
+      "exit: parallel to main road, leads off (deceleration lane) [since 1.4; drivable]",
+      "entry: parallel to main road, merges in (acceleration lane) [since 1.4; drivable]",
+      "onRamp: ramp to motorway from rural/urban roads (1.7 text spells 'onramp'; enum value onRamp) [since 1.4; drivable]",
+      "offRamp: ramp from motorway to rural/urban roads [since 1.4; drivable]",
+      "connectingRamp: ramp connecting two motorways (motorway interchange) [since 1.4; drivable]",
+      "bidirectional: lane usable in both directions (center turn lane etc.); deprecated in 1.8, use @direction=both [since 1.4; drivable (deprecated)]",
+      "special1: application-specific; deprecated 1.8 [since 1.4]",
+      "special2: application-specific; deprecated 1.8 [since 1.4]",
+      "special3: application-specific; deprecated 1.8 [since 1.4]",
+      "roadWorks: lane under construction; deprecated 1.8, use @roadWorks=true (+ 1.9 temporary layer) [since 1.4; deprecated]",
+      "tram: used by trams only [since 1.4]",
+      "rail: used by trains only [since 1.4]",
+      "bus: bus lane; deprecated 1.8, use type=driving + <access><restriction type=bus> [since 1.4; deprecated drivable]",
+      "taxi: taxi lane; deprecated 1.8, use <access> [since 1.4; deprecated drivable]",
+      "HOV: high-occupancy/carpool lane; deprecated 1.8, use <access> (restriction HOV) [since 1.4; deprecated drivable]",
+      "mwyEntry: motorway entry; deprecated (use entry) [since 1.4; deprecated]",
+      "mwyExit: motorway exit; deprecated (use exit) [since 1.4; deprecated]",
+      "shared: 1.8: shared by all participants; for walking/biking sharing use <access> [since 1.8]",
+      "walking: 1.8: pedestrian lane (replaces sidewalk) [since 1.8; non-drivable]",
+      "slipLane: 1.8: lets drivers change roads without entering the main intersection (free right turn) [since 1.8; drivable]",
+      "Annex D (1.9) drivable types: driving, entry, exit, onRamp, offRamp, connectingRamp, slipLane, biking (advisory only), border, stop, restricted; deprecated drivable: HOV, bidirectional, bus, mwyEntry, mwyExit, roadWorks, taxi",
+      "CARLA/RoadRunner practice: driving lanes must be type driving to be routable; sidewalk(1.7)/walking for pedestrians"
+     ],
+     "elements": [
+      {
+       "name": "<lane>",
+       "parent": "<left>|<right>",
+       "attributes": [
+        {
+         "name": "type",
+         "type": "e_laneType",
+         "unit": null,
+         "required": true,
+         "meaning": "lane purpose"
+        },
+        {
+         "name": "level",
+         "type": "t_bool",
+         "unit": null,
+         "required": false,
+         "meaning": "true: keep level (no superelevation/shape); false default"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Lane type may change as often as needed, but only via a new lane section.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "motorway cross-section (Figure 66)",
+       "how": "shoulder | border | driving x3 | stop | shoulder | none"
+      },
+      {
+       "case": "rural road (Figure 67)",
+       "how": "driving lanes with shoulder/border edges, optional median"
+      },
+      {
+       "case": "urban road (Figure 68)",
+       "how": "border/curb | driving x2 | curb median curb | driving x2 | border | curb | parking | shoulder | biking | sidewalk"
+      },
+      {
+       "case": "motorway exit/entry (Figure 69)",
+       "how": "exit lane parallel to main road -> offRamp; onRamp -> entry lane parallel, merging"
+      },
+      {
+       "case": "motorway interchange (Figure 70)",
+       "how": "connectingRamp"
+      },
+      {
+       "case": "OSM highway=footway/sidewalk=both",
+       "how": "sidewalk (1.7) or walking (1.8+), with curb lane or <height>"
+      },
+      {
+       "case": "OSM busway / bus lane",
+       "how": "1.7: type bus; 1.8+: driving + access restriction bus"
+      }
+     ],
+     "right": [
+      "write enum spelling exactly (onRamp, offRamp, connectingRamp, HOV)",
+      "target-version-aware: sidewalk in 1.7, walking in 1.8+"
+     ],
+     "wrong": [
+      "'onramp' lower-case (1.7 prose typo)",
+      "using bidirectional in 1.8+ output instead of @direction=both",
+      "changing type mid-section"
+     ],
+     "changes_1_8_1_9": [
+      "1.8 added: shared, walking, slipLane",
+      "1.8 deprecated: sidewalk(->walking), bidirectional(->@direction), bus/taxi/HOV(->access), special1-3, roadWorks(->@roadWorks), mwyEntry/mwyExit (->entry/exit)",
+      "1.8 center lane @type deprecated"
+     ],
+     "figures": [
+      "Figures 66-70 (img015-img019): lane-type layouts for motorway, rural, urban, exit/entry and motorway-to-motorway; lesson: shoulder/border/none at edges, stop = hard shoulder, curb + median separate opposing urban carriageways, exit->offRamp and onRamp->entry transitions"
+     ]
+    },
+    {
+     "id": "9.5.4",
+     "title": "Lane material",
+     "summary": "<material> stores surface code, friction and roughness for a lane from sOffset on. Valid until the next material or section end; not on the center lane. Defaults are application-defined.",
+     "concepts": [
+      "complements OpenCRG",
+      "surface is an application-specific code"
+     ],
+     "elements": [
+      {
+       "name": "<material>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to section"
+        },
+        {
+         "name": "friction",
+         "type": "t_grEqZero",
+         "unit": null,
+         "required": true,
+         "meaning": "friction coefficient"
+        },
+        {
+         "name": "roughness",
+         "type": "t_grEqZero",
+         "unit": null,
+         "required": false,
+         "meaning": "roughness for sound/motion systems"
+        },
+        {
+         "name": "surface",
+         "type": "string",
+         "unit": null,
+         "required": false,
+         "meaning": "surface material code"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.material.center_lane_no_material",
+       "level": "shall",
+       "text": "No material on center lane.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Material valid until next material or section end.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.material.elem_asc_order",
+       "level": "shall",
+       "text": "Ascending order.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM surface=*",
+       "how": "map to surface string + typical friction"
+      }
+     ],
+     "right": [],
+     "wrong": [
+      "material on lane 0",
+      "material on temporary layer (1.9)"
+     ],
+     "changes_1_8_1_9": [
+      "1.9: forbidden on temporary layer (road.lane.layer.lane_phys_attr_temporary)"
+     ],
+     "figures": []
+    },
+    {
+     "id": "9.5.5",
+     "title": "Lane speed limit",
+     "summary": "<speed> sets a lane's maximum speed from sOffset; it overrides the road-level speed but signals take precedence. Unit defaults to m/s.",
+     "concepts": [
+      "precedence: signals > lane <speed> > road <type><speed>",
+      "e_unitSpeed: m/s, km/h, mph"
+     ],
+     "elements": [
+      {
+       "name": "<speed>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to section"
+        },
+        {
+         "name": "max",
+         "type": "t_grEqZero",
+         "unit": null,
+         "required": true,
+         "meaning": "max speed; default unit m/s"
+        },
+        {
+         "name": "unit",
+         "type": "e_unitSpeed",
+         "unit": null,
+         "required": false,
+         "meaning": "m/s | km/h | mph"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.speed.center_lane_no_spd_lmt",
+       "level": "shall",
+       "text": "No speed on center lane.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Valid until next speed or section end.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.speed.elem_asc_order",
+       "level": "shall",
+       "text": "Ascending order.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Signal-derived limits always take preference.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM maxspeed:lanes / maxspeed:forward",
+       "how": "per-lane <speed unit=km/h>"
+      }
+     ],
+     "right": [
+      "always give unit explicitly"
+     ],
+     "wrong": [
+      "max=50 without unit meaning km/h (it is m/s!)"
+     ],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 71 (img020): lane-specific speed limits"
+     ]
+    },
+    {
+     "id": "9.5.6",
+     "title": "Lane access",
+     "summary": "<access> restricts lanes to or from road-user classes, in addition to signals. 'allow' lists the only permitted users; 'deny' bans the listed users and keeps all others; allow and deny may not be mixed at the same s. At every new s all restrictions must be restated; deny + none clears previous restrictions.",
+     "concepts": [
+      "e_accessRestrictionType (1.7): simulator, autonomousTraffic, pedestrian, passengerCar, bus, delivery, emergency, taxi, throughTraffic, truck, bicycle, motorcycle, none, trucks; 1.8 adds HOV",
+      "rule enum: allow | deny",
+      "several <access> at the same sOffset form the restriction set at that s",
+      "no <access> = unrestricted"
+     ],
+     "elements": [
+      {
+       "name": "<access>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to section"
+        },
+        {
+         "name": "rule",
+         "type": "allow|deny",
+         "unit": null,
+         "required": false,
+         "meaning": "allow = only listed may use; deny = listed banned"
+        },
+        {
+         "name": "restriction",
+         "type": "e_accessRestrictionType",
+         "unit": null,
+         "required": false,
+         "meaning": "1.7: participant class; deprecated in 1.8 in favour of child <restriction>"
+        }
+       ]
+      },
+      {
+       "name": "<restriction>",
+       "parent": "<access>",
+       "attributes": [
+        {
+         "name": "type",
+         "type": "e_accessRestrictionType",
+         "unit": null,
+         "required": true,
+         "meaning": "1.8+: participant class"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.access.center_lane_no_acc_rule",
+       "level": "shall",
+       "text": "No access on center lane.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Valid until next access or section end.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.access.elem_asc_order",
+       "level": "shall",
+       "text": "Ascending order.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Access elements may start at identical sOffset.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "No access element = no restrictions.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "deny: listed denied, all others allowed.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "allow: listed allowed, all others banned.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.lane.access.no_mix_of_deny_or_allow",
+       "level": "shall",
+       "text": "At a given s, only allow or only deny, never mixed.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "must",
+       "text": "At each new s-position restate all restrictions even if only a subset changes.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "deny with restriction none reverts all previous restrictions.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "bus lane (Figure 72)",
+       "how": "1.7: <access sOffset=0 rule=allow restriction=bus/> (+ taxi etc. as more elements at same sOffset); 1.8+: <access sOffset=0 rule=allow><restriction type=bus/></access>"
+      },
+      {
+       "case": "no trucks",
+       "how": "rule=deny restriction=truck"
+      },
+      {
+       "case": "lift restriction mid-section",
+       "how": "new access at sOffset with rule=deny restriction=none"
+      }
+     ],
+     "right": [
+      "restate full set at each sOffset"
+     ],
+     "wrong": [
+      "allow bus + deny truck at same s",
+      "assuming restrictions persist into next laneSection"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: @restriction deprecated, child <restriction type> added; HOV value added"
+     ],
+     "figures": [
+      "Figure 72 (img021): bus lane via access"
+     ]
+    },
+    {
+     "id": "9.5.7",
+     "title": "Lane height",
+     "summary": "<height> raises a lane's inner and outer edge by small offsets in h (z) above the road surface (which already includes elevation, superelevation and shape). Used for curbs and raised sidewalks, never for road elevation.",
+     "concepts": [
+      "inner = edge toward center lane, outer = away from it",
+      "value is constant from sOffset until next height (no polynomial); across the lane, linear between inner and outer (interpretation)",
+      "center lane cannot be raised"
+     ],
+     "elements": [
+      {
+       "name": "<height>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to section"
+        },
+        {
+         "name": "inner",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "offset at inner edge from road level"
+        },
+        {
+         "name": "outer",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "offset at outer edge from road level"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "lane surface height",
+       "expr": "z_lane(s,t) = z_road(s,t) + inner + (outer-inner) * (|t|-|t_inner|)/(|t_outer|-|t_inner|)",
+       "vars": "z_road includes elevation, superelevation, shape",
+       "notes": "linear lateral interpolation is the common reading; spec gives only inner/outer values; step change at each new <height>"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Use <height> to modify lane height (e.g. curbstones).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.height.elem_asc_order",
+       "level": "shall",
+       "text": "Ascending order.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.height.center_lane_no_height",
+       "level": "shall",
+       "text": "Center lane not elevated by height.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Not used for road elevation/superelevation.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Only small-scale elevation.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "raised sidewalk 12 cm",
+       "how": "<height sOffset=0 inner=0.12 outer=0.12/> on sidewalk lane; curb lane inner 0 -> outer 0.12 or step"
+      }
+     ],
+     "right": [],
+     "wrong": [
+      "height on lane 0",
+      "using height to model hills",
+      "height on temporary layer (1.9)"
+     ],
+     "changes_1_8_1_9": [
+      "1.9 text: offset is in h-direction relative to road incl. crossSectionSurface (1.8 lateral profile surface)",
+      "1.9: forbidden on temporary layer"
+     ],
+     "figures": [
+      "Figure 73 (img022): sidewalk raised by lane height over the superelevated road"
+     ]
+    },
+    {
+     "id": "9.5.8",
+     "title": "Excluding lanes from superelevation (@level)",
+     "summary": "level=true excludes a lane from superelevation and road shape; it stays flat at the height of the adjacent inner lane's outer edge. If a lane is level, all lanes outward of it on that side must also be level.",
+     "concepts": [
+      "typical: curbs, borders, sidewalks on banked roads",
+      "level lanes continue horizontally from the inner neighbour's outer edge"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "level lane z",
+       "expr": "z(s,t) = z_road(s, t_inner_edge) for all t in lane",
+       "vars": "",
+       "notes": "plus any <height>"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.lane.level_true_one_side",
+       "level": "shall",
+       "text": "If a lane has level=true, all lanes from it to the road edge (on at least one side) are level=true.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Multiple outer lanes may have level=true (e.g. bike lane + sidewalk).",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "1.9: avoid changing @level between lane sections.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "banked road with sidewalk",
+       "how": "sidewalk and curb level=true"
+      }
+     ],
+     "right": [],
+     "wrong": [
+      "level=true on an inner lane with non-level lane outside it"
+     ],
+     "changes_1_8_1_9": [
+      "1.8/1.9: level also excludes crossSectionSurface; center lane @level deprecated"
+     ],
+     "figures": [
+      "Figure 74 (img023): outer lanes 4/-4 kept level while road is superelevated"
+     ]
+    },
+    {
+     "id": "9.6",
+     "title": "Road markings (<roadMark>)",
+     "summary": "<roadMark> describes the line at a lane's outer border (left border for left lanes, right border for right lanes); the center lane's roadMark is the dividing line. The mark is centered on that border so half of it lies on the next lane outward. Simple style via @type keyword, detailed via <type>/<line> (repeating) or <explicit> (non-repeating), with optional <sway>.",
+     "concepts": [
+      "roadMark types (e_roadMarkType): none: no marking; solid: single continuous line; broken: single dashed line; solid solid: double continuous; solid broken: double line, one solid one broken; spec does not define which side is which - tools differ, so set laneChange explicitly; broken solid: double line, broken + solid (mirror of solid broken; side order not defined in spec); broken broken: double dashed; botts dots: raised pavement markers; grass: grass edge, no paint; curb: curb edge; custom: use <type>/<line> detail; edge: edge of road surface (no paint)",
+      "colors (e_roadMarkColor 1.7): standard (application default, usually white), blue, green, orange, red, violet, white, yellow; 1.8 adds black",
+      "weights (e_roadMarkWeight): standard, bold (common convention: standard 0.12 m, bold 0.25 m width; not normative in 1.7)",
+      "laneChange (e_road_lanes_laneSection_lcr_lane_roadMark_laneChange): increase = crossing allowed toward increasing lane id, decrease = toward decreasing id, both (default if missing), none = no crossing; ids increase right-to-left in s direction",
+      "line @rule (e_roadMarkRule): no passing, caution, none; applies when crossing from inside (lower |id|) to outside (higher |id|)",
+      "multiple roadMarks per lane, ascending sOffset, each valid until next or section end",
+      "for the outermost lane, its roadMark is the road edge line",
+      "1.9: stop lines and other guidance markings -> signals (+objects); non-mandatory markings -> objects"
+     ],
+     "elements": [
+      {
+       "name": "<roadMark>",
+       "parent": "<lane> (left/center/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to laneSection@s"
+        },
+        {
+         "name": "type",
+         "type": "e_roadMarkType",
+         "unit": null,
+         "required": true,
+         "meaning": "simplified marking keyword"
+        },
+        {
+         "name": "color",
+         "type": "e_roadMarkColor",
+         "unit": null,
+         "required": true,
+         "meaning": "marking color"
+        },
+        {
+         "name": "weight",
+         "type": "e_roadMarkWeight",
+         "unit": null,
+         "required": false,
+         "meaning": "standard|bold; optional when <type> detail given"
+        },
+        {
+         "name": "width",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "line width; optional when <line> detail given"
+        },
+        {
+         "name": "height",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "thickness above road"
+        },
+        {
+         "name": "laneChange",
+         "type": "e_..._laneChange",
+         "unit": null,
+         "required": false,
+         "meaning": "increase|decrease|both|none; default both"
+        },
+        {
+         "name": "material",
+         "type": "string",
+         "unit": null,
+         "required": false,
+         "meaning": "user-defined; default 'standard'"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "roadMark lateral position",
+       "expr": "t_mark_center(s) = t_outer(lane, s) (+ line tOffset + sway(s)); mark occupies t_mark_center +- width/2",
+       "vars": "t_outer from laneOffset+widths",
+       "notes": "outer half lies on next outward lane; for lane 0 position is offset(s)"
+      },
+      {
+       "name": "dash pattern (repeating line)",
+       "expr": "visible iff ((s - s_mark - line.sOffset) mod (length+space)) < length, for s >= s_mark + line.sOffset",
+       "vars": "s_mark = s_section + roadMark.sOffset",
+       "notes": "repeats until roadMark ends"
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.road_mark.only_outer",
+       "level": "shall",
+       "text": "<roadMark> only describes the outer marking of the lane.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.road_mark.elem_asc_order",
+       "level": "shall",
+       "text": "<roadMark> ascending in sOffset.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.road_mark.position_outer_half",
+       "level": "shall",
+       "text": "Marking centerline lies on the lane's outer border so its outer half physically sits on the next lane.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "roadMark valid until next roadMark or section end.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "two-way road center line",
+       "how": "center lane roadMark type=solid or broken color=standard/yellow"
+      },
+      {
+       "case": "lane divider between -1 and -2",
+       "how": "roadMark on lane -1 (its outer border), type=broken"
+      },
+      {
+       "case": "road edge line",
+       "how": "roadMark on outermost driving lane type=solid; or on border lane"
+      },
+      {
+       "case": "no-overtaking one way only",
+       "how": "center roadMark type 'solid broken'/'broken solid' with laneChange increase/decrease"
+      }
+     ],
+     "right": [
+      "mark on the lane whose outer edge it is",
+      "explicit laneChange=none for solid lines (default 'both' would allow crossing)"
+     ],
+     "wrong": [
+      "putting edge mark on inner lane",
+      "offsetting mark so it lies fully inside the lane",
+      "roadMark only in first section (not carried over)"
+     ],
+     "changes_1_8_1_9": [
+      "1.8: color black",
+      "1.9: rule ids only_outer, position_outer_half; guidance to use signals/objects for stop lines and non-mandatory markings"
+     ],
+     "figures": [
+      "Figure 75 (img024): UML roadMark with type/line, explicit/line, sway"
+     ]
+    },
+    {
+     "id": "9.6.1",
+     "title": "Road marking types and lines (<type>/<line>)",
+     "summary": "<type> (named, total width) contains one or more <line> elements placed side by side; each line repeats a visible length + gap space pattern along the lane, with its own sOffset, tOffset, width, color and passing rule. More specific than the @type keyword.",
+     "concepts": [
+      "<type width> = sum of line widths plus gaps between them; supersedes roadMark width",
+      "line color/width supersede roadMark values",
+      "length=visible part, space=gap",
+      "tOffset relative to lane border, follows sway"
+     ],
+     "elements": [
+      {
+       "name": "<type>",
+       "parent": "<roadMark>",
+       "attributes": [
+        {
+         "name": "name",
+         "type": "string",
+         "unit": null,
+         "required": true,
+         "meaning": "free name"
+        },
+        {
+         "name": "width",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "accumulated width"
+        }
+       ]
+      },
+      {
+       "name": "<line>",
+       "parent": "<type>",
+       "attributes": [
+        {
+         "name": "length",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "visible length"
+        },
+        {
+         "name": "space",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "gap length"
+        },
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "initial offset from roadMark start"
+        },
+        {
+         "name": "tOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "lateral offset from lane border (follows sway)"
+        },
+        {
+         "name": "width",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "line width"
+        },
+        {
+         "name": "color",
+         "type": "e_roadMarkColor",
+         "unit": null,
+         "required": false,
+         "meaning": "overrides roadMark color"
+        },
+        {
+         "name": "rule",
+         "type": "e_roadMarkRule",
+         "unit": null,
+         "required": false,
+         "meaning": "no passing|caution|none when passing from inside"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "solid line via line",
+       "expr": "space = 0",
+       "vars": "",
+       "notes": "broken typical (Germany) length 6 m, space 12 m on rural; 3/6 urban (convention, not spec)"
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Each <type> contains one or more <line>.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "double line solid+broken",
+       "how": "type width=0.42 with two lines tOffset -0.15 (solid, space 0) and +0.15 (broken)"
+      }
+     ],
+     "right": [],
+     "wrong": [
+      "<type> without <line>"
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "9.6.2",
+     "title": "Explicit road marking lines (<explicit>)",
+     "summary": "<explicit> holds individual non-repeating <line> segments for irregular markings, mainly from measurement data.",
+     "concepts": [
+      "lines not repeated",
+      "line sOffset relative to roadMark sOffset"
+     ],
+     "elements": [
+      {
+       "name": "<explicit>",
+       "parent": "<roadMark>",
+       "attributes": []
+      },
+      {
+       "name": "<line> (explicit)",
+       "parent": "<explicit>",
+       "attributes": [
+        {
+         "name": "length",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "visible length"
+        },
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "relative to roadMark sOffset"
+        },
+        {
+         "name": "tOffset",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "lateral offset from lane border"
+        },
+        {
+         "name": "width",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "supersedes roadMark width"
+        },
+        {
+         "name": "rule",
+         "type": "e_roadMarkRule",
+         "unit": null,
+         "required": false,
+         "meaning": "passing rule from inside"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use <explicit> specifically for measurement data.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "worn / irregular dashes from survey",
+       "how": "explicit lines"
+      }
+     ],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "9.6.3",
+     "title": "Offsets in road markings (<sway>)",
+     "summary": "<sway> moves the marking's lateral reference away from the lane border by a cubic in ds (relative to roadMark sOffset), so lines can curve independently of the lane, e.g. through construction sites.",
+     "concepts": [
+      "sway applies to the following (explicit) type definition",
+      "line tOffset is added on top of sway"
+     ],
+     "elements": [
+      {
+       "name": "<sway>",
+       "parent": "<roadMark>",
+       "attributes": [
+        {
+         "name": "ds",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to roadMark sOffset"
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "value at ds=0"
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1",
+         "required": true,
+         "meaning": "linear coefficient"
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "quadratic coefficient"
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": true,
+         "meaning": "cubic coefficient"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "sway",
+       "expr": "tOffset(ds) = a + b*ds + c*ds^2 + d*ds^3",
+       "vars": "ds measured from sway start (roadMark sOffset + sway@ds)",
+       "notes": "restarts each element; final mark t = t_border + sway + line.tOffset"
+      }
+     ],
+     "rules": [],
+     "use_cases": [
+      {
+       "case": "construction-site yellow lines (Figure 76)",
+       "how": "sway on roadMark; 1.9 prefers temporary layer"
+      }
+     ],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "1.9 temporary lane layer is the preferred model for roadworks markings"
+     ],
+     "figures": [
+      "Figure 76 (img025): swayed yellow construction-site markings over white permanent markings"
+     ]
+    },
+    {
+     "id": "9.7",
+     "title": "Specific lane rules (<rule>)",
+     "summary": "<rule> attaches free-text application-specific rules to a lane from sOffset on. Recommended values: 'no stopping at any time', 'disabled parking', 'car pool'.",
+     "concepts": [
+      "not interpreted by the standard"
+     ],
+     "elements": [
+      {
+       "name": "<rule>",
+       "parent": "<lane> (left/right)",
+       "attributes": [
+        {
+         "name": "sOffset",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "start relative to section"
+        },
+        {
+         "name": "value",
+         "type": "string",
+         "unit": null,
+         "required": true,
+         "meaning": "free text"
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Applications may have rules valid only in that application.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.lane.rule.elem_asc_order",
+       "level": "shall",
+       "text": "<rule> ascending.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM parking:condition=no_stopping",
+       "how": "<rule value=\"no stopping at any time\"/>"
+      }
+     ],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "9.L",
+     "title": "Lane layers (1.9 only, no 1.7 equivalent)",
+     "summary": "1.9 allows one permanent and at most one temporary <lanes> layer per road. The temporary layer overlays roadworks lanes and markings with higher priority, links to permanent lanes at its ends, and must not exceed the permanent surface.",
+     "concepts": [
+      "<lanes layer=permanent|temporary>",
+      "temporary sections can have @length",
+      "links cross layers via @layer",
+      "permanent blocked lanes: @roadWorks=true"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.layer_mandatory_permanent",
+       "level": "shall",
+       "text": "At least one permanent lane at every s.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.layer_limits",
+       "level": "shall",
+       "text": "Exactly one permanent and at most one temporary layer.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.center_lane_permanent",
+       "level": "shall",
+       "text": "Each permanent section has a center lane.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.length_only_temporary",
+       "level": "shall",
+       "text": "@length only on temporary.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.lane_phys_attr_temporary",
+       "level": "shall",
+       "text": "No <height>/<material> on temporary lanes.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.lane.layer.lane_group_width_temporary",
+       "level": "shall",
+       "text": "Temporary group width+offset sums must not exceed permanent.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "roadworks",
+       "how": "temporary layer section with own lanes/marks, linked to permanent lanes"
+      }
+     ],
+     "right": [],
+     "wrong": [
+      "emitting layer attribute in 1.7 output"
+     ],
+     "changes_1_8_1_9": [
+      "entirely new in 1.9"
+     ],
+     "figures": []
+    },
+    {
+     "id": "9.D",
+     "title": "Annex D (1.8/1.9): smoothness of lanes",
+     "summary": "Connected drivable lanes must have no horizontal gaps or kinks and no vertical gaps along s, and should have no vertical kinks; touching points (start/end of inner/outer edges with x,y,z,heading,pitch,roll) must match approximately. All lane-section boundaries and road/lane/junction links are critical transitions.",
+     "concepts": [
+      "drivable: driving, entry, exit, onRamp, offRamp, connectingRamp, slipLane, biking(advisory), border, stop, restricted (+deprecated HOV, bidirectional, bus, mwyEntry, mwyExit, roadWorks, taxi)",
+      "touching points compare x,y (gap), heading (kink), z/roll (vertical gap), pitch (vertical kink)",
+      "no numeric tolerance given"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "No horizontal gap (x,y mismatch) between connected drivable lanes along s.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "No gaps in plan view reference line.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "No horizontal kink (heading mismatch) between connected drivable lanes; reference line has no kinks.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "No vertical gap (z/roll mismatch) along s; no gaps in elevation/lateral profiles.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "lateralProfile may define vertical gaps/kinks in t.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Drivable lanes should not jump in t-direction.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "No vertical kinks (pitch mismatch) along s.",
+       "since": "1.8"
+      },
+      {
+       "id": "asam.net:xodr:1.8.1:performance.avoid_redundant_info",
+       "level": "should",
+       "text": "Avoid redundant elements (repeated identical laneSections/elevations, multiple straight geometries).",
+       "since": "1.8.1"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "section boundary",
+       "how": "width/offset values and slopes of continuing lanes equal on both sides"
+      }
+     ],
+     "right": [
+      "validate width continuity and derivative continuity at every section boundary and road link"
+     ],
+     "wrong": [
+      "width step at section boundary",
+      "laneOffset step",
+      "superfluous identical consecutive laneSections"
+     ],
+     "changes_1_8_1_9": [
+      "annex new since 1.8"
+     ],
+     "figures": []
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,769 @@
+[
+  {
+    "file": "figures/1.7.0/fig033.png",
+    "figure": "Figure 33",
+    "chapter": "8. Roads",
+    "section": "8. Roads (road element UML, after the t_road attribute table)",
+    "caption": "Figure 33. UML Model for Roads",
+    "shows": "UML class diagram of t_road: attributes name[0..1], length (t_grZero, >0), id (string), junction (string), rule (e_trafficRule [0..1]). Children with multiplicities: link 0..1, lanes exactly 1, objects 0..1, signals 0..1, railroad 0..1, type 0..* (t_road_type: s, type, country[0..1]; with speed 0..1 -> max, unit), surface 0..1, lateralProfile 0..1, elevationProfile 0..1, planView exactly 1. Also lists e_countryCode variants (alpha2 current; alpha3 and old codes deprecated) and t_maxSpeed = t_grEqZero or e_maxSpeedString.",
+    "lesson": "Every road needs exactly one planView and exactly one lanes element; everything else is optional. junction is mandatory as an attribute (use \"-1\" when not a connecting road). length must be strictly positive. Road type entries are a sequence keyed by s, each may carry one speed child.",
+    "right": [
+      "Always emit <planView> and <lanes> per road",
+      "Always write junction=\"-1\" for normal roads",
+      "Use ISO 3166 alpha-2 country codes on <type>",
+      "Write <type s=..> entries in ascending s, speed as child of type"
+    ],
+    "wrong": [
+      "Omitting <lanes> or <planView> - multiplicity 1 means schema-invalid",
+      "Writing length=0 for degenerate OSM ways - t_grZero forbids it; drop or merge zero-length segments",
+      "Using alpha-3 country codes - deprecated in 1.7"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig034.png",
+    "figure": "Figure 34",
+    "chapter": "8. Roads",
+    "section": "8. Roads / 8.3 Road reference line geometry (UML for planView, lateralProfile, elevationProfile, surface)",
+    "caption": "Figure 34. UML model for Road Geometry",
+    "shows": "UML: planView has 1..* geometry (s, x, y, hdg, length>0) each holding exactly one of line / spiral(curvStart, curvEnd) / arc(curvature) / poly3(a..d, deprecated) / paramPoly3(aU..dU, aV..dV, pRange). lateralProfile has 0..* superelevation(s,a,b,c,d) and 0..* shape(s,t,a,b,c,d). elevationProfile has 0..* elevation(s,a,b,c,d). surface has 0..* CRG(file, sStart, sEnd, orientation, mode, purpose, sOffset, tOffset, zOffset, zScale, hOffset).",
+    "lesson": "Geometry, elevation, superelevation and shape are all piecewise cubic records keyed by s (shape additionally by t). A geometry record carries its own start pose (x,y,hdg) and length; there is no implicit chaining - the writer must make poses consistent.",
+    "right": [
+      "Emit at least one <geometry>; each with exactly one primitive child",
+      "Shape records need both s and t",
+      "paramPoly3 needs pRange (arcLength or normalized)"
+    ],
+    "wrong": [
+      "Emitting poly3 for new data - deprecated; prefer paramPoly3",
+      "Computing geometry s values that do not equal the accumulated sum of previous lengths - consumers rely on contiguous s"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig035.png",
+    "figure": "Figure 35",
+    "chapter": "8. Roads",
+    "section": "8.2 Road linkage",
+    "caption": "Figure 35. Allowed, prohibited, and recommended road linkage",
+    "shows": "Four panels, each two roads with lanes 1 (yellow, left of reference line) and -1 (blue, right), blue arrow = reference line direction. Top-left: reference lines do not touch (gap) - red X. Top-right: the first reference line runs past the start of the second (overlap) - red X. Bottom-left: reference lines meet exactly at one point but the roads have a heading kink, so the lane areas show a gap on the outer side and an overlap on the inner side - yellow warning triangle (allowed, not recommended). Bottom-right: roads join with a common point and common tangent, lanes flush - green tick (recommended).",
+    "lesson": "Linked roads must share the endpoint of their reference lines exactly (G0). Tangent continuity (G1) is recommended; a heading kink is tolerated but produces lane gap/overlap wedges.",
+    "right": [
+      "End point of predecessor reference line == start point of successor reference line",
+      "Same heading at the joint so lane polygons are flush"
+    ],
+    "wrong": [
+      "Reference line gap between linked roads - prohibited",
+      "Reference line overlap (one road extends past the other's start) - prohibited",
+      "Heading kink at the joint - allowed but creates lane gaps/overlaps; avoid by smoothing OSM polylines into G1 geometry"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig036.png",
+    "figure": "Figure 36",
+    "chapter": "8. Roads",
+    "section": "8.2 Road linkage",
+    "caption": "Figure 36. Allowed scenarios of road linkage",
+    "shows": "Four panels with Road 1 (left) and Road 2 (right), lanes labelled per road. (a) Both reference lines run left-to-right: Road1 successor = 2 contactPoint start; Road2 predecessor = 1 contactPoint end. (b) Road 1 reference line points left (its lane -1 is on top, 1 below), Road 2 points right: both STARTS meet; Road1 predecessor = 2 start, Road2 predecessor = 1 start; successors n.a. (c) Road 1 points right, Road 2 points left (Road2 lane -1 on top, 1 below): both ENDS meet; Road1 successor = 2 end, Road2 successor = 1 end. (d) Red X: Road 1 has lanes 2,1,-1 with its reference line drawn between lanes 2 and 1, Road 2 has lanes 2,1,-1 with reference line between 1 and -1 - the two reference lines are laterally displaced at the joint, so they do not connect.",
+    "lesson": "Predecessor/successor is about the START/END of the road's own reference line, and contactPoint says which END of the other road touches. Opposite-direction roads can be linked directly (start-start or end-end); lane ids flip sign across such a joint because left/right swap. Reference lines must coincide at the joint; you cannot compensate a lateral jump of the reference line by renumbering lanes.",
+    "right": [
+      "Head-to-tail: succ contactPoint=start / pred contactPoint=end",
+      "Start-to-start: both use predecessor, contactPoint=start",
+      "End-to-end: both use successor, contactPoint=end",
+      "If OSM way directions oppose, keep the roads and link with matching contact points instead of reversing geometry"
+    ],
+    "wrong": [
+      "Assuming successor always has contactPoint=start",
+      "Linking roads whose reference lines are laterally offset at the joint (e.g. reference line on a different lane boundary) - not a valid link; use a laneOffset to move lanes, or a junction",
+      "Leaving out the reciprocal link on the other road (the tables always fill both roads)"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig037.png",
+    "figure": "Figure 37",
+    "chapter": "8. Roads",
+    "section": "8.2 Road linkage",
+    "caption": "Figure 37. Allowed scenario of road linkage within a junction",
+    "shows": "An incoming road with lanes -1 and -2 (one direction, arrows right) enters a dashed junction box. Inside are two connecting roads: one curving up-right carrying a single lane -1 starting from incoming lane -1, and one straight carrying lane -1 starting from incoming lane -2. The straight connecting road continues into an outgoing road with one lane -1. Each connecting road has its own reference line starting exactly at the incoming road's endpoint area.",
+    "lesson": "When one road splits into several, the split must be modelled as a junction with one connecting road per path; each connecting road has its own reference line, can carry a subset of lanes and renumbers them from its own centre lane (incoming -2 becomes -1 on the straight connector).",
+    "right": [
+      "Use a junction for one-to-many road splits",
+      "Connecting roads carry only the lanes needed for that path and number them from their own centre (-1, -2, ...)",
+      "Connecting road reference line starts on the incoming road's end cross-section"
+    ],
+    "wrong": [
+      "Linking one road directly to two successor roads without a junction - road link is 1:1",
+      "Copying incoming lane ids into the connector (lane -2 kept as -2 with an empty -1)"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig038.png",
+    "figure": "Figure 38",
+    "chapter": "8. Roads",
+    "section": "8.2 Road linkage (UML)",
+    "caption": "Figure 38. UML model for road linkage",
+    "shows": "UML: t_road_link has predecessor 0..1 and successor 0..1 of type t_road_link_predecessorSuccessor with elementId (required), elementType (road/junction), contactPoint [0..1], elementS [0..1], elementDir [0..1].",
+    "lesson": "A road has at most one predecessor and one successor. contactPoint is optional in the schema but required in practice when elementType=road (and absent when linking to a junction, which uses no contact point); elementS/elementDir are only for virtual junctions.",
+    "right": [
+      "elementType=road -> give contactPoint",
+      "elementType=junction -> elementId=junction id, no contactPoint"
+    ],
+    "wrong": [
+      "Emitting more than one <successor> for a road",
+      "Using elementS/elementDir for ordinary road-road links"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig039.png",
+    "figure": "Figure 39",
+    "chapter": "8. Roads",
+    "section": "8.4 Methods of elevation",
+    "caption": "Figure 39. Types of elevation",
+    "shows": "Three panels. Road Elevation: a curve h(s) in the s-z plane, h measured vertically, local frame (s,t) moved along. Super Elevation: cross-section in the t-z plane; the road surface is rolled about the reference line (point s), h' is the rotated normal - elevation along t. Road Shape: cross-section with t positive to the LEFT; piecewise linear profile with widths 1 m, 4 m, 3 m, 1 m between t=5, 4, 0, -3, -4; h=0.05 m at t=5..4, h=0.45 m at t=0 (reference line peak), h=0 at t=-3..-4; slopes b=-0.10 m/m and b=0.15 m/m.",
+    "lesson": "Three independent height mechanisms: elevation (function of s), superelevation (roll angle about the reference line, function of s), shape (height offset as function of t, at given s). They add up.",
+    "right": [
+      "Elevation for longitudinal grade from OSM/DEM",
+      "Superelevation for banking",
+      "Shape only for non-planar cross-sections (crown, crossfall)"
+    ],
+    "wrong": [
+      "Encoding crossfall as elevation or lane height",
+      "Treating shape t-axis as positive to the right - it is positive to the left as for all t"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig040.png",
+    "figure": "Figure 40",
+    "chapter": "8. Roads",
+    "section": "8.4.2 Superelevation",
+    "caption": "Figure 40. Superelevation",
+    "shows": "Cross-section in x-z with t pointing left. Left: a=0, road flat, a point at lateral distance t1 lies at horizontal distance t1. Right: a>0, road surface rotated about the reference point s so the left side rises; the point at t1 along the tilted surface projects horizontally to t1*cos(a); h axis is tilted with the surface.",
+    "lesson": "Superelevation is a pure rotation about the reference line: lane widths are measured along the tilted surface, so the plan-view footprint shrinks to t*cos(a) and the left edge rises by t*sin(a). Positive roll raises the left (positive t) side.",
+    "right": [
+      "Measure lane widths along the rolled surface",
+      "Positive superelevation lifts the +t (left) side"
+    ],
+    "wrong": [
+      "Assuming plan-view (x,y) width stays equal to lane width under superelevation",
+      "Sign-flipping the roll angle (positive = right side down)"
+    ],
+    "formula": "x_offset = t*cos(a); z = h_ref + t*sin(a); a(ds) = a + b*ds + c*ds^2 + d*ds^3 (radians)"
+  },
+  {
+    "file": "figures/1.7.0/fig041.png",
+    "figure": "Figure 41",
+    "chapter": "8. Roads",
+    "section": "8.4.3 Shape definition",
+    "caption": "Figure 41. Minimum t-definition range for road shapes",
+    "shows": "Plan view of a road (lanes 4..1 left, -1..-3 right) whose outer borders narrow along s. Two lateral profiles at s_R1 and s_R2 (red vertical lines); red circles mark the t-start of each shape polynomial: five at s_R1, three at s_R2, and each profile spans the full road width from outer left to outer right border (green bracket = minimum t range = maximum t extent of the whole road). A point (s_P, t_P) lies between the two profiles. Formulas: h_SR1(t_P) and h_SR2(t_P) = a + b*dt + c*dt^2 + d*dt^3, and h(s_P) printed as (h_SR1(t_P) + h_SR2(t_P))*(s_P - s_R1)/(s_R2 - s_R1).",
+    "lesson": "Each shape profile must cover the maximum t extent of the entire road, not only the local width; heights between profiles are interpolated linearly in s; within a profile, dt is measured from that polynomial's own t start.",
+    "right": [
+      "Every s-profile covers t from the widest right edge to the widest left edge of the road",
+      "Linear interpolation along s between profiles",
+      "Profiles can have different numbers of polynomials"
+    ],
+    "wrong": [
+      "Defining shape only over the local road width - points elsewhere become undefined",
+      "Taking the printed formula literally: (h1+h2)*(sP-sR1)/(sR2-sR1) does not give h1 at sP=sR1; implement proper linear interpolation"
+    ],
+    "formula": "h(s_P,t_P) = h_R1(t_P) + (h_R2(t_P) - h_R1(t_P))*(s_P - s_R1)/(s_R2 - s_R1); h_Ri(t) = a + b*dt + c*dt^2 + d*dt^3 with dt = t - t_start(polynomial). Figure prints (h_R1+h_R2)*(s_P-s_R1)/(s_R2-s_R1), which looks like a typo."
+  },
+  {
+    "file": "figures/1.7.0/fig042.png",
+    "figure": "Figure 42",
+    "chapter": "8. Roads",
+    "section": "8.4.3 Shape definition",
+    "caption": "Figure 42. Shape definition (left) in combination with superelevation (right)",
+    "shows": "Same cross-section as Figure 40 but with a grey shape profile on top of the road (height rising toward +t). Left a=0: shape added vertically on a flat road. Right a>0: road rolled, the shape is applied perpendicular to the tilted surface (along tilted h), point t1 projects to t1*cos(a).",
+    "lesson": "Shape heights are applied in the superelevated (rolled) frame: shape is evaluated in t along the tilted surface and offset along the rolled h axis; superelevation is applied first, shape on top.",
+    "right": [
+      "Compute shape in the local rolled frame"
+    ],
+    "wrong": [
+      "Adding shape height to global z after superelevation as if unrolled"
+    ],
+    "formula": "p = ref + R(roll)*[t, h_shape(t)]"
+  },
+  {
+    "file": "figures/1.7.0/fig043.png",
+    "figure": "Figure 43",
+    "chapter": "8. Roads",
+    "section": "8.5 Road surface",
+    "caption": "Figure 43. Road surface as defined in a CRG file",
+    "shows": "3D rendering of a road surface with cobblestone (paving block) texture in one half and a smooth section with a pothole in the other, white dashed centre marking, kerbs on both sides - surface relief from a CRG file.",
+    "lesson": "OpenCRG supplies fine-grained surface relief (cobbles, potholes) on top of the OpenDRIVE road; it is not a substitute for lane geometry.",
+    "right": [
+      "Reference CRG via <surface><CRG> only if real surface data exists"
+    ],
+    "wrong": [
+      "Trying to model surface relief with elevation/shape polynomials"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig044.png",
+    "figure": "Figure 44",
+    "chapter": "8. Roads",
+    "section": "8.5 Road surface",
+    "caption": "Figure 44. ASAM OpenCRG road surface description using u/v-coordinates and x/y-coordinates",
+    "shows": "Plots of a sample CRG file (belgian block): XY overview of the CRG reference line (a curve from about (226,84) to (234,78)); XYZ height map in curved XY grid (z about 2.04-2.18 m); UVZ map in an uncurved grid, u = 730..740 m along the line, v = -1.5..1.5 m across.",
+    "lesson": "CRG has its own reference line and its own (u,v) coordinates, analogous to OpenDRIVE (s,t); combining requires a mapping between the two.",
+    "right": [
+      "Treat u~s, v~t with offsets"
+    ],
+    "wrong": [
+      "Assuming CRG u starts at 0 or aligns with road s=0"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig045.png",
+    "figure": "Figure 45",
+    "chapter": "8. Roads",
+    "section": "8.5 Road surface",
+    "caption": "Figure 45. Positioning of an ASAM OpenCRG file along the reference line",
+    "shows": "OpenDRIVE road in s/t (yellow +t, blue -t). A CRG grid placed from s_Start to s_End; the CRG reference line (black arrow) is offset below the road reference line by t_Offset.",
+    "lesson": "The CRG patch is valid only over [sStart, sEnd] and its reference line may be laterally shifted by tOffset relative to the road reference line.",
+    "right": [
+      "Set sStart/sEnd to the CRG extent"
+    ],
+    "wrong": [
+      "Assuming the CRG reference line coincides with the road reference line"
+    ],
+    "formula": "v = t - tOffset"
+  },
+  {
+    "file": "figures/1.7.0/fig046.png",
+    "figure": "Figure 46",
+    "chapter": "8. Roads",
+    "section": "8.5.1 Modes (attached)",
+    "caption": "Figure 46. ASAM OpenCRG attachment mode, attached",
+    "shows": "Mode attached: CRG grid with its u/v axes placed parallel to the road s/t axes, origin shifted by sOffset and tOffset; the CRG reference line is discarded and the patch bends with the OpenDRIVE reference line.",
+    "lesson": "In attached mode CRG (u,v) are simply (s - sOffset, t - tOffset); CRG heights are added to the OpenDRIVE height.",
+    "right": [
+      "Use attached when surface detail should follow the OpenDRIVE geometry"
+    ],
+    "wrong": [
+      "Using CRG XY geometry in attached mode"
+    ],
+    "formula": "u = s - sOffset; v = t - tOffset; z = crg(u,v)*zScale + zOffset + h_OpenDRIVE(s,t)"
+  },
+  {
+    "file": "figures/1.7.0/fig047.png",
+    "figure": "Figure 47",
+    "chapter": "8. Roads",
+    "section": "8.5.1 Modes (attached)",
+    "caption": "Figure 47. ASAM OpenCRG attached mode with elevation",
+    "shows": "Longitudinal profile: blue reference line elevation rising between sStart and sEnd; the CRG data (dark band) starts at sOffset and rides on top of the OpenDRIVE elevation.",
+    "lesson": "In attached mode the CRG relief is superimposed on the road elevation; heights outside the CRG data range are plain OpenDRIVE.",
+    "right": [
+      "Total height = OpenDRIVE height + CRG delta"
+    ],
+    "wrong": [],
+    "formula": "z_total = z_OpenDRIVE(s,t) + crg(u,v)*zScale + zOffset"
+  },
+  {
+    "file": "figures/1.7.0/fig048.png",
+    "figure": "Figure 48",
+    "chapter": "8. Roads",
+    "section": "8.5.1 Modes (attached0)",
+    "caption": "Figure 48. ASAM OpenCRG attached0 mode with elevated reference line",
+    "shows": "Same profile in attached0 mode: OpenDRIVE elevation is set to zero (red line at z=0) inside [sStart,sEnd]; CRG data supplies the absolute height from sOffset; between the end of CRG data and sEnd there is a hatched region where height falls to z=0 - a gap.",
+    "lesson": "In attached0 the OpenDRIVE elevation is ignored, so sStart/sEnd must match the CRG data boundaries exactly or the surface drops to zero.",
+    "right": [
+      "sStart/sEnd exactly equal to CRG data extent"
+    ],
+    "wrong": [
+      "sEnd beyond CRG data in attached0 - produces z=0 holes"
+    ],
+    "formula": "z_total = crg(u,v)*zScale + zOffset (OpenDRIVE elevation := 0)"
+  },
+  {
+    "file": "figures/1.7.0/fig049.png",
+    "figure": "Figure 49",
+    "chapter": "8. Roads",
+    "section": "8.5.1 Modes (genuine)",
+    "caption": "Figure 49. ASAM OpenCRG attachment mode, genuine",
+    "shows": "Mode genuine: CRG u/v axes rotated by hOffset relative to s/t and placed at (sOffset, tOffset); the CRG reference line (u) keeps its own curvature, not following s.",
+    "lesson": "In genuine mode the CRG geometry is used as-is relative to the start point (translated and rotated by hOffset); it does not bend with the OpenDRIVE reference line.",
+    "right": [
+      "Use genuine for measured surfaces with their own geometry"
+    ],
+    "wrong": [
+      "Expecting genuine CRG to follow road curvature"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig050.png",
+    "figure": "Figure 50",
+    "chapter": "8. Roads",
+    "section": "8.5.2 Switching orientation",
+    "caption": "Figure 50. ASAM OpenCRG orientation",
+    "shows": "Top: orientation=same, CRG grid corners A,B,C,D, origin (u=0,v=0) at sStart offset by tOffset, u along +s, v along +t. Bottom: orientation=opposite, grid rotated 180 deg (corner letters upside-down), u (labelled n) points to -s and v to -t; tOffset is shown on the other side.",
+    "lesson": "orientation=opposite is a 180 deg rotation about the CRG origin: both u and v reverse sign relative to s and t.",
+    "right": [
+      "Flip both u and v for opposite"
+    ],
+    "wrong": [
+      "Flipping only u (mirror) - text matrix [[0,-1],[-1,0]] swaps axes; the figure shows a plain 180 deg rotation"
+    ],
+    "formula": "opposite: u = -(s - sOffset), v = -(t - tOffset) (as drawn)"
+  },
+  {
+    "file": "figures/1.7.0/fig051.png",
+    "figure": "Figure 51",
+    "chapter": "8. Roads",
+    "section": "8.6.1 Modeling a road shape with a linear crossfall",
+    "caption": "Figure 51. Example crossfall modeled with road shape",
+    "shows": "Cross-section with t positive to the LEFT. Profile: flat h=0.05 m from t=5 to t=4 (width 1 m); slope down from h=0.45 m at t=0 to 0.05 at t=4 (width 4 m, b=-0.10 m/m); from h=0 at t=-3 rising to 0.45 at t=0 (width 3 m, b=0.15 m/m); flat h=0 from t=-4 to -3 (width 1 m). Table of four shape records all at s=0: t=4 a=0.05 b=0; t=0 a=0.45 b=-0.1; t=-3 a=0 b=0.15; t=-4 a=0 b=0.",
+    "lesson": "Each shape record is valid from its own t to the next larger t, and is evaluated with dt = t - t_record in the +t direction. Hence slope on the -t side is POSITIVE (0.15) because the profile rises towards the reference line when moving in +t.",
+    "right": [
+      "Shape records sorted by t ascending at each s; dt measured from the record's t",
+      "One s value can hold several t-records forming a piecewise polynomial"
+    ],
+    "wrong": [
+      "Writing b with the visual slope sign (seen left-to-right in the drawing) - sign must refer to increasing t",
+      "Evaluating dt from t=0 instead of the record's t start"
+    ],
+    "formula": "h(t) = a + b*(t - t_i) + c*(t - t_i)^2 + d*(t - t_i)^3 for t_i <= t < t_{i+1}"
+  },
+  {
+    "file": "figures/1.7.0/fig052.png",
+    "figure": "Figure 52",
+    "chapter": "9. Lanes",
+    "section": "9 Lanes (centre lane)",
+    "caption": "Figure 52. Center lane for road with lanes of different driving directions",
+    "shows": "Two-way road: lanes 3,2,1 above (yellow, left) and -1,-2 below (blue, right); centre lane 0 drawn as dash-dot line coinciding with the road reference line (no lane offset). At a vertical section boundary a new right lane -3 appears: the dashed boundary -1/-2 stays straight, a NEW dashed line peels off from it to the outer side and the solid outer edge swings outward, so the new lane opens with zero width next to lane -1; the old outer lane keeps its width and is now numbered -3 (labels -1, -2, -3 in the second part). Lane 3 on the left is separated by a solid line (e.g. shoulder).",
+    "lesson": "Lane ids are always contiguous from the centre lane (1,2,3 / -1,-2,-3) inside each lane section; when a lane is inserted the ids of all lanes outside it shift by one in the new section. Centre lane has no width; without laneOffset it equals the reference line.",
+    "right": [
+      "Renumber lanes in each section consecutively from the centre",
+      "Link old -2 -> new -3, old -1 -> new -1; the new (zero-width-start) -2 has no predecessor"
+    ],
+    "wrong": [
+      "Keeping the old id for the continuing outer lane and giving the new lane id -3 when it is geometrically between -1 and the old -2",
+      "Linking the opening lane to old -2"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig053.png",
+    "figure": "Figure 53",
+    "chapter": "9. Lanes",
+    "section": "9 Lanes (centre lane)",
+    "caption": "Figure 53. Center lane for road with lanes of identical driving direction",
+    "shows": "One-way road: only left lanes 1, 2 (driving, arrows pointing AGAINST the reference line direction, i.e. leftwards) and 3 (separated by solid line), centre lane 0 on the reference line at the right edge of the road; no right lanes.",
+    "lesson": "A one-way road may consist of only one side; the centre lane then lies on the road edge. With right-hand traffic, left lanes are driven opposite to the reference line - so a one-way road built only of left lanes runs against s.",
+    "right": [
+      "One-way: use only right lanes (traffic along +s in RHT), or only left lanes with traffic in -s",
+      "Centre lane at road edge is fine"
+    ],
+    "wrong": [
+      "Putting a one-way OSM way's lanes on the left side while expecting traffic in +s direction"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig054.png",
+    "figure": "Figure 54",
+    "chapter": "9. Lanes",
+    "section": "9 Lanes (UML)",
+    "caption": "Figure 54. UML model for lanes",
+    "shows": "UML: lanes has laneOffset 0..* (s,a,b,c,d) and laneSection 1..* (s, singleSide[0..1]). laneSection has center exactly 1, left 0..1, right 0..1; each holds lane 1..* with id = 0 (center), positiveInteger (left), negativeInteger (right). All lanes (lr) have type, level[0..1], link 0..1 (predecessor 0..*, successor 0..*, each with integer id), geometry 1..* via width 0..* or border 0..*, plus height, material, speed, access, roadMark, rule (all 0..*).",
+    "lesson": "Lane link predecessor/successor are 0..* - multiple are allowed (splits/merges). A lane needs width or border (one of them). Center lane is mandatory in every section and carries only roadMark/link, no width.",
+    "right": [
+      "Emit <center><lane id=0> in every laneSection",
+      "Use multiple <predecessor>/<successor> only for abrupt split/merge"
+    ],
+    "wrong": [
+      "Omitting center",
+      "Giving the center lane a width",
+      "Mixing width and border in the same lane group"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig055.png",
+    "figure": "Figure 55",
+    "chapter": "9. Lanes",
+    "section": "9.1 Lane grouping within lane sections",
+    "caption": "Figure 55. Lane grouping with left, center, right",
+    "shows": "Road with left group (lanes 3, 2, 1 with arrows pointing left), centre (lane 0 dash-dot on reference line), right group (lanes -1 arrow pointing right, -2). Lane 3 and -2 separated by solid lines (non-driving).",
+    "lesson": "Positive ids are left of the centre lane, negative right; under right-hand traffic right lanes drive along +s and left lanes along -s, so direction is derivable from the id sign (except bidirectional).",
+    "right": [
+      "Order lanes in XML from left to right (descending id)",
+      "Direction from id sign + road rule"
+    ],
+    "wrong": [
+      "Placing forward-direction lanes of an RHT road on the left side"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig056.png",
+    "figure": "Figure 56",
+    "chapter": "9. Lanes",
+    "section": "9.2 Lane sections",
+    "caption": "Figure 56. A road section with lane sections",
+    "shows": "Lane section A: lanes 3,2,1 | 0 | -1,-2. Lane section B: a new lane opens at the CENTRE side: a dashed line peels off from the reference line and swings out, the former -1/-2 solid boundary and the outer edge also swing out in parallel; at the end of B the lanes are -1 (new, inner), -2 (former -1), -3 (former -2). Left lanes unchanged.",
+    "lesson": "A change in lane count needs a new lane section, and the new lane starts with zero width at the section start. Because ids count outward from the centre, a lane appearing near the centre renumbers every outer lane on that side.",
+    "right": [
+      "New section at the s where the new lane begins (width 0)",
+      "Links: A:-1 -> B:-2, A:-2 -> B:-3; B:-1 has no predecessor",
+      "Left side lanes link 1->1, 2->2, 3->3"
+    ],
+    "wrong": [
+      "Matching lanes across sections by id instead of by position",
+      "Giving the zero-width-start lane a predecessor"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig057.png",
+    "figure": "Figure 57",
+    "chapter": "9. Lanes",
+    "section": "9.2 Lane sections",
+    "caption": "Figure 57. Lane sections defined separately for both sides of the road",
+    "shows": "Left side: lane section A_left ends where a narrowing left lane (solid outer border tapering onto the dashed line) has disappeared, B_left starts at that s. Right side: section boundary A_right/B_right lies further downstream, where an outer right lane tapers (solid border rising onto the dashed/solid boundary). Boundaries on the two sides are at different s.",
+    "lesson": "With singleSide=true a lane section can apply to one side only, so lane count changes on left and right sides need not force a common section boundary.",
+    "right": [
+      "Use singleSide sections when left/right lane changes occur at different s, or split both sides at every change (equivalent, more sections)"
+    ],
+    "wrong": [
+      "Assuming singleSide is required - a full section split at each change is also valid",
+      "Ending a lane section before the tapering lane reaches zero width"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig058.png",
+    "figure": "Figure 58",
+    "chapter": "9. Lanes",
+    "section": "9.3 Lane offset",
+    "caption": "Figure 58. Lane offset",
+    "shows": "Section A: lanes 3,2,1 | 0 on reference line | -1,-2. Section B: the centre lane (dotted line) rises smoothly from the reference line to the former 1/2 boundary (lane offset growing); lane 1 shrinks to zero above it while a new lane -1 grows below it, so labels read 3,2,1,0,-1,-2,-3. Section C: lanes 2,1 | 0 (offset from reference line by constant 'Lane offset') | -1,-2,-3; reference line itself unchanged.",
+    "lesson": "laneOffset moves the centre lane laterally; lanes may move from left to right side (e.g. a centre turn lane), which changes the lane count per side and requires new lane sections. Lanes outside keep their geometry but get new ids.",
+    "right": [
+      "Use laneOffset (not reference line changes) to shift the lane split for turn lanes/asymmetric widening",
+      "Links A:2->C:1, A:3->C:2, A:-1->C:-2, A:-2->C:-3, A:1 shrinks to 0 (no successor at zero width), new -1 starts at 0 width"
+    ],
+    "wrong": [
+      "Combining laneOffset with lane borders - forbidden",
+      "Using a non-linear laneOffset together with road shape - inconsistent",
+      "Linking a lane that ends with zero width to a successor"
+    ],
+    "formula": "t_center(s) = a + b*ds + c*ds^2 + d*ds^3, ds = s - s_laneOffset"
+  },
+  {
+    "file": "figures/1.7.0/fig059.png",
+    "figure": "Figure 59",
+    "chapter": "9. Lanes",
+    "section": "9.4 Lane linkage",
+    "caption": "Figure 59. Lane links for road with id 10",
+    "shows": "Three roads in a row. Road 30 and Road 10: reference lines pointing right, lanes 1 above, 0, -1, -2 below. Road 20: reference line pointing LEFT (arrow at its left/start-of-view end, i.e. its end touches road 10's end), lanes -1 above, 0, 1, 2 below. The dashed lane boundary lies at the same height across all three. Table: road 10 lane 1: pred 1 (road 30), succ -1 (road 20); lane -1: pred -1 (30), succ 1 (20); lane -2: pred -2 (30), succ 2 (20).",
+    "lesson": "Lane predecessor/successor refer to the start/end of the lane's own section in its own s-direction, independent of driving direction. When the next road is reversed (end-to-end contact), the linked lane ids flip sign, and the link points into the last lane section of that road.",
+    "right": [
+      "Lane succ on road 10 refers to ids of road 20's section at contact point (end -> last section)",
+      "Negate ids across opposite-direction road joints"
+    ],
+    "wrong": [
+      "Copying the same id across an opposite-direction joint",
+      "Swapping predecessor/successor based on traffic direction",
+      "Pointing into road 20's first section when contactPoint=end"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig060.png",
+    "figure": "Figure 60",
+    "chapter": "9. Lanes",
+    "section": "9.4 Lane linkage",
+    "caption": "Figure 60. Example where a bikeway ends and bicycles are expected to continue driving on the driving lane",
+    "shows": "Top view: multi-lane carriageway; at the bottom a red bikeway with bike symbol and arrow in s direction, separated from the adjacent driving lane by a white line; the bikeway ends abruptly (non-zero width) mid-image, beyond which the asphalt of the adjacent lane covers the former bikeway area.",
+    "lesson": "When a lane ends abruptly with non-zero width and its users continue on a neighbouring lane, link it with a successor to that neighbour; the neighbour then has two predecessors (itself and the bikeway).",
+    "right": [
+      "bikeway.successor = driving lane of next section; driving lane next section has 2 predecessors"
+    ],
+    "wrong": [
+      "Leaving an abruptly ending bikeway unlinked",
+      "Tapering an abrupt end to zero width just to avoid multi-links"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig061.png",
+    "figure": "Figure 61",
+    "chapter": "9. Lanes",
+    "section": "9.4 Lane linkage",
+    "caption": "Figure 61. Example where a driving lane splits into two or more driving lanes abruptly",
+    "shows": "Top view: a single wide lane (no centre marking) suddenly becomes two lanes at a visible section boundary: a dashed divider starts there; the upper new lane has an arrow straight-then-left, the lower straight-then-right, both in +s direction. Outer solid edge lines continue unchanged.",
+    "lesson": "An abrupt split of one lane into two (both non-zero width at the boundary) is modelled with one lane having two successors (and each new lane the same predecessor).",
+    "right": [
+      "wide lane: successor ids of both new lanes; both new lanes: predecessor = wide lane"
+    ],
+    "wrong": [
+      "Using multi-successors when a new lane opens gradually beside a continuing lane - then only the continuing lane is linked"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig062.png",
+    "figure": "Figure 62",
+    "chapter": "9. Lanes",
+    "section": "9.4 Lane linkage (UML)",
+    "caption": "Figure 62. UML Model t_road_lanes_laneSection_lcr_lane_link",
+    "shows": "UML: lr_lane (level, type) has link 0..1; link has predecessor 0..* and successor 0..*, each with integer id.",
+    "lesson": "Link ids are plain integers pointing into the neighbouring lane section (same road) or the first/last section of the linked road per contactPoint; multiplicity allows split/merge.",
+    "right": [
+      "Omit <link> only when lane ends in a junction or has no physical continuation"
+    ],
+    "wrong": [
+      "Writing road id or lane section index in a lane link - only lane id"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig063.png",
+    "figure": "Figure 63",
+    "chapter": "9. Lanes",
+    "section": "9.5 Lane properties (UML)",
+    "caption": "Figure 63. UML model lane properties",
+    "shows": "UML: LaneGeometry 1..* realised by width 0..* (sOffset,a,b,c,d) or border 0..* (sOffset,a,b,c,d); height 0..* (sOffset, inner, outer).",
+    "lesson": "Lane shape is given either by width polynomials or by border polynomials, keyed by sOffset relative to the lane section start.",
+    "right": [
+      "sOffset relative to the lane section s"
+    ],
+    "wrong": [
+      "Using absolute s as sOffset"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig064.png",
+    "figure": "Figure 64",
+    "chapter": "9. Lanes",
+    "section": "9.5.1 Lane width",
+    "caption": "Figure 64. Change of lane width per lane section",
+    "shows": "Section A: lanes 1 | -1, ds1 starts at section A start; lane -1 constant width (a=const, b=c=d=0). Section B: ds2 restarts at section B start; a new outer lane -2 widens from 0 (a=0, b,c,d widen it) to full width. Outer solid border moves to the outer edge of -2; the -1/-2 boundary is unmarked at first and gets a dashed mark only once -2 has grown wide.",
+    "lesson": "Width polynomial ds restarts at 0 at each width element (sOffset relative to section). A newly opening outer lane starts with a=0. Width is measured from the inner border, so outer lanes stack on inner ones. Road marks along the new boundary can start later via roadMark sOffset (none, then broken).",
+    "right": [
+      "New lane: width a=0 at section start",
+      "Solid outer edge mark belongs to the outermost lane (move it to -2)",
+      "roadMark type none until lane is usable, then broken"
+    ],
+    "wrong": [
+      "Evaluating ds from road s=0 or from section start when sOffset>0",
+      "Keeping the solid edge mark on lane -1 after -2 appears",
+      "Starting new lane with full width (abrupt step)"
+    ],
+    "formula": "width(ds) = a + b*ds + c*ds^2 + d*ds^3; s = s_section + sOffset + ds"
+  },
+  {
+    "file": "figures/1.7.0/fig065.png",
+    "figure": "Figure 65",
+    "chapter": "9. Lanes",
+    "section": "9.5.2 Lane borders",
+    "caption": "Figure 65. Lane with varying border shape",
+    "shows": "Same geometry as Figure 64 modelled with borders: green arrows from the reference line to each outer border. Section A: border of -1 a=const, b=c=d=0. Section B: border of -1 const; border of -2 starts with a_-2 = a_-1 (coincident, zero width) and b,c,d move it outward; at the end a_-2 const.",
+    "lesson": "Borders are absolute t-offsets of a lane's OUTER edge from the reference line (not from the neighbour); a zero-width lane has border equal to its inner neighbour's border.",
+    "right": [
+      "Border value = signed t of outer edge (negative on right)",
+      "No laneOffset when borders are used",
+      "Borders must not cross"
+    ],
+    "wrong": [
+      "Treating border as width",
+      "Mixing width and border in the same side group"
+    ],
+    "formula": "t_border(ds) = a + b*ds + c*ds^2 + d*ds^3"
+  },
+  {
+    "file": "figures/1.7.0/fig066.png",
+    "figure": "Figure 66",
+    "chapter": "9. Lanes",
+    "section": "9.5.3 Lane type",
+    "caption": "Figure 66. Lane types for a motorway",
+    "shows": "Motorway cross-section, left to right: shoulder (grass, with reference line arrow running along its left outer area), border, three driving lanes (dashed separators), stop (hard shoulder, brown), shoulder (green), none.",
+    "lesson": "Motorway pattern: driving lanes flanked by border/shoulder on the inside and stop (emergency lane) plus shoulder on the outside; 'none' for area outside the road.",
+    "right": [
+      "Hard shoulder = stop, not shoulder",
+      "Use border for the narrow strip next to the median barrier"
+    ],
+    "wrong": [
+      "Labelling the emergency lane as shoulder or driving"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig067.png",
+    "figure": "Figure 67",
+    "chapter": "9. Lanes",
+    "section": "9.5.3 Lane type",
+    "caption": "Figure 67. Lane types for a rural road",
+    "shows": "Rural road: none, shoulder, driving, restricted (yellow-hatched wedge widening between the two opposite driving lanes), driving, shoulder, none.",
+    "lesson": "Hatched painted islands between opposing lanes are lanes of type restricted with varying width (starting at zero).",
+    "right": [
+      "restricted lane with polynomial width for hatched islands"
+    ],
+    "wrong": [
+      "Modelling a painted island as a gap or as median"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig068.png",
+    "figure": "Figure 68",
+    "chapter": "9. Lanes",
+    "section": "9.5.3 Lane type",
+    "caption": "Figure 68. Lane types for an urban road",
+    "shows": "Urban road, left to right: border, curb, driving, driving, curb, median (grass), curb, driving, driving, border, curb, parking (paved bays with varying width), shoulder (grass whose width complements the parking bays), biking (red, arrow +s), sidewalk.",
+    "lesson": "Curbs are their own narrow lanes; medians are separate lanes bounded by curbs; parking bays are a parking lane with varying width with an adjacent shoulder taking up the complement so outer lanes stay straight.",
+    "right": [
+      "Explicit curb lanes next to medians and sidewalks",
+      "Varying parking width + complementary shoulder width"
+    ],
+    "wrong": [
+      "Folding curbs into sidewalk width",
+      "Ending the parking lane between bays instead of letting its width vary"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig069.png",
+    "figure": "Figure 69",
+    "chapter": "9. Lanes",
+    "section": "9.5.3 Lane type",
+    "caption": "Figure 69. Lane types for motorway exit and entry",
+    "shows": "Top view of a dual carriageway with three driving lanes per direction. Upper carriageway: an exit lane (brown) next to driving lanes, then a short block labelled offRamp still parallel to the motorway, then the offRamp road curving away. Lower: an onRamp road curves in, a short parallel onRamp block, then an entry lane (green) alongside the driving lanes.",
+    "lesson": "Lane type along a ramp changes: exit (deceleration) -> offRamp at the divergence; onRamp -> entry (acceleration) at the merge. The parallel stretch next to the motorway belongs to the motorway with type exit/entry, then a short transitional section with ramp type, then the ramp road.",
+    "right": [
+      "Link exit lane -> offRamp lane (type change is a valid linkage case)",
+      "entry lane starts where the onRamp lane joins"
+    ],
+    "wrong": [
+      "Typing the deceleration lane as offRamp or driving",
+      "Leaving the type change unlinked"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig070.png",
+    "figure": "Figure 70",
+    "chapter": "9. Lanes",
+    "section": "9.5.3 Lane type",
+    "caption": "Figure 70. Lane types for motorway connecting to another motorway",
+    "shows": "Same layout as Figure 69 but between two motorways: ramps labelled connectingRamp (incl. the short parallel block) while the parallel lanes are still exit and entry.",
+    "lesson": "Motorway-to-motorway ramps use connectingRamp; exit/entry still apply to the lanes beside the main carriageway.",
+    "right": [
+      "connectingRamp for motorway interchanges"
+    ],
+    "wrong": [
+      "Using offRamp/onRamp for motorway-motorway links"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig071.png",
+    "figure": "Figure 71",
+    "chapter": "9. Lanes",
+    "section": "9.5.5 Lane speed limit",
+    "caption": "Figure 71. Lane-specific speed limits",
+    "shows": "Road with left lanes 1 (80), 2 (60), 3 and right lanes -1 (80), -2. Speed signs on left lanes are drawn upside-down (read from the -s driving direction); arrows: left lanes leftward, right lane rightward.",
+    "lesson": "Speed limits can differ per lane and per direction; lane speed overrides road type speed (signals still have preference).",
+    "right": [
+      "<speed> per lane with sOffset; centre lane none"
+    ],
+    "wrong": [
+      "Assuming one speed for the whole road when OSM gives maxspeed:lanes or :forward/:backward"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig072.png",
+    "figure": "Figure 72",
+    "chapter": "9. Lanes",
+    "section": "9.5.6 Lane access",
+    "caption": "Figure 72. Lane access, bus lane",
+    "shows": "Same road: lane 2 (left, driving direction leftward) marked 'Bus' (bus-only), lanes 1 and -1 ordinary.",
+    "lesson": "Access restrictions are per lane (<access> rule allow/deny restriction=bus).",
+    "right": [
+      "access rule=allow restriction=bus for bus lanes (others then banned)"
+    ],
+    "wrong": [
+      "Encoding bus lanes only via lane type"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig073.png",
+    "figure": "Figure 73",
+    "chapter": "9. Lanes",
+    "section": "9.5.7 Lane height",
+    "caption": "Figure 73. Lane height",
+    "shows": "Cross-section with t positive to the left: lanes 4..1 left, -1..-4 right; car on -3; pedestrian on lane -4 raised by 'lane height' above the road surface; lane 4 also raised (orange); lane width marked.",
+    "lesson": "Lane height lifts a lane (sidewalk/curb) by a small offset relative to the road surface (including elevation, superelevation, shape); inner and outer heights can differ.",
+    "right": [
+      "height inner/outer ~0.12-0.15 for sidewalks"
+    ],
+    "wrong": [
+      "Using lane height for road grade",
+      "Raising the centre lane"
+    ],
+    "formula": "z_lane = z_road(s,t) + inner + (outer-inner)*(t-t_inner)/(width) (linear across lane)"
+  },
+  {
+    "file": "figures/1.7.0/fig074.png",
+    "figure": "Figure 74",
+    "chapter": "9. Lanes",
+    "section": "9.5.8 Excluding lanes from road superelevation",
+    "caption": "Figure 74. Lanes excluded from road elevation",
+    "shows": "Superelevated cross-section (tilted, h axis rotated): lanes 3..1, -1..-3 follow the tilt; outermost lanes 4 and -4 are crossed out and drawn horizontal (level), each continuing at the height of the adjacent inner lane's outer edge; -4 additionally has a lane height (raised sidewalk).",
+    "lesson": "level=true lanes ignore superelevation AND shape, staying horizontal at the height of the inner neighbouring lane's edge.",
+    "right": [
+      "level=true for sidewalks/curbs on banked roads",
+      "Several consecutive outer lanes may be level"
+    ],
+    "wrong": [
+      "Applying level to inner lanes",
+      "Expecting level lanes to keep the road crown/crossfall"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig075.png",
+    "figure": "Figure 75",
+    "chapter": "9. Lanes",
+    "section": "9.6 Road markings (UML)",
+    "caption": "Figure 75. UML model t_road_lanes_laneSection_lcr_lane_roadMark",
+    "shows": "UML roadMark: sOffset, type, color, weight[0..1], width[0..1], height[0..1], material[0..1], laneChange[0..1]; children sway 0..* (ds,a,b,c,d), type 0..1 (name, width; line 1..* with length, space, tOffset, sOffset, rule, width, color), explicit 0..1 (line 1..*: length, sOffset, tOffset, rule, width).",
+    "lesson": "Road marks belong to a lane (its outer border; centre lane mark is the centre line), keyed by sOffset; detailed patterns via type/line, irregular ones via explicit, lateral wiggle via sway.",
+    "right": [
+      "Put the centre line mark on lane 0, edge marks on outermost lanes",
+      "laneChange to express crossing permission"
+    ],
+    "wrong": [
+      "Putting a mark on both lanes sharing a border (double marks)"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig076.png",
+    "figure": "Figure 76",
+    "chapter": "9. Lanes",
+    "section": "9.6.3 Offset in road markings",
+    "caption": "Figure 76. Road marking with sway and offset",
+    "shows": "3D view of a motorway construction zone: yellow temporary lines defining the actual driving lanes swerve across the permanent white markings; red-white beacons along them.",
+    "lesson": "sway lets a road mark deviate laterally from its lane border without changing lane geometry (marks-only shift, e.g. construction sites).",
+    "right": [
+      "Use sway when the paint deviates but lane topology does not"
+    ],
+    "wrong": [
+      "Changing lane widths just to move paint"
+    ],
+    "formula": "t_mark = t_border + sway(ds), sway(ds) = a + b*ds + c*ds^2 + d*ds^3"
+  }
+]

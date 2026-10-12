@@ -1,0 +1,452 @@
+{
+ "source": "ASAM OpenDRIVE Junction Guideline 1.0.0 (2023-11-22), non-normative, written for ASAM OpenDRIVE 1.8.0. Read in full from the local mirror docs/reference/asam_opendrive_junction_guideline_1.0.0 (16 HTML pages); all 69 figure images (71 figure numbers; Fig. 1/27 and 58/67 reuse one image) were opened and inspected - see figures_guideline.json. Example files named by the guideline (UC_T_Junction.xodr, UC_X_Junction.xodr, UC_5Road_Junction.xodr, Ex_Bidirectional_Junction.xodr, Ex_Entry_Exit.xodr, Ex_Slip_Lane.xodr, Ex_Pedestrian_Crossing.xodr) are not in the mirror.",
+ "opendrive_1_7_compatibility": [
+  "The guideline targets 1.8.0. 1.8-only features it relies on: lane types walking and slipLane; @overlapZone on direct-junction laneLink; junction type crossing with <roadSection>; <crossPath> with start/endLaneLink; junction <planView>, <boundary> (lane/joint segments, transitionLength), <elevationGrid>, junction <objects>; signal <semantics> (priority yield/stopLine/trafficLight/waitingLine); lane @direction=both on connecting roads.",
+  "Available already in 1.7: common/direct/virtual junctions, lane types curb, sidewalk, restricted, entry, exit, onRamp, offRamp, connectingRamp, bidirectional, rail, tram, bus, biking; lane <height> inner/outer; lane <access> restrictions; signal <validity>, <dependency>, <reference>, <signalReference>; <controller> and junction <controller>; junction <priority>; object outlines with cornerLocal, borders, type trafficIsland.",
+  "Down-mapping for a 1.7 / CARLA target: walking -> sidewalk; slipLane -> driving (or connectingRamp); overlapping direct junction -> move the cut to the first non-overlapping station or use a common junction; drop overlapZone; crossing junction -> leave both roads uncut and express priority with signals/signs; crossPath -> crosswalk object on the road plus optional walking road without junction linkage; drop junction boundary/elevationGrid (keep connecting-road elevation consistent instead); drop signal semantics but keep type/subtype.",
+  "The guideline itself mixes 'sidewalk' (X junction, Code 25-26) and 'walking' (T junction) for the same thing; for 1.8 output use walking."
+ ],
+ "use_case_table": [
+  {
+   "case": "Ordinary T-junctions",
+   "type": "common",
+   "section": "6.3 T junctions"
+  },
+  {
+   "case": "Ordinary X-junctions",
+   "type": "common",
+   "section": "6.4 X junctions"
+  },
+  {
+   "case": "Ordinary multi-arm junctions",
+   "type": "common",
+   "section": "6.5 5-road junction"
+  },
+  {
+   "case": "Simple roundabout",
+   "type": "common",
+   "section": "n/a (no worked example)"
+  },
+  {
+   "case": "Complex roundabout",
+   "type": "common",
+   "section": "n/a (no worked example)"
+  },
+  {
+   "case": "Slip lanes",
+   "type": "direct (constant elevation), common",
+   "section": "8 Slip lanes"
+  },
+  {
+   "case": "Motorway entry/exit overlapping",
+   "type": "direct (constant elevation), common (non-constant elevation)",
+   "section": "7.3 Overlapping"
+  },
+  {
+   "case": "Motorway entry/exit non-overlapping",
+   "type": "direct; common possible but not recommended",
+   "section": "7.2 Non-overlapping"
+  },
+  {
+   "case": "Driveway and off-street parking areas",
+   "type": "virtual; common (non-constant elevation)",
+   "section": "n/a"
+  },
+  {
+   "case": "Pedestrian and bike crossings outside common junctions",
+   "type": "virtual; common (non-constant elevation)",
+   "section": "10.3 Pedestrian crossing"
+  },
+  {
+   "case": "Rail road crossings",
+   "type": "crossing",
+   "section": "10.4 Rail road crossing"
+  }
+ ],
+ "chapters": [
+  {
+   "id": "0",
+   "title": "Preface, scope, terms, abbreviations, backward compatibility",
+   "summary": "Foreword places the guideline as a non-normative companion to the 1.8 spec next to the (normative) Signal reference 1.0.0. The introduction gives the use-case table that maps real situations to junction types and states that examples grow in complexity. Scope: best practice for modelling real junctions so producers and consumers share expectations. Terms: gore point = point of no return where a lane splits (theoretical gore = separating markings, physical gore = curb/grass triangle); overlapping = at least one lane of each road covers the same area; non-overlapping = no shared lane area (bridges/tunnels are not overlapping). First release, no backward-compatibility notes.",
+   "guidance": [
+    "Pick the junction type from the use-case table before building geometry: common for T/X/multi-arm/roundabouts, direct for same-level splits/merges (ramps, slip lanes), virtual for driveways, parking accesses and mid-block crossings, crossing for rail level crossings.",
+    "Where the use-case table says 'common (non-constant elevation)', fall back to a common junction only when the direct/virtual junction would need varying elevation across it.",
+    "Locate gore points (theoretical gore where the separating marking starts, physical gore where curb/grass begins) - they are the cut positions for arm roads and direct junctions.",
+    "Classify each split/merge as overlapping or non-overlapping using lane areas, ignoring grade-separated structures (bridges/tunnels never count as overlapping).",
+    "Look up traffic-light/stop-line type codes in the Signal reference 1.0.0 (country=OpenDRIVE) rather than inventing them."
+   ],
+   "right": [
+    "Common junction for intersections where traffic crosses or changes roads with crossing paths.",
+    "Direct junction where roads only split/merge at the same level.",
+    "Treat bridges and tunnels as separate, non-overlapping roads."
+   ],
+   "wrong": [
+    "Using a common junction for every OSM node with degree > 2.",
+    "Treating a bridge over a road as an overlapping junction."
+   ],
+   "use_cases": [
+    {
+     "case": "Roundabout (no worked example)",
+     "how": "Table says common. The guideline gives no geometry; one reasonable reading is a common junction per entry/exit node of the ring (ring segments as ordinary roads) for large roundabouts, or a single common junction for a compact one - this is an inference, not guideline text."
+    },
+    {
+     "case": "Driveway / parking access",
+     "how": "Virtual junction on the main road (mainRoad, sStart, sEnd) with the access road connected without cutting the main road; common only if elevation varies."
+    }
+   ],
+   "figures": []
+  },
+  {
+   "id": "5",
+   "title": "Backward compatibility",
+   "summary": "First release; nothing to declare.",
+   "guidance": [
+    "None."
+   ],
+   "right": [],
+   "wrong": [],
+   "use_cases": [],
+   "figures": []
+  },
+  {
+   "id": "6",
+   "title": "Common junctions",
+   "summary": "Common junctions are where drivers change roads and cross other traffic (T/Y, X, more arms). Rules: arm reference lines start/end at the junction outline; junction area as small as possible but as big as necessary; connecting roads continuous with the incoming roads; only connecting roads of the same junction may overlap each other. Worked examples: basic T (lanes, junction, connecting roads, connections, lane links incl. curb/sidewalk, priority signs, markings), lowered curb/sidewalk at crossings (lane heights), advanced T (stop lines, lights, references/dependencies, controllers, crossing roads with invisible stop lines and pedestrian lights, crossPath), X junction (reference lines before cross paths, one-way arm, laneOffset, lane widening with two successors, bus/bike access, shared stop line via signalReference), 5-road junction (outgoing one-way road, restricted island lane, gap-free laneOffset, outward-shifted reference line for wide connecting roads, junction reference line, traffic island object, boundary, elevation grid, transition length) and bidirectional single-lane arms (connecting road with direction both used by two connections).",
+   "guidance": [
+    "Rules (6.2): every arm road's reference line starts or ends exactly at the junction outline; nothing of an arm lies inside the junction.",
+    "Size the junction area as small as possible but large enough to contain all crossing/turning movements and the crosswalks (smaller = cheaper to compute).",
+    "Connecting roads must be continuous (position and heading, i.e. G1) with the arm roads at both ends (spec 10.3 road linkage).",
+    "Only connecting roads may overlap other connecting roads of the same junction - arm roads must not overlap the junction or each other.",
+    "T step 1: place arm reference lines so they end/start at the gore points (curb-return tangent points) outside the junction; direction is free; arm roads get junction=-1.",
+    "T step 2: give each arm its full cross-section per side: driving lane(s), a curb lane at the outside, a walking lane next to the curb (ids outward from 0).",
+    "T step 3: create the junction and set it as successor (arm ends at junction) or predecessor (arm starts at junction) in each arm's <link>.",
+    "T step 4: create one connecting road per arm pair/path with junction=<id>; its predecessor/successor are the arm roads with contactPoint start/end according to which end of the arm touches the junction.",
+    "T step 5: add one <connection> per (incoming road, connecting road) pair - with two-way arms every arm is an incoming road, so a two-way connecting road appears in two connections (contactPoint start from one arm, end from the other).",
+    "T step 6: give connecting roads driving lanes for each direction; on the side that follows the junction outline add curb and walking lanes so curbs and sidewalks continue through the junction (road 46 left side lanes 2 curb, 3 walking; road 45 right side -2 curb, -3 walking round the corner).",
+    "T step 7: add <laneLink from=incoming lane to=connecting lane> for every permitted relation - driving lanes AND the curb/walking lanes carried by that connecting road (Code 7 links -1,-2,-3 of road 4 to -1,-2,-3 of road 45).",
+    "T step 8: put lane predecessor/successor links only on connecting-road lanes (each connecting road touches exactly one arm at each end); leave arm-road lanes without links into the junction (an arm end may feed several connecting roads).",
+    "T step 9: set priority with sign signals on the incoming roads near the junction (s at the road end, t on the traffic side, orientation for the approaching direction, validity on the inbound lane(s)); add <semantics><priority type=\"yield\"/> on yield/stop signs; supplementary plates (bent priority) are separate signals at the same position.",
+    "T step 10: add road marks: broken centre line on arms (laneChange both), edge lines continued along the outline connecting roads, a guide line for a bent priority route on its connecting road.",
+    "Lowered curb at a crossing: on the curb lane use <height> inner=outer=0.12 at the approach, ramp to 0.02 over 0.5 m, hold over the crossing width, ramp back to 0.12; on the walking lane lower only the inner (curb-side) edge to 0.02 and keep outer at 0.12.",
+    "Advanced T: add a stop line signal on each incoming road at its junction end with validity on the inbound lanes and <semantics><priority type=\"stopLine\"/>.",
+    "Place traffic lights as signals at their physical location (country=OpenDRIVE, type per Signal reference, dynamic=yes, semantics trafficLight) - this is usually the start of a connecting road (s~2.5) or a far-side road, not the stop-line road.",
+    "Give each light <reference id=stopline elementType=signal type=stopLine/>; give each stop line <dependency id=light type=trafficLight/> for every light that governs it.",
+    "Define <controller> with one <control signalId> per light of a phase group and list each controller in the junction (<junction><controller id type/>) so OpenSCENARIO can sync them.",
+    "Model each pedestrian crossing inside the junction as an extra road with junction=<id>, one walking lane (width ~3 m) and crosswalk-style broken road marks; its reference line spans sidewalk to sidewalk just beyond the stop line.",
+    "Put invisible stop lines (country=OpenDRIVE type=11000001, semantics waitingLine) on the crossing road near both kerbs, each depending on the pedestrian light that faces it; pedestrian lights (type 1000002) reference the invisible stop line at the opposite kerb.",
+    "Add a controller for the pedestrian lights and list it in the junction.",
+    "Add <crossPath id crossingRoad=<crossing road> roadAtStart=<connecting road at start> roadAtEnd=<connecting road at end>> with <startLaneLink s from=<walking lane of roadAtStart> to=<crossing lane>> and <endLaneLink ...>; s is measured on roadAtStart/roadAtEnd.",
+    "X junction: model from scratch (do not extend a T). End arm reference lines before any crosswalk/cross path; direction is irrelevant; reference line need not be the painted centre line.",
+    "One-way inbound arm whose reference line points away: put the driving lanes on the left (positive ids); still add curb/walking on the other side; use <laneOffset> to align lane 0 when it is not on the reference line.",
+    "Turn-lane split before the stop line: widen the lane with width polynomials, start a new lane section where the extra lane exists, give the splitting lane two <successor> ids; this beats other approaches.",
+    "Bus/bike lanes: keep type driving and add <access rule=\"allow\" sOffset><restriction type=\"bus\"/></access> (add bicycle for shared lanes); repeat it in the next lane section with the new lane id.",
+    "Create connecting roads only for permitted driving relations (respect one-way arms and turn restrictions); add crossing roads + crossPaths for each crosswalk.",
+    "A stop line spanning several lanes is one signal (validity on one lane, width = full width) plus <signalReference> with validity for further lanes or on connecting roads.",
+    "5-road junction: model from scratch. An outgoing one-way road is not an incoming road - it never appears as incomingRoad; it is only successor of connecting roads.",
+    "Traffic island in an arm: add a lane of type restricted that widens linearly from 0 (width b>0) to make room for the island.",
+    "Avoid gaps: connecting-road laneOffset a = width of the lanes it skips and b = matching slope so lane edges and heading coincide with the preceding road.",
+    "Wide connecting roads on tight corners: shift the reference line outward (equal laneOffset a and lane width a) so the inner sidewalk edge never gets a negative radius.",
+    "Optionally give the junction its own <planView> reference line and place junction-wide objects (trafficIsland with cornerLocal outline, concrete fill, curb border useCompleteOutline) in junction <objects>.",
+    "Define the junction <boundary> as an ordered loop of segments: type lane (roadId, borderLane, sStart/sEnd on connecting roads along the outline) alternating with type joint (roadId of the arm, contactPoint, jointLaneStart..jointLaneEnd across the arm mouth); add transitionLength on joints.",
+    "Add a junction <elevationGrid> (gridSpacing, gridVectors left/center/right) that matches the elevations of all incoming/outgoing roads at their joints.",
+    "Bidirectional single-lane arms: create one connecting road whose lane has direction both and reference it from two connections (incoming road A contactPoint end, incoming road B contactPoint start); create normal connections for other roads."
+   ],
+   "right": [
+    "Arm roads end at the curb-return tangent points; connecting roads start exactly there with the same heading.",
+    "Curb and walking lanes continue on the boundary connecting roads (both straight and turning) so sidewalks never break.",
+    "Lane links include curb/walking lanes where the connecting road carries them.",
+    "Traffic light at its physical place; stop line on the approach lane; reference + dependency both ways.",
+    "Crosswalk roads inside the junction connected via crossPath to the connecting roads' walking lanes.",
+    "Outgoing one-way arms only as successors.",
+    "Reference line shifted outward on wide turning roads; laneOffset with matching slope to stay gap-free."
+   ],
+   "wrong": [
+    "Arm reference lines reaching the OSM node in the junction centre.",
+    "Lane links on arm-road lanes pointing into the junction.",
+    "Sidewalks ending at the junction outline (no curb/walking lanes on connecting roads).",
+    "Connecting roads overlapping arm roads.",
+    "Traffic light with its own lane validity.",
+    "Exit-only one-way arm listed as incomingRoad.",
+    "Inner sidewalk edge of a tight turn with negative radius (reference line on the inner edge)."
+   ],
+   "use_cases": [
+    {
+     "case": "T junction",
+     "how": "3 arm roads cut at curb tangents; 3 two-way connecting roads (straight + two turns), 6 connections, lane links incl. curb/walking on the outline sides; priority signs on approaches; optional signals/crosswalks as in 6.3.3."
+    },
+    {
+     "case": "X junction",
+     "how": "4 arm roads ending before crosswalks; connecting roads for each legal relation (one-way arms only as source or target); turn-lane widening with lane section + two successors; shared stop line + signalReference; crosswalk roads + crossPaths."
+    },
+    {
+     "case": "Multi-arm (5+) junction",
+     "how": "Single common junction; outgoing one-way arms only as successors; restricted lane for islands; junction reference line + island object; boundary and elevation grid for the interior."
+    },
+    {
+     "case": "Single-lane bidirectional arms",
+     "how": "Connecting road with direction both, referenced by two connections."
+    },
+    {
+     "case": "Lowered curb at crosswalk",
+     "how": "Lane height records on curb and walking lanes of the road where the crosswalk meets the curb (often a connecting road)."
+    }
+   ],
+   "figures": [
+    "Figure 1: complex real 5-arm junction that the chapter builds up to",
+    "Figure 2: basic T with bent priority route",
+    "Figure 3: arm reference lines end/start at the outline",
+    "Figure 4: per-side cross-section driving/curb/walking",
+    "Figure 5: lane ids follow each road's direction",
+    "Figure 6: junction outline includes sidewalk corners",
+    "Figure 7: one connecting road per arm pair, G1 at arm ends",
+    "Figure 8: curb + walking carried through on boundary connecting roads",
+    "Figure 9: lane links for every permitted movement, both directions",
+    "Figure 10: priority signs on incoming roads",
+    "Figure 11: road marks incl. guide line on priority connecting road",
+    "Figure 12: lowered curb/sidewalk via lane heights",
+    "Figure 13: signalised T with crosswalks",
+    "Figure 14: stop line on incoming road, light at physical position",
+    "Figure 15: crosswalk roads inside the junction",
+    "Figure 16: light/stop-line id wiring incl. pedestrian waiting lines",
+    "Figure 17: crossPath to connecting-road walking lanes",
+    "Figure 18: complete advanced T",
+    "Figure 19: X with one-way arm and bus/bike lanes",
+    "Figure 20: reference lines stop before cross paths",
+    "Figure 21: one-way arm lanes on one side + laneOffset",
+    "Figure 22: widen + lane section + two successors",
+    "Figure 23: bus/bike access restrictions",
+    "Figure 24: connecting roads only for legal relations",
+    "Figure 25: crosswalks as crossing roads",
+    "Figure 26: complete X, shared stop line",
+    "Figure 27: complete 5-road junction (same image as Fig. 1)",
+    "Figure 28: outgoing one-way arm",
+    "Figure 29: outgoing arm only as successor",
+    "Figure 30: junction reference line",
+    "Figure 31: complete 5-road junction",
+    "Figure 32: connecting road with direction both"
+   ]
+  },
+  {
+   "id": "7",
+   "title": "Junctions with entry and exit lanes",
+   "summary": "Entries/exits on motorways and rural roads let drivers join/leave on dedicated acceleration/deceleration lanes. Recommendation: direct junction (one cut instead of two, one overlapping lane allowed); use a common junction if traffic of different lanes crosses or more than one lane overlaps. Overlap zone as small as possible. Non-overlapping entry: cut at the gore point, ramp lane onRamp before the cut, outermost lane entry after it. Overlapping exit: cut where the exit branches; before the cut outermost lane exit; the exit road starts inside the carriageway with an exit lane overlapping the main lane, then a new lane section turns it into offRamp; outer ramp lane offRamp; overlapZone on the lane links.",
+   "guidance": [
+    "Decide overlapping vs non-overlapping for each ramp: does any lane of the ramp share area with a main-road lane after the split/before the merge?",
+    "If traffic crosses or more than one lane overlaps -> common junction; otherwise -> direct junction (preferred: one cut).",
+    "Non-overlapping entry: put the direct junction at the gore point where the ramp edge meets the carriageway edge; end the main road and the ramp road at that cut and start the downstream road there.",
+    "Lane types (entry): ramp lane before the cut = onRamp; outermost lane after the cut = entry (acceleration lane); others driving.",
+    "Overlapping exit: put the direct junction where the exit starts to branch (upstream of the physical gore); end the upstream road there; start the continuing main road and the exit road there.",
+    "Start the exit road's reference line at the cut at the lateral position of its innermost lane (inside the carriageway), so its first lane overlaps the downstream main lane until separation.",
+    "Lane types (exit): upstream outermost lane = exit; on the exit road the overlapping lane = exit in a first lane section that ends at the end of the overlap, then offRamp in a second lane section; the outer exit-road lane = offRamp; others driving.",
+    "Set @overlapZone on the laneLinks of the two overlapping lanes: at least the overlap length, as small as possible.",
+    "Apply spec road-linkage rules and lane-type rules (spec 10.3, 11.7)."
+   ],
+   "right": [
+    "Direct junction at the gore for merges, at the branch start for overlapping diverges.",
+    "onRamp/offRamp for ramp lanes, entry/exit for the parallel lanes on the main road.",
+    "Lane section switch exit->offRamp after the overlap."
+   ],
+   "wrong": [
+    "Common junction (two cuts) for a simple ramp without crossings.",
+    "More than one overlapping lane in a direct junction.",
+    "Oversized overlapZone or none at all."
+   ],
+   "use_cases": [
+    {
+     "case": "Motorway on-ramp (non-overlapping)",
+     "how": "Direct junction at gore; roads: main upstream, ramp, main downstream (+1 lane of type entry)."
+    },
+    {
+     "case": "Motorway off-ramp (overlapping)",
+     "how": "Direct junction at branch start; exit road begins inside the carriageway with an exit lane overlapping main lane, overlapZone on that link, lane section to offRamp."
+    },
+    {
+     "case": "Ramp with weaving/crossing",
+     "how": "Common junction."
+    },
+    {
+     "case": "Rural road entry/exit lanes",
+     "how": "Same logic as motorway ramps."
+    }
+   ],
+   "figures": [
+    "Figure 33: overlapping exit vs non-overlapping entry",
+    "Figure 34: entry continues as extra lane",
+    "Figure 35: direct junction at the gore",
+    "Figure 36: all roads end/start at the cut",
+    "Figure 37: onRamp -> entry lane types",
+    "Figure 38: overlapping exit",
+    "Figure 39: cut at branch start",
+    "Figure 40: exit reference line starts inside the carriageway",
+    "Figure 41: exit/offRamp lane sections and overlapZone"
+   ]
+  },
+  {
+   "id": "8",
+   "title": "Slip lanes",
+   "summary": "Slip lanes bypass the main intersection: start/end at the outermost lane, one-way, no crossing with other traffic of the same junction, give way where they merge, rarely signalised. Recommendation: direct junctions at every split/merge (lanes may overlap if same direction and no crossing), a common junction only for the central crossing area. Slip lanes use lane type slipLane; parallel acceleration/deceleration parts belong to the main road as entry/exit. Direct junctions at the same station for both directions may be merged into one; roads are then defined by the connections between junctions; overlapZone covers each overlap and is chosen slightly larger than needed.",
+   "guidance": [
+    "Locate every point where a slip lane diverges from or merges into a straight road; put a direct junction there.",
+    "Use one common junction for the central area where straight traffic and crossing turns meet (follow chapter 6 rules inside it).",
+    "If the diverge on one carriageway and the merge on the opposite carriageway are at the same station, merge them into a single direct junction across the whole road (only if accuracy allows).",
+    "Derive roads from junction-to-junction links: between a combined direct junction and the centre, one road for both carriageways (reference line on the median); where cuts differ by direction, separate roads per direction.",
+    "Each slip lane is its own road from diverge cut to merge cut, lane type slipLane.",
+    "Parallel deceleration lanes before a slip lane are type exit on the main road; parallel acceleration lanes after it are type entry on the main road.",
+    "Do not create right-turn (RHT) connecting roads inside the central junction for relations served by slip lanes.",
+    "All other lanes driving.",
+    "Set overlapZone on the slip-lane lane links to cover the whole overlap area, slightly larger than needed."
+   ],
+   "right": [
+    "Direct junction per split/merge, common junction only at the centre.",
+    "slipLane type on the bypass road; entry/exit on parallel lanes of the main road.",
+    "Combined direct junctions at equal stations."
+   ],
+   "wrong": [
+    "One big common junction including slip lanes.",
+    "Slip-lane relations duplicated as connecting roads in the centre.",
+    "Typing parallel decel/accel lanes as slipLane."
+   ],
+   "use_cases": [
+    {
+     "case": "Free right turn (RHT) / free left turn (LHT) at an urban crossing",
+     "how": "Direct junction at diverge and merge, slip-lane road with slipLane type, central common junction without that relation."
+    },
+    {
+     "case": "Slip lane with parallel decel/accel lanes",
+     "how": "exit lane on the main road up to the diverge cut, entry lane after the merge cut."
+    },
+    {
+     "case": "Slip lane in a different elevation",
+     "how": "Use a common junction instead of direct (table: direct only for constant elevation)."
+    }
+   ],
+   "figures": [
+    "Figure 42: four slip lanes bypassing a signalised crossing",
+    "Figure 43: slip-lane variations",
+    "Figure 44: direct junction at each split/merge",
+    "Figure 45: combine same-station direct junctions",
+    "Figure 46: common junction in the centre",
+    "Figure 47: straight roads between junctions, median reference lines",
+    "Figure 48: per-direction roads where cuts differ",
+    "Figure 49: slip-lane roads",
+    "Figure 50: central connecting roads without slip relations",
+    "Figure 51: entry/exit parallel lanes",
+    "Figure 52: slipLane lanes",
+    "Figure 53: driving lanes",
+    "Figure 54: overlapZone slightly larger than overlap"
+   ]
+  },
+  {
+   "id": "9",
+   "title": "Traffic lights",
+   "summary": "Rules for lights and stop lines: lights are placed at their physical position (s/t of the road they stand at, not necessarily the road where vehicles stop); the stop line tells where to stop and is only relevant when the light is red/off, so the stop line gets a <dependency type=trafficLight> per governing light; the light gets <reference elementType=signal type=stopLine> to the stop line(s); several lights may share one stop line; lights get no lane validity - the stop line's validity applies; lights with the same phases share a controller. Examples: one stop line + two lights on another road; T junction with two per-lane stop lines governed by three lights incl. far-side lights.",
+   "guidance": [
+    "Create one stop-line signal per stop position (per lane group with identical phase), on the approach road, validity fromLane/toLane = governed lanes, orientation matching travel direction (- for lanes travelling against s).",
+    "Create each light at its physical s/t on the road it stands at (connecting road, far-side road, approach road), dynamic=yes, country=OpenDRIVE with type/subtype from the Signal reference, no <validity>.",
+    "Add on every light a <reference id=<stopLine> elementType=\"signal\" type=\"stopLine\"/> for each stop line it governs (a light may reference several).",
+    "Add on every stop line a <dependency id=<light> type=\"trafficLight\"/> for each light that governs it (may be several).",
+    "Signs interacting with lights may get dependencies too (optional).",
+    "Group lights with identical phases in one <controller> (e.g. all green-arrow heads of a movement) and list controllers in the junction.",
+    "Country traffic rules are outside OpenDRIVE but drive which lights govern which stop line."
+   ],
+   "right": [
+    "Far-side lights referencing near-side stop lines.",
+    "Per-lane stop lines with distinct dependencies (left-turn line depends on three lights, straight line on two).",
+    "Lane validity only on stop lines."
+   ],
+   "wrong": [
+    "Lane validity on the light itself.",
+    "Moving lights to the stop-line road.",
+    "Only one direction of linkage.",
+    "Copying the text under Figure 56, which swaps reference/dependency directions; follow 9.2 and the codes."
+   ],
+   "use_cases": [
+    {
+     "case": "OSM highway=traffic_signals on a junction node",
+     "how": "Per approach: stop line on the incoming road end (OSM stop position or default set-back), lights at physical positions (or default: start of the connecting road / roadside), reference + dependency, one controller per phase group, junction controller list."
+    },
+    {
+     "case": "Separate turn-lane signals",
+     "how": "Separate stop line per lane, dependencies per governing light, lights reference their stop lines."
+    }
+   ],
+   "figures": [
+    "Figure 55: one stop line, two lights on another road",
+    "Figure 56: reference/dependency wiring",
+    "Figure 57: per-lane stop lines and far-side lights"
+   ]
+  },
+  {
+   "id": "10",
+   "title": "Crossings and cross paths",
+   "summary": "Crossings are junctions without connecting roads where traffic of two roads crosses but cannot change roads (pedestrians, cyclists, rail). Cross paths (pedestrians/cyclists) let traffic of a lane cross other lanes and continue on a lane of the same or another road. Mid-block pedestrian crossing: virtual junction on the uncut main road with a crossing road and crossPath connecting the two sidewalks. Rail crossing: crossing junction with one roadSection per road and priority for the rail.",
+   "guidance": [
+    "Pedestrian/bike crossing outside a common junction: choose a virtual junction with crossPath (best for linking sidewalks of different roads).",
+    "Keep the main road continuous (junction=-1) with its normal lanes (driving, curb, walking).",
+    "If there is a refuge island, add a dedicated lane section with a lane of type restricted whose width grows/shrinks (cubic widths) and renumber/link the outer lanes across the sections.",
+    "Create the crossing road with its reference line from the middle of one sidewalk walking lane to the middle of the opposite one, with a single walking lane.",
+    "Create <junction type=\"virtual\" mainRoad=<main road> sStart sEnd> with sStart/sEnd clearly outside the crossing area.",
+    "Add <crossPath crossingRoad=<crossing road> roadAtStart=<road> roadAtEnd=<road>> (same main road at both ends is allowed) with startLaneLink/endLaneLink: s on the start/end road, from = walking lane of that road, to = lane of the crossing road.",
+    "Add <priority high=<main road> low=<crossing road>/> (unsignalised crossing priority as modelled in the guideline).",
+    "Set junction=<virtual junction id> on the crossing road only.",
+    "Rail crossing: use <junction type=\"crossing\">; keep both roads uncut (junction=-1); road lanes driving per direction, rail road one lane of type rail.",
+    "Add one <roadSection id roadId sStart sEnd> per road with sStart/sEnd clearly outside the crossing area.",
+    "Add <priority high=<rail road> low=<road>/>, then road markings (stop bars, centre lines) and signs (St. Andrew's cross) on the road approaches."
+   ],
+   "right": [
+    "Uncut main road with a virtual junction for mid-block crosswalks.",
+    "Restricted lane for refuge islands.",
+    "Crossing junction with roadSections for rail level crossings."
+   ],
+   "wrong": [
+    "Cutting the main road into a common junction for a zebra.",
+    "Connecting roads at rail crossings (traffic cannot change roads).",
+    "sStart/sEnd inside the crossing area.",
+    "Crossing reference line ending at the curb instead of the sidewalk centre."
+   ],
+   "use_cases": [
+    {
+     "case": "OSM highway=crossing on a road (not at a junction)",
+     "how": "Virtual junction + crossing road + crossPath from footway/sidewalk lane to the other; refuge island (crossing:island=yes) as restricted lane."
+    },
+    {
+     "case": "Crossing within a common junction",
+     "how": "Crossing road inside the common junction + crossPath (chapter 6.3.3), not a virtual junction."
+    },
+    {
+     "case": "railway=level_crossing",
+     "how": "Crossing junction with roadSections; rail priority high."
+    },
+    {
+     "case": "Cycle crossing",
+     "how": "Same as pedestrian crossing with a biking lane on the crossing road (cross paths are for pedestrians and cyclists)."
+    }
+   ],
+   "figures": [
+    "Figure 58: rail level crossing",
+    "Figure 59: mid-block crossing with refuge",
+    "Figure 60: main road stays continuous",
+    "Figure 61: main road cross-section",
+    "Figure 62: refuge as restricted lane in its own lane section",
+    "Figure 63: crossing reference line sidewalk-centre to sidewalk-centre",
+    "Figure 64: single walking lane",
+    "Figure 65: virtual junction sStart/sEnd",
+    "Figure 66: complete mid-block crossing",
+    "Figure 67: rail crossing example",
+    "Figure 68: both reference lines continuous",
+    "Figure 69: rail lane type",
+    "Figure 70: roadSections",
+    "Figure 71: complete rail crossing"
+   ]
+  }
+ ],
+ "errata_noted": [
+  "Text under Figure 56 swaps the directions (says lights carry dependency and stop line carries reference); 9.2 rules, Codes 38-39 and the drawing say lights carry <reference>, the stop line carries <dependency>.",
+  "Code 20: invisible stop line 21 at s=90 on a 9.43 m road - typo, should be ~9.0.",
+  "Code 26 caption names road 7 but the XML shows road id 82.",
+  "Codes 14 vs 37-40: same lights typed 1000001 in one place and 1000011 in another.",
+  "Code 57 (startLaneLink s=59 from=5) and Code 60 (s=54 from=4) differ; in the middle lane section lane 5 is the walking lane and s=54 lies outside sStart=57.5..sEnd=61.5, so Code 57 is the consistent one.",
+  "Crossing road length is 14 in Codes 53/60 but 12 in Code 59.",
+  "X junction code uses lane type sidewalk while the T junction uses walking."
+ ]
+}

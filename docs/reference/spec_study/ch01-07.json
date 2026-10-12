@@ -1,0 +1,2210 @@
+{
+ "meta": {
+  "spec": "ASAM OpenDRIVE 1.7.0 chapters 1-7, with 1.8/1.9 deltas",
+  "source": "docs/reference/ASAM_OpenDRIVE_BS_V1-7-0.html + publications.pages.asam.net v1.9.0",
+  "note": "Formulas marked 'Derived' are standard results consistent with the spec definitions/figures but not printed in the spec text. Rule ids from 1.9 Annex (map_rules); null where the rule has no id."
+ },
+ "chapters": [
+  {
+   "id": "1",
+   "title": "Foreword",
+   "sections": [
+    {
+     "id": "1",
+     "title": "Foreword / scope",
+     "summary": "OpenDRIVE is an XML exchange format for STATIC road networks (roads, lanes, junctions, objects along roads, signals) for driving simulation. Dynamic content (traffic, scenarios) is out of scope and belongs to OpenSCENARIO.",
+     "concepts": [
+      "static road network",
+      "exchange format",
+      "no dynamic content"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "1.9.0 deliverables add a Junction guideline 1.0.0 and a Signal reference 1.0.0 document next to the specification."
+     ],
+     "figures": []
+    },
+    {
+     "id": "1.1",
+     "title": "Deliverables",
+     "summary": "The standard ships as a file-format specification, XML schemas (XSD), a UML model, sample files (use cases/examples), example implementations, a reference implementation for spirals (odrSpiral) and a signal catalog.",
+     "concepts": [
+      "XSD schema",
+      "UML model (normative)",
+      "reference spiral implementation (odrSpiral)",
+      "sample .xodr files",
+      "signal catalog"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [
+      {
+       "case": "Validating OdrForge output",
+       "how": "Validate generated .xodr against the official XSD of the targeted revMinor; use the sample files (e.g. Ex_Line-Spiral-Arc.xodr) as regression inputs."
+      },
+      {
+       "case": "Spiral evaluation",
+       "how": "Mirror the ASAM odrSpiral reference implementation (Fresnel integrals) so OdrForge evaluates clothoids identically to other tools."
+      }
+     ],
+     "right": [
+      "Treat the UML model and 'Rules' sections as normative; XML examples are only illustrative."
+     ],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "1.9 deliverable list: specification (HTML), Junction guideline, Signal reference, Enterprise Architect UML model, XSD files, examples, implementation examples, release presentation."
+     ],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "2",
+   "title": "Introduction",
+   "sections": [
+    {
+     "id": "2.1",
+     "title": "Overview",
+     "summary": "OpenDRIVE files (.xodr) describe road geometry plus logic-relevant features (lanes, signals) of synthetic or real road networks so they can be fed into simulators and exchanged between tools. Every node can be extended with user-defined data while keeping interoperability.",
+     "concepts": [
+      "XML syntax",
+      ".xodr extension",
+      "synthetic or real networks",
+      "extensible nodes (userData)"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "2.2",
+     "title": "Normative vs non-normative",
+     "summary": "Modal-verb statements (requirements/permissions/prohibitions), UML diagrams of the model, and 'Rules' sections are normative. XML examples and use-case descriptions are non-normative.",
+     "concepts": [
+      "normative statements",
+      "Rules sections",
+      "informative examples"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [
+      "When text and an XML example disagree, follow the normative text/UML/rules."
+     ],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "1.8/1.9 restructure into ISO-like chapters (Scope, Normative references, Terms, Abbreviations, Backward compatibility); notes, footnotes, examples and sequence diagrams are explicitly informative and must not contain requirements."
+     ],
+     "figures": []
+    },
+    {
+     "id": "2.3.1",
+     "title": "Naming conventions",
+     "summary": "Data types follow IEEE (double = IEEE 754 binary64).",
+     "concepts": [
+      "IEEE data types"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "2.3.2",
+     "title": "Units",
+     "summary": "All numeric values are SI unless stated otherwise: m, rad, s, m/s. Geographic positions use the unit of the spatial reference system (e.g. degrees for WGS84/EPSG:4326). A small set of explicit unit identifiers exists only for signage and speed indication.",
+     "concepts": [
+      "SI units",
+      "radians for all angles",
+      "explicit unit identifiers",
+      "e_unit"
+     ],
+     "elements": [
+      {
+       "name": "unit identifiers (e_unitDistance / e_unitSpeed / e_unitMass / e_unitSlope)",
+       "attributes": [
+        {
+         "name": "distance",
+         "type": "enum",
+         "unit": "-",
+         "required": false,
+         "meaning": "m, km, ft, mile"
+        },
+        {
+         "name": "speed",
+         "type": "enum",
+         "unit": "-",
+         "required": false,
+         "meaning": "m/s, mph, km/h"
+        },
+        {
+         "name": "mass",
+         "type": "enum",
+         "unit": "-",
+         "required": false,
+         "meaning": "kg, t"
+        },
+        {
+         "name": "slope",
+         "type": "enum",
+         "unit": "-",
+         "required": false,
+         "meaning": "%"
+        }
+       ],
+       "parent": "attributes such as @unit of <speed>, <signal>"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "The optional explicit units are to be used only for signage and speed indication.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Explicit units must not be used as general units, e.g. for road geometry.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "If no unit is given (or there is no way to state one), SI units apply.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Speed limits from OSM maxspeed",
+       "how": "OSM 'maxspeed=50' (km/h) or '30 mph': either convert to m/s, or keep the value and set @unit='km/h'/'mph' on <speed>; never put km/h into geometry fields."
+      }
+     ],
+     "right": [
+      "Store all angles (hdg, roll, pitch) in radians; convert OSM/degree inputs.",
+      "Use @unit on speed/signal values when preserving the posted number."
+     ],
+     "wrong": [
+      "Using km or ft for geometry lengths, s-coordinates or widths: geometry is always meters.",
+      "Writing degrees into hdg."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "2.3.3",
+     "title": "Modal verbs",
+     "summary": "shall/shall not = requirement (no deviation); should/should not = recommendation; may/need not = permission; can/can not = capability; must/must not = external obligation not enforced by OpenDRIVE.",
+     "concepts": [
+      "shall = requirement",
+      "should = recommendation",
+      "may = permission",
+      "can = capability",
+      "must = external obligation"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [
+      "Map 'shall' rules to validator errors and 'should' rules to warnings in OdrForge's checker."
+     ],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "2.3.4",
+     "title": "Typographic and UML conventions",
+     "summary": "<element> denotes an XML element and @attribute an attribute. Class diagrams follow UML (ISO TS 19103 notation); optional attributes are marked [0..1], mandatory ones have no marker. Colors: orange = diagram entry class, yellow = package of current chapter, blue = other package, green = geometry-bearing classes.",
+     "concepts": [
+      "@attribute notation",
+      "UML multiplicity [0..1]",
+      "mandatory vs optional attributes"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 1: UML notation (associations, roles, multiplicities) per ISO TS 19103 - read multiplicities to know required children.",
+      "Figure 2: UML attribute notation - '[0..1]' after an attribute means optional; no marker means mandatory (must be written)."
+     ]
+    },
+    {
+     "id": "2.3.5",
+     "title": "Use of IDs",
+     "summary": "IDs must be unique within their class (e.g. all road ids, all junction ids), lane ids must be unique within a lane section, and only IDs that are defined may be referenced.",
+     "concepts": [
+      "unique id per class",
+      "lane id unique per lane section",
+      "dangling references forbidden"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:ids.id_unique_in_class",
+       "level": "shall",
+       "text": "IDs are unique within a class (road ids among roads, junction ids among junctions, etc.).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:ids.id_unique_in_lane_section",
+       "level": "shall",
+       "text": "Lane IDs are unique within one lane section.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:ids.only_ref_defined_ids",
+       "level": "may",
+       "text": "Only IDs that are actually defined may be referenced (no dangling references).",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Mapping OSM way ids",
+       "how": "OSM ways split into several roads need distinct OpenDRIVE road ids; keep a deterministic mapping table and verify every road/junction/signal/controller reference resolves."
+      }
+     ],
+     "right": [
+      "Allocate ids per class from a counter or stable hash; a road and a junction may share the same numeric id (different classes) but avoiding that eases debugging.",
+      "Run a post-write pass checking that all predecessor/successor/junction/connectingRoad/signal references exist."
+     ],
+     "wrong": [
+      "Reusing an id for two roads; referencing a road id that was later dropped (e.g. after filtering short ways)."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "2.3.6",
+     "title": "Curvature",
+     "summary": "Curvature = 1/radius. Positive curvature is a left curve (counter-clockwise when driving in +s), negative is a right curve (clockwise).",
+     "concepts": [
+      "curvature sign",
+      "left = positive",
+      "right = negative",
+      "1/radius"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "curvature definition",
+       "expr": "k = 1/R ; k > 0 left (CCW), k < 0 right (CW)",
+       "vars": "k curvature [1/m]; R radius [m]",
+       "notes": "Sign is relative to the +s direction of the reference line, not the driving direction."
+      },
+      {
+       "name": "heading/curvature relation",
+       "expr": "dhdg/ds = k(s)",
+       "vars": "hdg heading [rad]; s arc length [m]",
+       "notes": "Holds for every planView element (implicit in arc/spiral definitions); used to derive heading from curvature integrals."
+      }
+     ],
+     "rules": [],
+     "use_cases": [],
+     "right": [
+      "Compute curvature sign w.r.t. the reference-line direction you chose; if you reverse a road, negate all curvatures."
+     ],
+     "wrong": [
+      "Taking OSM turning direction relative to traffic flow when the reference line runs against the traffic."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "3",
+   "title": "Relations to other standards",
+   "sections": [
+    {
+     "id": "3.1",
+     "title": "Positioning within ASAM",
+     "summary": "OpenDRIVE (static road network) combines with OpenCRG (detailed road surface) and OpenSCENARIO (dynamic content: traffic, maneuvers) to form a complete scenario-based simulation description.",
+     "concepts": [
+      "OpenDRIVE static",
+      "OpenCRG road surface",
+      "OpenSCENARIO dynamic"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 3: relation between OpenDRIVE, OpenCRG, OpenSCENARIO - OpenDRIVE + OpenCRG are static, OpenSCENARIO adds dynamics."
+     ]
+    },
+    {
+     "id": "3.2",
+     "title": "Backward compatibility",
+     "summary": "1.7.0 is backward compatible with 1.6.1. Elements introduced in 1.5 that are incompatible with 1.4 are optional in the 1.7 schema and annotated 'Optional for backwards compatibility'. Compatibility to 1.4/1.5 is defined against their documentation, not their (erroneous) XSDs.",
+     "concepts": [
+      "backward compatibility chain",
+      "optional for backwards compatibility",
+      "schema vs documentation"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [
+      "A 1.7 reader should accept 1.6.x files; when writing, still emit the 'optional for backward compatibility' elements since modern consumers expect them."
+     ],
+     "wrong": [
+      "Relying on 1.4/1.5 XSD quirks; those XSDs had errors relative to their documents."
+     ],
+     "changes_1_8_1_9": [
+      "1.8.0 is backward compatible with 1.7.0 (minor release: adds features, deprecates unused ones, keeps all 1.7 features).",
+      "1.9.0 is backward compatible with 1.8.1; 1.9 adds lane layers (permanent/temporary), @temporary/@invalidated for objects and signals, <curveLocal> outlines, signal semantics vehicle/person/animal, OpenCRG global-mode x/y/z/h offsets; 'bounding box' renamed 'bounding volume'.",
+      "1.9 cautions against using lane-layer files with scenario specs that do not know layers (e.g. OpenSCENARIO XML <= 1.3.1)."
+     ],
+     "figures": []
+    },
+    {
+     "id": "3.3",
+     "title": "References to other standards",
+     "summary": "XML 1.0 Schema, UML 2.5.1, ISO 3166-2 country codes, ISO 8855 right-handed vehicle coordinate systems, ISO 8601 date/time, georeferencing per ISO 19111 (EPSG/PROJ), ASAM OpenCRG.",
+     "concepts": [
+      "XML Schema 1.0",
+      "UML 2.5.1",
+      "ISO 3166-2",
+      "ISO 8855",
+      "ISO 8601",
+      "ISO 19111",
+      "PROJ / EPSG"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [
+      "Use ISO 3166-2 codes for signal @country, ISO 8601 for header @date, PROJ strings for geoReference."
+     ],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "4",
+   "title": "General Architecture",
+   "sections": [
+    {
+     "id": "4.1",
+     "title": "File structure",
+     "summary": "Data is stored in XML files with extension .xodr; gzip-compressed files use .xodrz. Elements form levels (level-1 children of <OpenDRIVE> are 'primary elements'); every element can carry user data. All floats are IEEE 754 doubles and must be printed so they round-trip.",
+     "concepts": [
+      ".xodr",
+      ".xodrz gzip",
+      "primary elements",
+      "XSD reference",
+      "IEEE 754 double",
+      "round-trip float printing"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "float output precision",
+       "expr": "printf(\"%.17g\", value)  // or shortest round-trip algorithm (Ryu/Grisu/std::to_chars)",
+       "vars": "value: double",
+       "notes": "Guarantees bit-exact round trip; readers should use a correct parsing algorithm (e.g. strtod / std::from_chars)."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "should",
+       "text": "Writers use a correct shortest round-trip float printer or always emit 17 significant digits.",
+       "since": "1.6"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Readers use a correct accuracy-preserving float parser.",
+       "since": "1.6"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Serializing geometry",
+       "how": "Use std::to_chars (shortest round-trip) or %.17g for x, y, hdg, length, s and polynomial coefficients so that geometry continuity checks pass after re-reading."
+      }
+     ],
+     "right": [
+      "std::to_chars / %.17g for every double.",
+      "Optionally support writing .xodrz via gzip."
+     ],
+     "wrong": [
+      "Printing with %.3f or default iostream precision (6 digits): breaks s-sum and continuity, especially with large UTM coordinates."
+     ],
+     "changes_1_8_1_9": [
+      "Unchanged in 1.8/1.9 (moved to section 6.1)."
+     ],
+     "figures": []
+    },
+    {
+     "id": "4.2",
+     "title": "Combining files (<include>)",
+     "summary": "An <include> element makes the reader immediately parse the referenced file in place. The included file repeats the parent element as its root (e.g. <planView> containing <geometry>s). Consistency between included content and context is the author's responsibility.",
+     "concepts": [
+      "<include>",
+      "inline expansion",
+      "same parent element in both files"
+     ],
+     "elements": [
+      {
+       "name": "<include>",
+       "attributes": [
+        {
+         "name": "file",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Location (path/URI) of the file to include"
+        }
+       ],
+       "parent": "any element (g_additionalData)"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Readers start reading the included file immediately when the <include> element is parsed.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "must",
+       "text": "The parent element of <include> is present both in the including file and as root of the included file.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [],
+     "right": [
+      "Included planview.xml has <planView> as root, mirroring the parent in the main file."
+     ],
+     "wrong": [
+      "Including a file whose root does not match the parent element; including content inconsistent with context (e.g. geometry s values not continuing)."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "4.3",
+     "title": "Overview of elements",
+     "summary": "Tree: <OpenDRIVE> -> <header> (<geoReference>, <offset>), <road> (planView/geometry, link, type/speed, elevationProfile, lateralProfile, lanes, objects, signals, surface, railroad), <controller>, <junction>, <junctionGroup>, <station>.",
+     "concepts": [
+      "element tree",
+      "OpenDRIVE root",
+      "header",
+      "road",
+      "junction",
+      "controller",
+      "junctionGroup",
+      "station"
+     ],
+     "elements": [
+      {
+       "name": "<OpenDRIVE>",
+       "attributes": [
+        {
+         "name": "xmlns",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Namespace https://code.asam.net/simulation/standard/opendrive_schema/ (1.7 table)"
+        }
+       ],
+       "parent": "none"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Exactly one <OpenDRIVE> root and exactly one <header>; at least one <road> (UML multiplicity road 1..*); controller, junction, junctionGroup, station 0..*.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "1.9 root element table lists no attributes; namespace/children are defined in the XSD and UML.",
+      "1.8 adds <header> children <license> and <defaultRegulations>; 1.9 adds lane layers etc. (other chapters)."
+     ],
+     "figures": [
+      "Figure 4 (UML Core): t_OpenDRIVE has header 1, road 1..*, controller/junction/junctionGroup/station 0..*; every element derives from _OpenDriveElement which may hold g_additionalData (userData 0..*, include 0..*, dataQuality 0..1)."
+     ]
+    },
+    {
+     "id": "4.4",
+     "title": "Attributes",
+     "summary": "All attributes are annotated in the UML model with unit (per Units), type (primitive like string/double or complex/enum type) and value range. Derived double types: t_grZero (>0), t_grEqZero (>=0), t_zeroOne ([0,1]).",
+     "concepts": [
+      "attribute type",
+      "value range",
+      "t_grZero",
+      "t_grEqZero",
+      "t_zeroOne"
+     ],
+     "elements": [
+      {
+       "name": "primitive derived types",
+       "attributes": [
+        {
+         "name": "t_grZero",
+         "type": "double",
+         "unit": "-",
+         "required": false,
+         "meaning": "value > 0 (e.g. geometry @length)"
+        },
+        {
+         "name": "t_grEqZero",
+         "type": "double",
+         "unit": "-",
+         "required": false,
+         "meaning": "value >= 0 (e.g. s coordinates)"
+        },
+        {
+         "name": "t_zeroOne",
+         "type": "double",
+         "unit": "-",
+         "required": false,
+         "meaning": "value in [0,1]"
+        }
+       ],
+       "parent": "UML Core"
+      }
+     ],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [
+      "Emitting geometry @length = 0 (violates t_grZero) for degenerate OSM segments - drop or merge them instead.",
+      "Negative s values."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "4.4.2",
+     "title": "Header",
+     "summary": "<header> is the first child of <OpenDRIVE> (exactly one). It carries format revision, metadata, bounding box in inertial coordinates, and optional <geoReference> and <offset>.",
+     "concepts": [
+      "revMajor/revMinor",
+      "bounding box north/south/east/west",
+      "vendor",
+      "date ISO 8601"
+     ],
+     "elements": [
+      {
+       "name": "<header>",
+       "attributes": [
+        {
+         "name": "revMajor",
+         "type": "ushort (integer in 1.9)",
+         "unit": "-",
+         "required": true,
+         "meaning": "Major revision, 1"
+        },
+        {
+         "name": "revMinor",
+         "type": "ushort (integer in 1.9)",
+         "unit": "-",
+         "required": true,
+         "meaning": "Minor revision; 7 for 1.7.0 (8 for 1.8, 9 for 1.9)"
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Database name"
+        },
+        {
+         "name": "version",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Version of this road network"
+        },
+        {
+         "name": "date",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Creation time ISO 8601, preferably YYYY-MM-DDThh:mm:ss"
+        },
+        {
+         "name": "north",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Maximum inertial y"
+        },
+        {
+         "name": "south",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Minimum inertial y"
+        },
+        {
+         "name": "east",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Maximum inertial x"
+        },
+        {
+         "name": "west",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Minimum inertial x"
+        },
+        {
+         "name": "vendor",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Vendor name"
+        }
+       ],
+       "parent": "<OpenDRIVE>"
+      },
+      {
+       "name": "<license> (1.8+)",
+       "attributes": [
+        {
+         "name": "name",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Full license name (informational)"
+        },
+        {
+         "name": "resource",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "URL of full license text"
+        },
+        {
+         "name": "spdxid",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "SPDX identifier/expression; custom licenses use LicenseRef- prefix"
+        },
+        {
+         "name": "text",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Full license text"
+        }
+       ],
+       "parent": "<header>"
+      },
+      {
+       "name": "<defaultRegulations> (1.8+)",
+       "attributes": [],
+       "parent": "<header>"
+      },
+      {
+       "name": "<roadRegulations> (1.8+)",
+       "attributes": [
+        {
+         "name": "type",
+         "type": "e_roadType",
+         "unit": "-",
+         "required": true,
+         "meaning": "Road type the default regulation (speed/priority) applies to"
+        }
+       ],
+       "parent": "<defaultRegulations>"
+      },
+      {
+       "name": "<signalRegulations> (1.8+)",
+       "attributes": [
+        {
+         "name": "type",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Signal type"
+        },
+        {
+         "name": "subtype",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Signal subtype"
+        }
+       ],
+       "parent": "<defaultRegulations>"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "<header> is the very first element inside <OpenDRIVE> and occurs exactly once.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.8.0:defaultRegulations.only_speed_priority",
+       "level": "shall",
+       "text": "Inside <defaultRegulations> only <speed> and <priority> elements are used.",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "<signalRegulations> is used for signs that change driving rules (e.g. turn-on-red).",
+       "since": "1.8"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "<signalRegulations> is not to be used as a signal catalogue.",
+       "since": "1.8"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM import from a UTM-projected extract",
+       "how": "revMajor=1, revMinor=7 (or the targeted version), date=now ISO 8601, north/south/east/west = bounding box of all geometry in the (offset-reduced) inertial frame, vendor='OdrForge', plus geoReference and offset."
+      },
+      {
+       "case": "Attribution of OSM data (1.8+)",
+       "how": "Emit <license name='Open Database License 1.0' spdxid='ODbL-1.0' resource='https://opendatacommons.org/licenses/odbl/'/>."
+      }
+     ],
+     "right": [
+      "Set revMinor to match the schema features actually used (no 1.8 elements in a revMinor=7 file).",
+      "Compute north/south/east/west from the final sampled geometry including lane widths if possible."
+     ],
+     "wrong": [
+      "Header not first; two headers; revMinor=7 with <license> (1.8 element)."
+     ],
+     "changes_1_8_1_9": [
+      "1.8.0: new <license>, <defaultRegulations> (with <roadRegulations>, <signalRegulations>) header children.",
+      "1.9 table types revMajor/revMinor as integer; content otherwise unchanged; geoReference/offset described in section 8.5."
+     ],
+     "figures": []
+    },
+    {
+     "id": "4.5.1",
+     "title": "Traffic direction",
+     "summary": "Unless otherwise stated, the spec assumes right-hand traffic in all examples, figures and descriptions.",
+     "concepts": [
+      "RHT default"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "5",
+   "title": "Additional Data",
+   "sections": [
+    {
+     "id": "5",
+     "title": "Additional data overview",
+     "summary": "OpenDRIVE may embed external/ancillary data anywhere (group g_additionalData on every _OpenDriveElement): userData, include, dataQuality (and layout sets). Processing is application-specific.",
+     "concepts": [
+      "g_additionalData",
+      "_OpenDriveElement",
+      "application-specific processing"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 4 (UML Core): g_additionalData on every element = userData 0..*, include 0..*, dataQuality 0..1; dataQuality has error 0..1 and rawData 0..1."
+     ]
+    },
+    {
+     "id": "5.1",
+     "title": "User data",
+     "summary": "<userData> carries data not (yet) modelled in OpenDRIVE or needed by a specific application (e.g. textures). It should sit next to the element it refers to and may appear on any element.",
+     "concepts": [
+      "<userData>",
+      "code/value",
+      "free content",
+      "vendor extension"
+     ],
+     "elements": [
+      {
+       "name": "<userData>",
+       "attributes": [
+        {
+         "name": "code",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Code identifying the user data (application-defined)"
+        },
+        {
+         "name": "value",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "User data value (application-defined); arbitrary child content (userDataContent) also allowed"
+        }
+       ],
+       "parent": "any element"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "should",
+       "text": "Ancillary data is described close to the element it refers to.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "<userData> may be stored at any element.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Preserving OSM provenance",
+       "how": "Add <userData code='osm:way' value='123456'/> under <road> (and osm:node under signals/objects) for traceability and debugging."
+      }
+     ],
+     "right": [
+      "Namespace codes (e.g. 'odrforge:...', 'osm:...') to avoid collisions."
+     ],
+     "wrong": [
+      "Encoding information in userData that has a proper OpenDRIVE element (speed, lane type, signals) - consumers ignore userData."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "5.2",
+     "title": "Including data",
+     "summary": "<include> elements may be placed anywhere and reference external files; how they are processed depends on the application (see 4.2 for parsing semantics).",
+     "concepts": [
+      "<include>",
+      "external files"
+     ],
+     "elements": [
+      {
+       "name": "<include>",
+       "attributes": [
+        {
+         "name": "file",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Location of the file to include"
+        }
+       ],
+       "parent": "any element"
+      }
+     ],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "1.9 (7.3): included file must contain OpenDRIVE elements; reader loads it on parse; parent element must exist in both files."
+     ],
+     "figures": []
+    },
+    {
+     "id": "5.3",
+     "title": "Layout types (<set>/<instance>)",
+     "summary": "User-generated layouts for elements such as road marks or signals can be referenced via <set> elements, each followed by one or more <instance> elements; the actual layout design lives in the application, not in OpenDRIVE.",
+     "concepts": [
+      "<set>",
+      "<instance>",
+      "application-side layouts"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [
+      "Not present in the 1.9 Additional data chapter (only userData, include, dataQuality are described) - treat as obsolete; do not emit."
+     ],
+     "figures": []
+    },
+    {
+     "id": "5.4",
+     "title": "Data quality",
+     "summary": "<dataQuality> describes the quality/accuracy of integrated external data (e.g. GPS). <error> lists absolute/relative errors in meters; <rawData> holds metadata about the raw source.",
+     "concepts": [
+      "<dataQuality>",
+      "<error>",
+      "<rawData>",
+      "measurement accuracy"
+     ],
+     "elements": [
+      {
+       "name": "<dataQuality>",
+       "attributes": [],
+       "parent": "any element"
+      },
+      {
+       "name": "<error>",
+       "attributes": [
+        {
+         "name": "xyAbsolute",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Absolute error of road data in x/y"
+        },
+        {
+         "name": "zAbsolute",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Absolute error in z"
+        },
+        {
+         "name": "xyRelative",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Relative error between adjacent entries in x/y"
+        },
+        {
+         "name": "zRelative",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Relative error between adjacent entries in z"
+        }
+       ],
+       "parent": "<dataQuality>"
+      },
+      {
+       "name": "<rawData>",
+       "attributes": [
+        {
+         "name": "date",
+         "type": "string",
+         "unit": "-",
+         "required": true,
+         "meaning": "Delivery date ISO 8601 (time of day optional)"
+        },
+        {
+         "name": "source",
+         "type": "e_dataQuality_RawData_Source",
+         "unit": "-",
+         "required": true,
+         "meaning": "sensor | cadaster | custom"
+        },
+        {
+         "name": "sourceComment",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Comment on source"
+        },
+        {
+         "name": "postProcessing",
+         "type": "e_dataQuality_RawData_PostProcessing",
+         "unit": "-",
+         "required": true,
+         "meaning": "raw | cleaned | processed | fused"
+        },
+        {
+         "name": "postProcessingComment",
+         "type": "string",
+         "unit": "-",
+         "required": false,
+         "meaning": "Comment on post processing"
+        }
+       ],
+       "parent": "<dataQuality>"
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "<dataQuality> may be stored at any position (max one per element).",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Declaring OSM accuracy",
+       "how": "<dataQuality><rawData date='2026-10-01' source='custom' sourceComment='OpenStreetMap' postProcessing='processed' postProcessingComment='OdrForge fit'/><error xyAbsolute='2.0' .../></dataQuality> at header or road level."
+      }
+     ],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    }
+   ]
+  },
+  {
+   "id": "6",
+   "title": "Coordinate systems",
+   "sections": [
+    {
+     "id": "6.1",
+     "title": "Coordinate systems overview",
+     "summary": "Three systems: inertial x/y/z, reference-line s/t/h, local u/v/z. The local system is placed relative to the reference-line system (unless stated otherwise); the reference-line system is placed in the inertial system by origin plus heading (and roll from superelevation; never pitch).",
+     "concepts": [
+      "inertial x/y/z",
+      "reference line s/t/h",
+      "local u/v/z",
+      "nesting: inertial > reference line > local"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 5: the three coordinate systems available.",
+      "Figure 6: how they interact - local is relative to s/t/h, s/t/h relative to inertial via origin + heading/roll."
+     ]
+    },
+    {
+     "id": "6.2",
+     "title": "Inertial coordinate system",
+     "summary": "Right-handed system per ISO 8855: x right/east, y up(drawing)/north, z out of plane/up. Objects and signals placed inertially use heading (about z), then pitch (about y'), then roll (about x'').",
+     "concepts": [
+      "ISO 8855",
+      "x=east y=north z=up",
+      "heading-pitch-roll order",
+      "z-y'-x'' intrinsic rotations"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "inertial rotation sequence",
+       "expr": "R = Rz(heading) * Ry(pitch) * Rx(roll)   (intrinsic z, y', x'')",
+       "vars": "heading about z, pitch about y', roll about x''",
+       "notes": "Derived from the text: heading 0 -> x' along x (east), +pi/2 -> x' along y (north); pitch +pi/2 -> x'' = -z (positive pitch points nose DOWN, right-hand rule); roll +pi/2 -> z''' = -y''."
+      },
+      {
+       "name": "heading to direction vector",
+       "expr": "dir = (cos(hdg), sin(hdg))",
+       "vars": "hdg measured CCW from +x (east)",
+       "notes": "Mathematical angle convention, NOT compass bearing."
+      }
+     ],
+     "rules": [],
+     "use_cases": [
+      {
+       "case": "Converting OSM/compass bearings",
+       "how": "hdg = pi/2 - bearing_rad (bearing clockwise from north) and normalize."
+      }
+     ],
+     "right": [
+      "Headings are counter-clockwise from east (+x), in radians."
+     ],
+     "wrong": [
+      "Using compass bearing (clockwise from north) directly as hdg.",
+      "Assuming positive pitch is nose-up: with the right-hand rule about y', +pitch tilts x toward -z."
+     ],
+     "changes_1_8_1_9": [
+      "Content unchanged in 1.9 (section 8.2)."
+     ],
+     "figures": [
+      "Figure 7: positive axes and positive angle directions of heading/pitch/roll in inertial system.",
+      "Figure 8: intermediate frames x'/y'/z after heading, x''/y'/z'' after pitch, x'''/y'''/z''' after roll."
+     ]
+    },
+    {
+     "id": "6.3",
+     "title": "Reference line coordinate system",
+     "summary": "Right-handed s/t/h along the road reference line. s = arc length from road start measured in the x/y plane (elevation ignored); t = lateral, positive to the left; h = up, orthogonal to s/t. The reference line always lies in the inertial x/y plane; superelevation rolls the t/h axes about s; there is no pitch, and elevation does not change s.",
+     "concepts": [
+      "s along reference line (2D length)",
+      "t positive left",
+      "h up",
+      "no pitch",
+      "superelevation = roll about s",
+      "elevation shifts z only"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "reference-line point to inertial (no superelevation)",
+       "expr": "x = xr(s) - t*sin(hdg(s)) ; y = yr(s) + t*cos(hdg(s)) ; z = zr(s) + h",
+       "vars": "xr,yr,hdg from planView at s; zr(s) = elevation polynomial a+b*ds+c*ds^2+d*ds^3 (chapter 8)",
+       "notes": "Derived from the axis definitions (t points to the left normal (-sin hdg, cos hdg)); spec gives the geometric definition, not this equation."
+      },
+      {
+       "name": "reference-line point to inertial (with superelevation roll phi)",
+       "expr": "x = xr(s) - t*cos(phi)*sin(hdg) + h*sin(phi)*sin(hdg) ; y = yr(s) + t*cos(phi)*cos(hdg) - h*sin(phi)*cos(hdg) ; z = zr(s) + t*sin(phi) + h*cos(phi)",
+       "vars": "phi(s) = superelevation a+b*ds+c*ds^2+d*ds^3 [rad] (chapter 8.4.2); positive phi lifts +t (left) side",
+       "notes": "Derived: rotation of (t,h) about s by phi (right-hand). Matches Figures 10 and 12 (roll>0 tilts t''' upward and h toward the right)."
+      },
+      {
+       "name": "s is planar arc length",
+       "expr": "s = integral sqrt(x'(p)^2 + y'(p)^2) dp   (no z term)",
+       "vars": "",
+       "notes": "Elevation does not affect s; a sloped road's 3D length is longer than its s length."
+      },
+      {
+       "name": "local tangent / normal",
+       "expr": "T = (cos hdg, sin hdg) ; N_left = (-sin hdg, cos hdg)",
+       "vars": "",
+       "notes": "N_left is the +t direction."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "The reference line lies in the inertial x/y plane; s is measured in that plane.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "No pitch exists in s/t/h; elevation does not change s.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Computing lane boundaries",
+       "how": "Evaluate (xr,yr,hdg) at s, then offset by t (sum of laneOffset and lane widths) along N_left; add z from elevation (+ t*tan/ sin of superelevation)."
+      },
+      {
+       "case": "Sloped OSM road with elevation data",
+       "how": "Fit planView on 2D projected points; compute s from 2D length; store height as elevationProfile in s - never use 3D distance for s."
+      }
+     ],
+     "right": [
+      "Compute all s from 2D planar lengths.",
+      "Positive t = left of reference-line direction; right lanes have negative ids and negative t."
+     ],
+     "wrong": [
+      "Using 3D distance for s or geometry @length.",
+      "Treating t as positive to the right."
+     ],
+     "changes_1_8_1_9": [
+      "1.9 (8.3) names the roll 'superelevation' explicitly and adds: t is measured in the superelevated (tilted) surface; lane @width is not changed by superelevation, so its x/y projection is narrower (width*cos(phi)); objects/signals are NOT rotated by superelevation, but their @t follows the tilted lane so items on a lane border stay on it; object @zOffset is measured in z, 0 = local elevation at s, so to sit on a superelevated surface zOffset must include the superelevation height offset."
+     ],
+     "figures": [
+      "Figure 9: s/t/h axes along the reference line.",
+      "Figure 10: rotations - heading about h (s' toward t at +pi/2), roll about s'.",
+      "Figure 11: s/t/h origin placed in inertial space by (x,y) and heading.",
+      "Figure 12: roll caused by <superelevation>: with positive roll the left (t>0) side is higher and h' tilts to the right - lesson: positive superelevation lifts the left side.",
+      "Figure 13: <elevation> projected onto the reference line: s/t stay horizontal; elevation only shifts z (no pitch)."
+     ]
+    },
+    {
+     "id": "6.4",
+     "title": "Local coordinate system",
+     "summary": "Right-handed u/v/z: unrotated u = s (forward), v = t (left), z = h (up). Objects are oriented by heading (about z), pitch (about v'), roll (about u''). The local system is positioned only by its origin in s/t/h and its heading relative to the reference line.",
+     "concepts": [
+      "u forward = s",
+      "v left = t",
+      "z up = h",
+      "heading relative to reference line",
+      "object orientation"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "local (object) heading to inertial heading",
+       "expr": "hdg_inertial = hdg_refline(s) + hdg_local",
+       "vars": "hdg_local = object @hdg relative to reference line",
+       "notes": "Derived from Figure 16: local heading measured from the s direction."
+      },
+      {
+       "name": "local point (u,v) to inertial",
+       "expr": "P = P_st(s,t) + R(hdg_refline(s) + hdg_local) * (u, v)",
+       "vars": "R(a) = [[cos a, -sin a],[sin a, cos a]]; P_st via 6.3",
+       "notes": "Used for object outlines (cornerLocal) and repeated objects."
+      }
+     ],
+     "rules": [],
+     "use_cases": [],
+     "right": [
+      "Object @hdg = 0 means aligned with the road's +s direction."
+     ],
+     "wrong": [
+      "Giving object heading as an absolute inertial heading when the object is road-placed."
+     ],
+     "changes_1_8_1_9": [
+      "Unchanged in 1.9 (8.4)."
+     ],
+     "figures": [
+      "Figure 14: positive axes/angles of the local system.",
+      "Figure 15: local system after heading, pitch, roll.",
+      "Figure 16: local system positioned relative to the reference-line system via origin and heading.",
+      "Figure 17: summary - inertial, reference-line and local systems used together."
+     ]
+    },
+    {
+     "id": "6.5",
+     "title": "Summary of coordinate systems",
+     "summary": "Inertial, reference-line and local systems are used simultaneously; Figure 17 shows a typical chain.",
+     "concepts": [
+      "coordinate system chain"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    },
+    {
+     "id": "6.6",
+     "title": "Georeferencing",
+     "summary": "<geoReference> in <header> holds a PROJ string (in CDATA) defining the spatial reference system of the inertial x/y. Use official EPSG parameter sets unchanged; UTM-like systems carry false easting/northing via +x_0/+y_0. Missing geoReference means a local Cartesian system. To avoid huge coordinates, <offset> shifts/rotates the dataset instead of editing projection parameters.",
+     "concepts": [
+      "<geoReference>",
+      "PROJ string in CDATA",
+      "EPSG",
+      "false easting/northing",
+      "<offset>",
+      "local Cartesian fallback",
+      "float precision"
+     ],
+     "elements": [
+      {
+       "name": "<geoReference>",
+       "attributes": [
+        {
+         "name": "(text content)",
+         "type": "string (CDATA)",
+         "unit": "-",
+         "required": true,
+         "meaning": "PROJ string, e.g. +proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+        }
+       ],
+       "parent": "<header>"
+      },
+      {
+       "name": "<offset>",
+       "attributes": [
+        {
+         "name": "x",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Inertial x offset"
+        },
+        {
+         "name": "y",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Inertial y offset"
+        },
+        {
+         "name": "z",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Inertial z offset"
+        },
+        {
+         "name": "hdg",
+         "type": "double",
+         "unit": "rad",
+         "required": true,
+         "meaning": "Heading offset (rotation about resulting z)"
+        }
+       ],
+       "parent": "<header>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "offset (1.9 explicit formula)",
+       "expr": "xWorld = xODR*cos(hdg) - yODR*sin(hdg) + xOffset ; yWorld = xODR*sin(hdg) + yODR*cos(hdg) + yOffset ; zWorld = zODR + zOffset",
+       "vars": "ODR = coordinates in the file; World = coordinates in the projected CRS of geoReference",
+       "notes": "Apply before PROJ inverse to lat/lon. With hdg=0 (recommended): World = ODR + offset (Figure 18). 1.7/1.9 prose says 'translate then rotate around new origin', which reads differently from the formula - avoid ambiguity by writing hdg=0."
+      },
+      {
+       "name": "OdrForge writer choice",
+       "expr": "xOffset = round(center_x), yOffset = round(center_y); xODR = xProj - xOffset; yODR = yProj - yOffset; hdg = 0",
+       "vars": "xProj/yProj = projected (e.g. UTM) coordinates",
+       "notes": "Keeps file coordinates near (0,0) and exactly invertible."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "The PROJ string is marked as CDATA.",
+       "since": "1.6"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:header.proj.max_one_proj",
+       "level": "shall",
+       "text": "At most one projection definition; if missing, a local Cartesian system is assumed.",
+       "since": "1.4 (id 1.9)"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use official EPSG parameter sets for PROJ strings and do not change parameters.",
+       "since": "1.6"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "To apply an offset, use <offset> rather than changing projection parameters (e.g. +x_0/+y_0).",
+       "since": "1.6"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Avoid rotation about z in <offset> (hdg should be 0).",
+       "since": "1.6"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:header.offset.centered_coords",
+       "level": "should",
+       "text": "Choose <offset> so file x/y are roughly centered on (0,0) to protect float precision in consumers.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM (WGS84) to OpenDRIVE",
+       "how": "Pick UTM zone of the area centroid; project with PROJ; write the EPSG-equivalent PROJ string in CDATA (e.g. '+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs'); subtract the centroid as <offset x y z=0 hdg=0>."
+      }
+     ],
+     "right": [
+      "Use projected metric CRS (UTM/local TM) so geometry is in meters.",
+      "One geoReference only; keep projection parameters canonical and use <offset> for recentering."
+     ],
+     "wrong": [
+      "Writing raw UTM coordinates (~5e6 m) into geometry - CARLA/UE single-precision consumers lose cm accuracy.",
+      "Folding the offset into +x_0/+y_0 of the PROJ string.",
+      "Using lat/lon degrees as x/y.",
+      "Non-zero offset hdg (consumers disagree on order)."
+     ],
+     "changes_1_8_1_9": [
+      "1.9 (8.5) adds the explicit world = R(hdg)*ODR + offset formulas and says to always apply the offset before converting with PROJ; recommends omitting heading. Example CRS given as EPSG:32632. Rule header.proj.max_one_proj carries a 1.9.0 id. <geoReference> and <offset> multiplicity 0..1 each."
+     ],
+     "figures": [
+      "Figure 18: geoReference and offset - OpenDRIVE x/y near origin plus x/y offset equals georeferenced x/y (e.g. ~500000/40000 m); lesson: offset is ADDED to file coordinates to get projected coordinates."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "7",
+   "title": "Geometry",
+   "sections": [
+    {
+     "id": "7",
+     "title": "Geometry overview",
+     "summary": "The reference line is composed of planView geometry primitives: line, spiral (clothoid, linear curvature), arc (constant curvature), poly3 (cubic polynomial, deprecated) and paramPoly3 (parametric cubic).",
+     "concepts": [
+      "line",
+      "spiral/clothoid",
+      "arc",
+      "poly3 (deprecated)",
+      "paramPoly3"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 19: the five geometry element types."
+     ]
+    },
+    {
+     "id": "7.1",
+     "title": "Road reference line",
+     "summary": "Every road has exactly one reference line (<planView> with 1..* <geometry>), along which lanes, signals and objects are defined. Each <geometry> gives start s, x, y, hdg and length plus exactly one shape child. Reference-line direction does not imply driving direction; it usually runs in the road center but may be offset.",
+     "concepts": [
+      "<planView>",
+      "<geometry>",
+      "start pose (x,y,hdg)",
+      "ascending s",
+      "G0 continuity mandatory",
+      "G1 continuity recommended",
+      "contact point rule",
+      "direction != driving direction"
+     ],
+     "elements": [
+      {
+       "name": "<planView>",
+       "attributes": [],
+       "parent": "<road>"
+      },
+      {
+       "name": "<geometry>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s-coordinate of start position"
+        },
+        {
+         "name": "x",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start position, inertial x"
+        },
+        {
+         "name": "y",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start position, inertial y"
+        },
+        {
+         "name": "hdg",
+         "type": "double",
+         "unit": "rad",
+         "required": true,
+         "meaning": "Start orientation (inertial heading, CCW from +x)"
+        },
+        {
+         "name": "length",
+         "type": "t_grZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "Length of the element's reference line (>0)"
+        }
+       ],
+       "parent": "<planView>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "local arc parameter",
+       "expr": "ds = s - geometry.s,  0 <= ds <= length",
+       "vars": "s global road coordinate",
+       "notes": "All primitives are evaluated in ds."
+      },
+      {
+       "name": "s continuity",
+       "expr": "geometry[i].s = sum_{j<i} geometry[j].length ; road.length = sum of all geometry lengths",
+       "vars": "",
+       "notes": "1.9 rules s-value_sum (shall) and road.length_sum_geometries (should)."
+      },
+      {
+       "name": "position continuity (no gaps)",
+       "expr": "|end(geometry[i]) - (geometry[i+1].x, geometry[i+1].y)| ~ 0",
+       "vars": "end = evaluated point at ds=length",
+       "notes": "Spec gives no tolerance; aim for < 1e-6..1e-3 m."
+      },
+      {
+       "name": "heading continuity (no kinks)",
+       "expr": "hdg_end(geometry[i]) == geometry[i+1].hdg (mod 2*pi)",
+       "vars": "",
+       "notes": "Recommended (should)."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.geometry.refline_exists",
+       "level": "shall",
+       "text": "Each road has a reference line.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.geometry.only_one_refline",
+       "level": "shall",
+       "text": "Only one reference line per road.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.geometry.elem_asc_order",
+       "level": "shall",
+       "text": "<geometry> elements are listed in ascending s order.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.geometry.one_geom_elem_per_spec",
+       "level": "shall",
+       "text": "A <geometry> contains exactly one shape element (line/spiral/arc/poly3/paramPoly3).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.geometry.contact_point",
+       "level": "shall",
+       "text": "For roads connected without a junction, the new road's reference line starts at the contactPoint of its predecessor/successor; directions may be opposite.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.geometry.refline_no_gaps",
+       "level": "shall",
+       "text": "No leaps/gaps in the reference line.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.geometry.refline_no_kinks",
+       "level": "should",
+       "text": "No kinks (heading jumps) in the reference line.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.geometry.s-value_sum",
+       "level": "shall",
+       "text": "Each geometry's s equals the sum of the lengths of all preceding geometries.",
+       "since": "1.9"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.length_sum_geometries",
+       "level": "should",
+       "text": "Road @length equals the sum of all geometry lengths.",
+       "since": "1.9"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Fitting an OSM polyline",
+       "how": "Fit a G1 (ideally G2) chain of line/arc/spiral or paramPoly3 segments; write s cumulatively from exact lengths; set road @length to the exact sum."
+      },
+      {
+       "case": "Connecting two roads without junction",
+       "how": "End point of road A (contactPoint end) must equal start/end point of road B with matching (or opposite, if directions reverse) heading."
+      }
+     ],
+     "right": [
+      "Accumulate s from the same double lengths you write (no independent rounding).",
+      "Choose reference-line direction freely (e.g. OSM way direction); lane sides follow from it.",
+      "Recompute start x,y,hdg of each geometry from the end of the previous one to avoid drift."
+     ],
+     "wrong": [
+      "Gaps between consecutive geometries or between connected roads.",
+      "Heading kinks at polyline vertices (raw polyline as chain of <line>s) - allowed only as 'should not'; causes lane-border spikes.",
+      "Two shape children in one <geometry>.",
+      "Zero/negative lengths."
+     ],
+     "changes_1_8_1_9": [
+      "1.9 adds rules s-value_sum (shall) and road.length_sum_geometries (should); 'leaps' renamed 'gaps'; rules gained ids; content otherwise unchanged (section 9.2)."
+     ],
+     "figures": [
+      "Figure 20: parts of a road - reference line, lanes, features (signals) placed along it.",
+      "Figure 21: UML RoadGeometry - planView 1..* geometry, each with one of line/spiral/arc/poly3/paramPoly3; also lateralProfile (superelevation/shape), elevationProfile, surface CRG."
+     ]
+    },
+    {
+     "id": "7.2",
+     "title": "Straight line",
+     "summary": "<line> has no attributes; the reference line goes straight from (x,y) along hdg for length.",
+     "concepts": [
+      "<line>",
+      "zero curvature"
+     ],
+     "elements": [
+      {
+       "name": "<line>",
+       "attributes": [],
+       "parent": "<geometry>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "line evaluation",
+       "expr": "x(ds) = x0 + ds*cos(hdg0) ; y(ds) = y0 + ds*sin(hdg0) ; hdg(ds) = hdg0 ; k = 0",
+       "vars": "x0,y0,hdg0 from <geometry>",
+       "notes": "Exact."
+      }
+     ],
+     "rules": [],
+     "use_cases": [],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 22: a straight line."
+     ]
+    },
+    {
+     "id": "7.3",
+     "title": "Spiral",
+     "summary": "<spiral> is a clothoid whose curvature changes linearly with arc length from curvStart to curvEnd over @length; used to transition between line and arc (or arcs of different curvature) without curvature jumps. Line/spiral/arc sequences can describe complex curvature profiles.",
+     "concepts": [
+      "clothoid",
+      "Euler spiral",
+      "linear curvature",
+      "curvature continuity (G2)",
+      "Fresnel integrals",
+      "odrSpiral reference"
+     ],
+     "elements": [
+      {
+       "name": "<spiral>",
+       "attributes": [
+        {
+         "name": "curvStart",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "Curvature at element start"
+        },
+        {
+         "name": "curvEnd",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "Curvature at element end"
+        }
+       ],
+       "parent": "<geometry>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "clothoid curvature",
+       "expr": "k(ds) = curvStart + (curvEnd - curvStart) * ds / length",
+       "vars": "ds in [0,length]",
+       "notes": "Defining property in the spec."
+      },
+      {
+       "name": "curvature rate",
+       "expr": "c' = (curvEnd - curvStart) / length",
+       "vars": "[1/m^2]",
+       "notes": "Clothoid parameter A = 1/sqrt(|c'|)."
+      },
+      {
+       "name": "spiral heading",
+       "expr": "hdg(ds) = hdg0 + curvStart*ds + 0.5*c'*ds^2",
+       "vars": "",
+       "notes": "Integral of curvature."
+      },
+      {
+       "name": "spiral position",
+       "expr": "x(ds) = x0 + integral_0^ds cos(hdg(tau)) dtau ; y(ds) = y0 + integral_0^ds sin(hdg(tau)) dtau",
+       "vars": "",
+       "notes": "Evaluate via Fresnel integrals or high-order numeric quadrature."
+      },
+      {
+       "name": "standard clothoid via Fresnel (odrSpiral)",
+       "expr": "standard clothoid with zero curvature at l=0: X(l) = A*sqrt(pi)*C(l/(A*sqrt(pi))), Y(l) = sign(c')*A*sqrt(pi)*S(l/(A*sqrt(pi))), theta(l) = c'*l^2/2",
+       "vars": "C,S Fresnel integrals C(z)=int_0^z cos(pi t^2/2)dt, S(z)=int_0^z sin(pi t^2/2)dt; A=1/sqrt(|c'|)",
+       "notes": "For curvStart != 0: shift along the standard clothoid to l0 = curvStart/c', compute points at l0 and l0+ds, transform the difference by rotation R(hdg0 - theta(l0)) and add (x0,y0). If c'==0 fall back to arc/line."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.9.0:road.geometry.spiral.curvature_change",
+       "level": "should",
+       "text": "curvStart and curvEnd differ (otherwise use line or arc).",
+       "since": "1.4 (id 1.9)"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Line-to-curve transition",
+       "how": "line (k=0) -> spiral (0 -> 1/R) -> arc (1/R) -> spiral (1/R -> 0) -> line, as in Ex_Line-Spiral-Arc.xodr."
+      }
+     ],
+     "right": [
+      "Use the ASAM odrSpiral approach (Fresnel) or adaptive quadrature; match tool behaviour.",
+      "Degenerate to arc/line when |curvEnd-curvStart| ~ 0."
+     ],
+     "wrong": [
+      "Approximating spirals with a few straight sub-segments when computing end pose -> drift and gaps to next geometry.",
+      "spiral with curvStart == curvEnd."
+     ],
+     "changes_1_8_1_9": [
+      "Rule received id road.geometry.spiral.curvature_change (1.9.0); content otherwise unchanged (9.4)."
+     ],
+     "figures": [
+      "Figure 23: road geometry described by a spiral (curvature changing linearly)."
+     ]
+    },
+    {
+     "id": "7.4",
+     "title": "Arc",
+     "summary": "<arc> has constant curvature over the element; positive curvature turns left.",
+     "concepts": [
+      "constant curvature",
+      "circular arc",
+      "radius = 1/|k|"
+     ],
+     "elements": [
+      {
+       "name": "<arc>",
+       "attributes": [
+        {
+         "name": "curvature",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "Constant curvature (positive = left)"
+        }
+       ],
+       "parent": "<geometry>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "arc heading",
+       "expr": "hdg(ds) = hdg0 + k*ds",
+       "vars": "k curvature",
+       "notes": ""
+      },
+      {
+       "name": "arc position",
+       "expr": "x(ds) = x0 + (sin(hdg0 + k*ds) - sin(hdg0)) / k ; y(ds) = y0 - (cos(hdg0 + k*ds) - cos(hdg0)) / k",
+       "vars": "k != 0",
+       "notes": "For |k*ds| tiny use series / line to avoid cancellation."
+      },
+      {
+       "name": "arc center",
+       "expr": "xc = x0 - sin(hdg0)/k ; yc = y0 + cos(hdg0)/k ; R = 1/|k|",
+       "vars": "",
+       "notes": "Center lies on the left for k>0."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.9.0:road.geometry.arc.no_zero_curvature",
+       "level": "should",
+       "text": "Arc curvature is not zero (use <line>).",
+       "since": "1.4 (id 1.9)"
+      }
+     ],
+     "use_cases": [],
+     "right": [
+      "Write a <line> when |k| is ~0."
+     ],
+     "wrong": [
+      "<arc curvature='0'/>."
+     ],
+     "changes_1_8_1_9": [
+      "Rule received id road.geometry.arc.no_zero_curvature (1.9.0)."
+     ],
+     "figures": [
+      "Figure 24: road geometry described by an arc."
+     ]
+    },
+    {
+     "id": "7.5",
+     "title": "Generating arbitrary road courses",
+     "summary": "Chaining line, spiral and arc yields arbitrary courses; spirals should join elements with different curvatures to avoid curvature jumps (which correspond to instantaneous steering wheel jumps).",
+     "concepts": [
+      "curvature profile",
+      "G2 continuity",
+      "steering-wheel analogy"
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use spirals to connect lines with arcs or arcs of different curvature (avoid curvature leaps).",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [],
+     "right": [
+      "Design curvature profiles that are piecewise linear in s (line/spiral/arc).",
+      "Example file Ex_Line-Spiral-Arc.xodr."
+     ],
+     "wrong": [
+      "Line directly followed by arc: heading continuous but curvature jumps (allowed, but unrealistic steering)."
+     ],
+     "changes_1_8_1_9": [],
+     "figures": [
+      "Figure 25: building a reference line from line, spiral, arc, spiral, arc with the curvature-over-s plot: flat (line), linear ramp (spiral), constant (arc) - steering-wheel icons show curvature = steering angle; lesson: curvature must ramp, not jump."
+     ]
+    },
+    {
+     "id": "7.6",
+     "title": "Cubic polynom (poly3, deprecated)",
+     "summary": "Deprecated since 1.6 (attributes deprecated 1.8). v(u) = a + b*u + c*u^2 + d*u^3 in a local u/v frame aligned with s/t at (x,y,hdg) when a=b=0; non-zero b rotates the start tangent by arctan(b), non-zero a shifts the frame origin along v so that (x,y) lies on the v axis. u runs from 0 to the projection of the end point onto the u axis (NOT arc length).",
+     "concepts": [
+      "poly3",
+      "deprecated",
+      "local u/v frame",
+      "u is not arc length",
+      "a=b=0 smooth"
+     ],
+     "elements": [
+      {
+       "name": "<poly3>",
+       "attributes": [
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Polynom parameter a (v offset)"
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1/m (effectively dimensionless)",
+         "required": true,
+         "meaning": "Polynom parameter b (start slope; arctan(b) = start angle in u/v)"
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m^2 (effectively 1/m)",
+         "required": true,
+         "meaning": "Polynom parameter c"
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^3 (effectively 1/m^2)",
+         "required": true,
+         "meaning": "Polynom parameter d"
+        }
+       ],
+       "parent": "<geometry>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "global cubic (background)",
+       "expr": "y(x) = a + b*x + c*x^2 + d*x^3",
+       "vars": "",
+       "notes": "Not usable for arbitrary orientations (Figure 27)."
+      },
+      {
+       "name": "local cubic",
+       "expr": "v(u) = a + b*u + c*u^2 + d*u^3",
+       "vars": "u in [0, u_end]; u_end = projection of end point on u axis",
+       "notes": ""
+      },
+      {
+       "name": "u/v to x/y (a=b=0, Figure 28)",
+       "expr": "beta = hdg + arctan(v(u)/u) ; x(u) = x0 + sqrt(u^2 + v(u)^2)*cos(beta) ; y(u) = y0 + sqrt(u^2 + v(u)^2)*sin(beta)",
+       "vars": "",
+       "notes": "Equivalent to x = x0 + u*cos(hdg) - v*sin(hdg), y = y0 + u*sin(hdg) + v*cos(hdg)."
+      },
+      {
+       "name": "u/v to x/y (common implementation, any a,b)",
+       "expr": "x = x0 + u*cos(hdg) - v(u)*sin(hdg) ; y = y0 + u*sin(hdg) + v(u)*cos(hdg)",
+       "vars": "",
+       "notes": "Used by most tools (esmini, libOpenDRIVE); with a!=0 the curve starts at (x0,y0)+a*N_left, i.e. NOT at (x,y) - conflicts with the spec rule that (x,y) lies on the v axis at u=0. Avoid by writing a=b=0."
+      },
+      {
+       "name": "poly3 heading / curvature",
+       "expr": "hdg(u) = hdg0 + atan(v'(u)) ; k(u) = v''/(1+v'^2)^(3/2)",
+       "vars": "v' = b+2cu+3du^2, v'' = 2c+6du",
+       "notes": "Standard plane-curve results."
+      },
+      {
+       "name": "poly3 arc length",
+       "expr": "length = integral_0^{u_end} sqrt(1 + v'(u)^2) du",
+       "vars": "",
+       "notes": "Must be solved numerically to map s->u."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "may",
+       "text": "Cubic polynoms may describe road courses derived from measurement data.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "If the u/v frame is aligned with s/t at the start point, then a=b=0.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "The start point (x,y) lies on the v axis of the u/v frame (u=0).",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "a and b are 0 for a smooth reference line.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Orient u/v so the curve is a function v(u) with increasing u.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [],
+     "right": [
+      "Readers: support poly3 for legacy files; writers: do not emit poly3, use paramPoly3."
+     ],
+     "wrong": [
+      "Using poly3 for curves that turn more than ~90 deg relative to u (v(u) not single-valued, Figure 27).",
+      "Treating u as s."
+     ],
+     "changes_1_8_1_9": [
+      "Deprecated since 1.6.0; 1.8.0 deprecates attributes a,b,c,d; section 9.7 in 1.9 still marked deprecated."
+     ],
+     "figures": [
+      "Figure 26: cubic polynom y(x) with a=20, b=0, c=0.0005, d=0.0001.",
+      "Figure 27: a curve not representable as y(x) - motivates local u/v.",
+      "Figure 28: u/v to x/y with a=b=0 (beta/sqrt formula); for every u only one v allowed.",
+      "Figure 29: u/v to x/y with a!=0 and b!=0 - frame shifted/rotated relative to start point."
+     ]
+    },
+    {
+     "id": "7.7",
+     "title": "Parametric cubic curve (paramPoly3)",
+     "summary": "u(p) and v(p) are independent cubics in a common parameter p, expressed in a local u/v frame, then rotated by hdg and translated to (x,y). p runs over [0,1] (pRange='normalized') or [0,length] (pRange='arcLength'). p is generally not arc length, even with arcLength; only endpoints coincide. Writers should align u/v with s/t: aU=aV=bV=0, bU>0.",
+     "concepts": [
+      "paramPoly3",
+      "parameter p",
+      "pRange arcLength vs normalized",
+      "u/v aligned with s/t",
+      "numerical arc length",
+      "measurement-data fitting",
+      "cubic Bezier/Hermite equivalent"
+     ],
+     "elements": [
+      {
+       "name": "<paramPoly3>",
+       "attributes": [
+        {
+         "name": "aU",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "u(p) constant term"
+        },
+        {
+         "name": "bU",
+         "type": "double",
+         "unit": "1/m in 1.7 (1 in 1.9; for arcLength dimensionless)",
+         "required": true,
+         "meaning": "u(p) linear term"
+        },
+        {
+         "name": "cU",
+         "type": "double",
+         "unit": "1/m^2 in 1.7 (1/m in 1.9)",
+         "required": true,
+         "meaning": "u(p) quadratic term"
+        },
+        {
+         "name": "dU",
+         "type": "double",
+         "unit": "1/m^3 in 1.7 (1/m^2 in 1.9)",
+         "required": true,
+         "meaning": "u(p) cubic term"
+        },
+        {
+         "name": "aV",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "v(p) constant term"
+        },
+        {
+         "name": "bV",
+         "type": "double",
+         "unit": "1/m in 1.7 (1 in 1.9)",
+         "required": true,
+         "meaning": "v(p) linear term"
+        },
+        {
+         "name": "cV",
+         "type": "double",
+         "unit": "1/m^2 in 1.7 (1/m in 1.9)",
+         "required": true,
+         "meaning": "v(p) quadratic term"
+        },
+        {
+         "name": "dV",
+         "type": "double",
+         "unit": "1/m^3 in 1.7 (1/m^2 in 1.9)",
+         "required": true,
+         "meaning": "v(p) cubic term"
+        },
+        {
+         "name": "pRange",
+         "type": "e_paramPoly3_pRange",
+         "unit": "-",
+         "required": true,
+         "meaning": "arcLength: p in [0,@length]; normalized: p in [0,1] (coefficients then unitless/in m). Required in 1.9 table; older readers commonly default to normalized"
+        }
+       ],
+       "parent": "<geometry>"
+      }
+     ],
+     "formulas": [
+      {
+       "name": "u polynomial",
+       "expr": "u(p) = aU + bU*p + cU*p^2 + dU*p^3",
+       "vars": "",
+       "notes": ""
+      },
+      {
+       "name": "v polynomial",
+       "expr": "v(p) = aV + bV*p + cV*p^2 + dV*p^3",
+       "vars": "",
+       "notes": ""
+      },
+      {
+       "name": "p from ds",
+       "expr": "arcLength: p = ds (approximation; exact only at p=0 and p=length) ; normalized: p = ds/length (approximation)",
+       "vars": "ds = s - geometry.s",
+       "notes": "Exact mapping requires inverting the arc-length integral; most tools use the linear map. Writers should parametrize near-arc-length (|u'|^2+|v'|^2 ~ const) so the approximation is good."
+      },
+      {
+       "name": "u/v to x/y (aligned frame, standard implementation)",
+       "expr": "x(p) = x0 + u(p)*cos(hdg) - v(p)*sin(hdg) ; y(p) = y0 + u(p)*sin(hdg) + v(p)*cos(hdg)",
+       "vars": "x0,y0,hdg from <geometry>",
+       "notes": "With aU=aV=0 the curve starts at (x0,y0). Figure 29/32 show the u/v frame origin offset by (aU,aV) from the start point when they are non-zero; tools differ - avoid by writing aU=aV=0."
+      },
+      {
+       "name": "tangent heading",
+       "expr": "hdg(p) = hdg0 + atan2(v'(p), u'(p))",
+       "vars": "u' = bU + 2cU p + 3dU p^2 ; v' = bV + 2cV p + 3dV p^2",
+       "notes": "At p=0: hdg0 + atan2(bV,bU) (Figure 29: arctan(bV/bU)); hence bV=0, bU>0 makes the start tangent equal hdg."
+      },
+      {
+       "name": "curvature",
+       "expr": "k(p) = (u'*v'' - v'*u'') / (u'^2 + v'^2)^(3/2)",
+       "vars": "u'' = 2cU + 6dU p ; v'' = 2cV + 6dV p",
+       "notes": "Standard parametric curvature."
+      },
+      {
+       "name": "arc length / length_match",
+       "expr": "L = integral_0^{p_end} sqrt(u'(p)^2 + v'(p)^2) dp  (should equal @length)",
+       "vars": "p_end = 1 (normalized) or @length (arcLength)",
+       "notes": "Use Gauss-Legendre/adaptive Simpson; rule length_match."
+      },
+      {
+       "name": "Hermite fit (writer)",
+       "expr": "given start (0,0) dir (1,0) and end (uE,vE) heading phiE in local frame, normalized: aU=aV=0, bU=L0, bV=0, cU=3uE-2bU-L1*cos(phiE), dU=bU+L1*cos(phiE)-2uE, cV=3vE-L1*sin(phiE), dV=L1*sin(phiE)-2vE",
+       "vars": "L0,L1 tangent magnitudes (~chord length)",
+       "notes": "Standard cubic Hermite; derived, not from spec. To convert to pRange=arcLength with p=ds: divide b by L, c by L^2, d by L^3 (L=@length); choose L0=L1~L so bU~1."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.geometry.paramPoly3.valid_parameters",
+       "level": "should",
+       "text": "Align u/v with s/t at the start: aU=aV=bV=0 and bU>0 (curve starts at (x,y) in direction hdg).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.geometry.paramPoly3.arcLength_range",
+       "level": "shall",
+       "text": "With pRange='arcLength', p lies in [0, @length].",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.geometry.paramPoly3.normalized_range",
+       "level": "shall",
+       "text": "With pRange='normalized', p lies in [0, 1].",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.geometry.paramPoly3.length_match",
+       "level": "should",
+       "text": "The numerically integrated curve length over the p range matches @length.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Fitting OSM polylines smoothly",
+       "how": "Fit G1 cubic Hermite segments between (smoothed) vertices in each segment's local frame; write pRange='arcLength' with near-arc-length parametrization; compute @length by quadrature; set next geometry's x,y,hdg from evaluated end."
+      },
+      {
+       "case": "Reading third-party files",
+       "how": "Support both pRange values and nonzero aU/aV/bV; map ds->p linearly (or invert arc length for precision)."
+      }
+     ],
+     "right": [
+      "aU=aV=bV=0, bU>0 (bU=1 for arcLength).",
+      "@length from numerical integration, not chord length.",
+      "Prefer pRange='arcLength' with |(u',v')| ~ 1 so p ~ ds."
+     ],
+     "wrong": [
+      "@length = chord length (violates length_match; s drifts along lanes).",
+      "bV != 0 without adjusting hdg -> start tangent differs from hdg -> kink.",
+      "Omitting pRange (1.9 marks it required; tools disagree on default).",
+      "Assuming p equals s exactly for normalized curves."
+     ],
+     "changes_1_8_1_9": [
+      "1.9 (9.6) corrects coefficient units: bU/bV unit '1', cU/cV '1/m', dU/dV '1/m^2' (1.7 table had 1/m, 1/m^2, 1/m^3); notes normalized coefficients are unitless; pRange listed as required, no default.",
+      "Rules unchanged (1.7.0 ids)."
+     ],
+     "figures": [
+      "Figure 30: u(p) interpolation.",
+      "Figure 31: v(p) interpolation.",
+      "Figure 32: complete curve: u axis at angle hdg, frame origin offset by aU/aV from the start point, start tangent at hdg + arctan(bV/bU) - lesson: zero aU/aV/bV to make the curve start exactly at (x,y) along hdg."
+     ]
+    }
+   ]
+  }
+ ]
+}

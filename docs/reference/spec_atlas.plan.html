@@ -1,0 +1,66 @@
+<div class="phase">
+  <h2>Frozen plan</h2>
+  <p class="why">Built on the complete study: ASAM OpenDRIVE 1.7.0 (full text, 123 figures), 1.9.0 (94 pages, 184 figures, Annex D and F), 1.8.0 (archived text) and the ASAM Junction Guideline 1.0.0 (16 pages, 71 figures). Every step below is implemented, tested and gated before the next starts.</p>
+</div>
+
+<div class="phase">
+  <h2>0. Foundations</h2>
+  <ol>
+    <li><strong>Two output profiles.</strong> <em>carla</em>: OpenDRIVE 1.4 vocabulary (what LibCarla reads). <em>standard</em>: OpenDRIVE 1.8 / 1.9 full model. One internal model; each feature declares how it is written per profile, and a 1.8-only feature has a documented 1.4 substitute (e.g. walking → sidewalk, direct junction with overlapZone → common junction, crossPath → crosswalk object). <span class="spec">Spec ch. 5 Backward compatibility; Junction Guideline 1.7 mapping</span></li>
+    <li><strong>Spec references in the code.</strong> Every function that implements OpenDRIVE behaviour states its source in one line: version, chapter and section, rule id and backward compatibility, e.g. <code>// OpenDRIVE 1.9 §11.6 lane linkage, road.lane.link.zero_width_at_start (1.7.0); carla profile: same</code>. A rule catalogue (generated from this atlas) maps each rule id to the function that implements it and the check that verifies it.</li>
+    <li><strong>Clean code.</strong> Small functions named after what they do, one responsibility each, readable without comments; the spec reference line is the comment that matters.</li>
+    <li><strong>The gate is the standard.</strong> Annex F checker rules that apply to generated maps plus Annex D smoothness (position, heading, height and roll continuous wherever drivable lanes meet) become exact checks; both profiles must pass XSD (1.4 / 1.8.1), CARLA and esmini on the six reference areas, with zero violations.</li>
+  </ol>
+</div>
+
+<div class="phase">
+  <h2>1. Junctions by the Junction Guideline</h2>
+  <p class="why">The structure (own id, incoming roads, connecting roads, lane links) is right today; placement, extent, type and contents are not.</p>
+  <ol>
+    <li><strong>Outline and arm cuts.</strong> One common junction per real intersection (multi-arm built as one, never chained T and X junctions), as small as possible and as big as necessary: each arm is cut where its curb return starts, before any crosswalk; arms keep junction = -1; junctions never overlap. <span class="spec">Guideline §6; 1.9 §12.2, junctions.no_overlap, not_only_two</span></li>
+    <li><strong>Connecting roads per permitted relation.</strong> One per lane movement from turn:lanes (natural flow when untagged), from arm end to arm end with matching heading, reference line in driving direction, contactPoint at the connecting road end; lane links only on connecting-road lanes; every incoming drivable lane linked, every outgoing lane fed; outgoing-only one-way arms are not incoming roads. <span class="spec">1.9 §12.3, 12.4; Guideline §6</span></li>
+    <li><strong>Curbs and sidewalks through the junction.</strong> Arms carry driving, curb (~0.15 m) and walking lanes; the connecting roads that run along the outline carry the curb and walking lanes round the corner (replacing the separate curb-return roads), with laneOffset and an outward-shifted reference line on wide turns so no inner edge gets a negative radius. Lowered curbs at crosswalks by lane height. <span class="spec">Guideline §6; 1.9 §11.8 lane height</span></li>
+    <li><strong>Crosswalks.</strong> Inside a junction: a road of the junction with one walking lane and a crossPath (standard); a crosswalk object (carla). Mid-block: virtual junction on the uncut road plus crossPath (standard); crosswalk object (carla). <span class="spec">1.9 §12.5, 12.7; Guideline §10</span></li>
+    <li><strong>Motorway entries and exits.</strong> Direct junction, one cut: non-overlapping entry cut at the gore (onRamp / entry lanes); overlapping exit cut where the exit begins, exit lane then offRamp in a new lane section, overlapZone on the one overlapping pair (standard); common junction with the same lane mapping (carla). Common junction whenever traffic crosses or more than one lane overlaps. <span class="spec">1.9 §12.6; Guideline §7</span></li>
+    <li><strong>Slip lanes.</strong> Their own one-way roads (slipLane / driving) between direct junctions at every diverge and merge; the central crossing is the only common junction; slip relations not repeated inside it. <span class="spec">Guideline §8</span></li>
+    <li><strong>Roundabouts</strong> as one junction per arm with the ring as roads, in a junction group of type roundabout; <strong>level crossings</strong> as crossing junctions (standard); <strong>driveways</strong> as virtual junctions (standard), common junctions (carla). <span class="spec">1.9 §12.7, 12.8, 12.13</span></li>
+    <li><strong>Junction surface</strong> (standard): junction reference line, counter-clockwise boundary of lane / joint segments, elevation grid from the terrain with transition lengths. <span class="spec">1.9 §12.9 – 12.11</span></li>
+  </ol>
+  <div class="gate">Done when the junction audit is zero on all six areas in both profiles: no two-road junction, no overlapping junctions, no incoming lane without a path, no unfed outgoing lane, no crossing movements within an approach, curbs and sidewalks continuous round every corner.</div>
+</div>
+
+<div class="phase">
+  <h2>2. Lanes to the letter</h2>
+  <ol>
+    <li>A lane section wherever lane count or type changes; lanes matched across sections by position (ids renumber when a lane appears inside); zero width at a start or end means no predecessor / successor; an appearing lane is not linked to the original; a lane splitting into a turn pocket gets two successors. <span class="spec">1.9 §11.4, 11.6; 1.7 fig. 52, 56, 58, 60, 61</span></li>
+    <li>Lane vocabulary per profile: curb, walking / sidewalk, restricted islands, @direction / bidirectional, access restrictions for bus and bike lanes, exit / entry / onRamp / offRamp. <span class="spec">1.9 §11.8, 11.10</span></li>
+    <li>Road marks on each lane's outer edge, per country, laneChange explicit on solid lines, new-lane marks changing within the section as the lane opens. <span class="spec">1.9 §11.9; 1.7 fig. 64, 65</span></li>
+    <li>Rework of the cross-section package (separate sidewalks, verges, fold-safe edges) on this model before it is committed.</li>
+  </ol>
+</div>
+
+<div class="phase">
+  <h2>3. Road geometry and height</h2>
+  <ol>
+    <li>Annex D smoothness at every link, section boundary and connecting road (position, heading, height, roll; pitch recommended). <span class="spec">1.9 Annex D</span></li>
+    <li>Superelevation, shape and cross-section surface never combined; reference frame never pitched; s and lengths plan-view. <span class="spec">1.9 §8.3, §10.5</span></li>
+  </ol>
+</div>
+
+<div class="phase">
+  <h2>4. Signals and objects</h2>
+  <ol>
+    <li>Standard profile: lights at their physical position, stop lines as roadMark / signalLines objects with lane validity, light → stop line references, stop line → light dependencies, one controller per signal group listed by the junction, priority signs on incoming roads. Carla profile: signal at the stop line on the incoming road (1.7 placement) with signalReference on connecting roads. <span class="spec">1.9 §14; Guideline §9</span></li>
+    <li>Objects: outlines with straight edges (enough corners on curves), length along the road, markings inside outlines, continuous repeats for barriers; objects on banked roads with zOffset including the bank. Header license for ODbL attribution (standard). <span class="spec">1.9 §13</span></li>
+  </ol>
+</div>
+
+<div class="phase">
+  <h2>5. Pedestrian and cycle network</h2>
+  <ol><li>Pedestrian streets, footways, paths, steps and cycleways as walking / biking roads linked to the street sidewalks; delivery access where tagged; optional.</li></ol>
+</div>
+
+<div class="phase">
+  <h2>6. Speed</h2>
+  <ol><li>Per-stage timing, then parallel per-road and per-junction stages with output byte-identical to the single-threaded run.</li></ol>
+</div>

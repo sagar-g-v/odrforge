@@ -1,0 +1,938 @@
+[
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig077.png",
+  "viewed": true,
+  "figure": "Figure 77",
+  "chapter": "10. Junctions",
+  "section": "10.1 Common junctions",
+  "caption": "Figure 77. Types of roads in a junction (right-hand traffic)",
+  "shows": "Five-arm junction inside a dashed pentagon 'junction area'. Blue arrows are road reference lines; red curves are connecting roads. NW arm: two-way road (lanes -1 / 1), reference line points INTO the junction (road ends there) - labelled incoming road. NE arm: one-way road with lanes -2,-1 on the right of a reference line pointing into the junction - incoming road (one-way). W arm: two-way (-1/1), reference line points AWAY (road starts at junction) - still an incoming road. S arm: two-way (1/-1), reference line points into junction - incoming road. E arm: one-way road with lanes 1,2 (yellow, left side), reference line pointing east away from junction, labelled 'Not an incoming road (one-way street)'. Connecting roads fan out from every incoming arm to the reachable arms; none start on the E arm. Note: as drawn, left lanes 1,2 in RHT would carry traffic toward the junction; the label (outgoing-only one-way) is the intended meaning, so the lane colouring looks inconsistent.",
+  "lesson": "A road is 'incoming' when it has at least one lane that leads INTO the junction, independent of whether its reference line starts or ends at the junction. Outgoing roads have no element of their own; they are only implied as successors of connecting roads. A one-way road whose traffic only leaves the junction must never be an @incomingRoad.",
+  "right": [
+   "Decide incomingRoad per arm from lane travel direction (RHT: right lanes travel along s, left lanes against s; LHT reversed)",
+   "Reference lines of arms may point into or out of the junction - handle both via contactPoint start/end",
+   "Exit-only one-way arms appear only as successor/predecessor of connecting roads",
+   "Keep all connecting roads within one junction area polygon"
+  ],
+  "wrong": [
+   "Listing an exit-only one-way road as incomingRoad of a connection",
+   "Assuming the reference line must point into the junction",
+   "Creating connecting roads that start on an outgoing-only arm"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig078.png",
+  "viewed": true,
+  "figure": "Figure 78",
+  "chapter": "10. Junctions",
+  "section": "10.1 Common junctions (UML)",
+  "caption": "Figure 78. UML model for junctions",
+  "shows": "UML of t_junction (id, mainRoad[0..1], name[0..1], orientation[0..1], sEnd[0..1], sStart[0..1], type e_junction_type[0..1]). Children: connection 1..* (t_junction_connection: connectingRoad[0..1], contactPoint[0..1], id, incomingRoad[0..1], linkedRoad[0..1], type e_connection_type[0..1]) which has predecessor 0..1 / successor 0..1 (t_junction_predecessorSuccessor: elementDir, elementId, elementS, elementType='road') and laneLink 0..* (from:int, to:int); priority 0..* (high, low); controller 0..* (id, sequence[0..1], type[0..1]); surface 0..1 with CRG 0..* (file, mode=global, purpose[0..1], zOffset[0..1], zScale[0..1]).",
+  "lesson": "A junction needs at least one connection. mainRoad/sStart/sEnd/orientation are only for virtual junctions; linkedRoad only for direct junctions; predecessor/successor inside connection only for virtual connections. laneLink is optional in schema but omitting it is deprecated.",
+  "right": [
+   "Emit >=1 <connection> per junction, each with a junction-unique id",
+   "Always emit <laneLink from= to=> for every connection (from = incoming lane id, to = connecting/linked lane id)",
+   "Write type=\"default\" (or omit) for common junctions; 'direct'/'virtual' explicitly",
+   "Use junction <controller> to list signal controllers used at the junction"
+  ],
+  "wrong": [
+   "Writing mainRoad/sStart/sEnd on a default or direct junction",
+   "Writing linkedRoad on a default/virtual junction, or connectingRoad on a direct junction",
+   "Junction surface CRG mode other than 'global' (only enum value)"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig079.png",
+  "viewed": true,
+  "figure": "Figure 79",
+  "chapter": "10. Junctions",
+  "section": "10.3 Connecting roads",
+  "caption": "Figure 79. Connecting roads of junction with id 1 (left hand traffic)",
+  "shows": "Four-arm signalised X junction in LEFT-hand traffic with 3 lanes per direction. Road 1 (east arm, reference line from the centre pointing east, starts at junction), road 2 (west arm, starts at junction, points west), road 3 (north arm, points south into junction, ends there), road 4 (south arm, starts at junction, points south). Each arm has lanes 1,2,3 on one side and -1,-2,-3 on the other, stop lines and turn arrows, one traffic light per approach. Only the movements from road 4 (northbound lanes -1,-2,-3, which in LHT drive against s) are labelled: connecting road 28 (lane -3 turns left to road 2), road 61 (lanes -2 and -3 go straight to road 3), road 64 (lane -1 turns right across traffic to road 1). Spec tables: connections 9/10/11 all contactPoint=start; laneLinks 4:-3->28:1, 4:-2->61:1, 4:-3->61:2, 4:-1->64:1. Road 28 pred road 4 (start) succ road 2 (start); road 61 pred road 4 (start) succ road 3 (end); road 64 pred road 4 (start) succ road 1 (start). Lane links: 28:1 pred -3 succ 3; 61:1 pred -2 succ -2; 61:2 pred -3 succ -3; 64:1 pred -1 succ 1. Incoming roads carry no lane links to junction lanes.",
+  "lesson": "Model one connecting road per path (or one road with several lanes for parallel movements); every connecting road has exactly one <connection>. contactPoint names the END OF THE CONNECTING ROAD that touches the incoming road. The connecting road's lanes carry predecessor/successor lane ids on both outer roads; the incoming/outgoing roads themselves get no lane-level links into the junction (only road link to the junction). In LHT the connecting road uses positive (left) lanes when its reference line runs in driving direction.",
+  "right": [
+   "One <connection> per connecting road; contactPoint=start when the connecting road's s=0 touches the incoming road",
+   "Put lane predecessor/successor on connecting-road lanes for both ends",
+   "Use a multi-lane connecting road (e.g. road 61 with lanes 1,2) for parallel straight movements so lane changes are allowed",
+   "Orient connecting-road reference lines in driving direction; choose lane side by traffic rule (RHT -> negative lanes, LHT -> positive lanes)",
+   "Arms link to the junction with elementType=junction (predecessor or successor depending on which end touches)"
+  ],
+  "wrong": [
+   "Linking incoming-road lanes directly to connecting-road lanes in the incoming road's <lane><link> (ambiguous: one end feeds many connecting roads)",
+   "Using contactPoint to describe the incoming road's end instead of the connecting road's end",
+   "Two <connection> elements referencing the same connecting road (except virtual/bidirectional special cases)"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig080.png",
+  "viewed": true,
+  "figure": "Figure 80",
+  "chapter": "10. Junctions",
+  "section": "10.4 Direct junctions",
+  "caption": "Figure 80. Direct junctions",
+  "shows": "Road 1 (lanes 1, -1..-4) ends at a vertical black cut line. After the cut, road 2 (lanes 1, -1..-3) continues straight and road 3 (single lane -1) bends away to the lower right, continuing lane -4 of road 1. All reference lines point to the right; road 3's reference line starts at the outer edge of road 2's lane -3 at the cut. No lane overlaps. Spec XML: junction 111 type=direct; connection 0 incomingRoad=1 linkedRoad=3 contactPoint=start laneLink -4->-1; connection 1 incomingRoad=1 linkedRoad=2 contactPoint=start laneLinks 1->1, -1->-1, -2->-2, -3->-3. Roads 2 and 3 have predecessor elementType=junction 111; road 1 has successor junction 111.",
+  "lesson": "A diverge (or merge) where the lanes split cleanly without overlap is a direct junction: no connecting roads, the outer roads are linked through linkedRoad + laneLink, and all three roads reference the junction in their road link. The cut must sit where the headings of main road and ramp are identical.",
+  "right": [
+   "Use type=\"direct\" with linkedRoad (not connectingRoad) for clean OSM diverges/merges",
+   "Place the cut where ramp and main road share heading and the ramp's lanes are still adjacent (gore start)",
+   "Give each linked road its own <connection> listing all lane pairs",
+   "Linked lanes must join with C0/G1 continuity like normal road linkage"
+  ],
+  "wrong": [
+   "Inserting a connecting road for a simple split",
+   "Placing the direct junction where ramp heading already differs",
+   "Using connectingRoad attribute in a direct junction"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig081.png",
+  "viewed": true,
+  "figure": "Figure 81",
+  "chapter": "10. Junctions",
+  "section": "10.4 Direct junctions",
+  "caption": "Figure 81. Cases when direct junctions cannot be modeled",
+  "shows": "Same layout as Figure 80, but road 3 now has lanes -1 and -2 and its reference line starts at the boundary between road 2 lanes -2 and -3. Road 3 lane -1 lies on top of road 2 lane -3 for a stretch after the cut; the overlap area is shaded brown, marked 'overlap in lanes' and crossed with a red X.",
+  "lesson": "In OpenDRIVE 1.7 a direct junction is forbidden as soon as any lane of one linked road overlaps a lane of another linked road. Such splits must become a common (default) junction with connecting roads (OpenDRIVE 1.8 relaxes this to one overlapping lane with overlapZone, which is not available in 1.7).",
+  "right": [
+   "Detect geometric lane overlap after the split; if any, emit a default junction",
+   "Move the direct-junction cut downstream to the true gore where lanes separate, if that removes the overlap"
+  ],
+  "wrong": [
+   "Emitting type=direct with overlapping linked lanes (1.7 violation)",
+   "Using @overlapZone in a 1.7 file (1.8-only attribute)"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig082.png",
+  "viewed": true,
+  "figure": "Figure 82",
+  "chapter": "10. Junctions",
+  "section": "10.5 Virtual junctions",
+  "caption": "Figure 82. Example of a virtual junction showing a parking lot entry and exit",
+  "shows": "Main road 1 (lanes 2,1 | -1,-2,-3; reference line pointing right) is NOT cut. Virtual junction spans s=50 m to s=70 m on road 1. Side road 99 (lanes 2,1,-1,-2) meets from below, its reference line pointing up toward road 1. Connecting road 2 leaves road 1 lane -2 at s=50 and curves down into road 99 lane 1 (exit into the parking lot). Connecting roads 4 and 5 start at road 99 lane -1 and curve right/up to join road 1 lanes -1 and -2 respectively at s=70. Spec XML: junction 555 type=virtual mainRoad=1 sStart=50 sEnd=70 orientation=+; road 2 predecessor elementType=road elementId=1 elementS=50 elementDir=+, successor road 99 contactPoint=end; roads 4/5 predecessor road 99 end, successor road 1 elementS=70 elementDir=+. Connections: incoming 1 -> 2 (laneLink -2->-1), incoming 99 -> 4 (-1->-1), incoming 99 -> 5 (-1->-1).",
+  "lesson": "Driveways, parking-lot and farm-road accesses that branch off a road which continues unchanged should be virtual junctions: the main road keeps its geometry, the connecting roads attach to it at sStart/sEnd using elementS/elementDir in their road links. All connecting roads start or end exactly at sStart or sEnd, and their heading equals the main road heading there.",
+  "right": [
+   "Use type=virtual + mainRoad + sStart + sEnd + orientation for OSM service=driveway/parking_aisle accesses on a through road",
+   "Connecting roads link to the main road with elementType=road, elementS, elementDir (no contactPoint)",
+   "Keep the main road junction=-1 and uninterrupted",
+   "Match heading of connecting road and main road at sStart/sEnd"
+  ],
+  "wrong": [
+   "Cutting the main road at every driveway (creates needless road splits)",
+   "Virtual junction with controllers / traffic lights",
+   "Using virtual junction for a real crossroads of multiple streets",
+   "Connecting roads attaching at s values other than sStart/sEnd"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig083.png",
+  "viewed": true,
+  "figure": "Figure 83",
+  "chapter": "10. Junctions",
+  "section": "10.5.1 Virtual connections",
+  "caption": "Figure 83. Virtual junction with virtual connections",
+  "shows": "Same parking-lot layout, virtual junction now spans s=60 to s=70. Besides connecting roads 2, 4, 5, three dashed blue 'virtual connections' are drawn without geometry: from road 99 lane -1 to road 1 lanes 1 and 2 at s=60 (left turns across the main road, elementDir='-'), and from road 1 lane 1 at s=70 into road 99 lane 1. XML: connection type=virtual with <predecessor elementType=road elementId=99 contactPoint=end/> <successor elementType=road elementId=1 elementS=60 elementDir=-/> laneLink -1->1 (and -1->2); and predecessor road 1 elementS=70 elementDir=- successor road 99 end, laneLink 1->1.",
+  "lesson": "Virtual connections give topology only (who may reach whom) with no connecting road and no geometry; they live only inside virtual junctions and use predecessor/successor children inside <connection>.",
+  "right": [
+   "Use type=virtual connections only for topological links (e.g. left turns into a driveway) where no drivable geometry is wanted",
+   "elementDir gives the travel direction on the main road at elementS"
+  ],
+  "wrong": [
+   "Replacing real geometric connecting roads with virtual connections",
+   "Virtual connections inside default or direct junctions"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig084.png",
+  "viewed": true,
+  "figure": "Figure 84",
+  "chapter": "10. Junctions",
+  "section": "10.7 Junction groups",
+  "caption": "Figure 84. Junction group with three junctions",
+  "shows": "Roundabout: blue circular ring reference line, three arms (W, E, S). At each arm a separate junction (Junction 1 west, Junction 2 east, Junction 3 south, red dashed rectangles) contains the entry and exit connecting roads between the arm and the ring. The ring segments between the junctions are ordinary roads. A large dashed rectangle 'Junction Group A' encloses all three junctions.",
+  "lesson": "Model a roundabout as a ring of normal roads plus one small common junction per arm, and group those junctions in a <junctionGroup type=roundabout> with <junctionReference> entries.",
+  "right": [
+   "One junction per roundabout arm; ring between arms = plain roads",
+   "Emit <junctionGroup type=\"roundabout\"> referencing every arm junction (OSM junction=roundabout ways)"
+  ],
+  "wrong": [
+   "One giant junction for the whole roundabout",
+   "Junctions of the group overlapping each other"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig085.png",
+  "viewed": true,
+  "figure": "Figure 85",
+  "chapter": "10. Junctions",
+  "section": "10.7 Junction groups (UML)",
+  "caption": "Figure 85. UML model for junction group",
+  "shows": "UML: t_junctionGroup (id, name[0..1], type e_junctionGroup_type) with junctionReference 1..* (junction: string). e_junctionGroup_type = roundabout | unknown.",
+  "lesson": "A junctionGroup must reference at least one junction and needs a type.",
+  "right": [
+   "Always write type (roundabout or unknown) and >=1 junctionReference"
+  ],
+  "wrong": [
+   "Empty junctionGroup",
+   "Referencing non-existent junction ids"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig086.png",
+  "viewed": true,
+  "figure": "Figure 86",
+  "chapter": "10. Junctions",
+  "section": "10.7.1 Controllers for junctions",
+  "caption": "Figure 86. X-Junction with four traffic lights and two controllers",
+  "shows": "X junction (RHT) with a traffic light at each of the four corners, each just before its approach's stop line. Controller id=1 points to the NW light (serving southbound traffic, seen from behind) and the SE light (serving northbound, shown green): the opposing N/S approaches. Controller id=2 points to the NE and SW lights (E/W approaches), both shown red.",
+  "lesson": "Signals that always show the same state (opposing approaches of one phase) belong to one controller; the junction lists its controllers (with optional sequence priority) so an OpenSCENARIO tool can switch phases.",
+  "right": [
+   "Group opposing approaches' lights into one <controller> with one <control signalId=..> per light",
+   "Reference each controller from <junction><controller id= sequence=>"
+  ],
+  "wrong": [
+   "One controller per light (loses phase coupling)",
+   "Putting conflicting approaches in the same controller"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig087.png",
+  "viewed": true,
+  "figure": "Figure 87",
+  "chapter": "10. Junctions",
+  "section": "10.7.1 Controllers for junctions (UML)",
+  "caption": "Figure 87. UML model for controller",
+  "shows": "UML: t_controller (id, name[0..1], sequence nonNegativeInteger[0..1]) with control 1..* (signalId: string, type: string[0..1]).",
+  "lesson": "A top-level controller must control at least one signal.",
+  "right": [
+   "Emit <controller> under <OpenDRIVE> with >=1 <control signalId>"
+  ],
+  "wrong": [
+   "Controller without control children",
+   "signalId pointing to a non-dynamic or missing signal"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig088.png",
+  "viewed": true,
+  "figure": "Figure 88",
+  "chapter": "11. Objects",
+  "section": "11 Objects",
+  "caption": "Figure 88. A circular and angular object",
+  "shows": "Road with reference line along the top (s right, t up), lanes -1,-2,-3 below. A circular object (centre M) at (s1, t1) beside lane -3 with radius r. An angular (rectangular) object at (s2, t2) inside lane -3, with its local u axis along s and v axis along t; 'length' is drawn along u and 'width' along v. t is measured from the reference line (negative to the right).",
+  "lesson": "Objects are placed by (s, t, zOffset) of their origin (centre of bounding box) in road coordinates; shape is either radius (circular) or length+width (angular), plus height. Figure draws length along u, but the 1.7 attribute table says length is along v and width along u - an internal inconsistency to be aware of.",
+  "right": [
+   "Place object origin at bounding-box centre via s/t",
+   "Use radius XOR length/width, never both",
+   "Use hdg relative to road direction for rotated rectangles"
+  ],
+  "wrong": [
+   "Giving both radius and length/width",
+   "Placing by corner instead of centre"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig089.png",
+  "viewed": true,
+  "figure": "Figure 89",
+  "chapter": "11. Objects",
+  "section": "11 Objects (UML)",
+  "caption": "Figure 89. UML model for objects",
+  "shows": "UML of t_road_objects with children object 0..*, objectReference 0..*, tunnel 0..*, bridge 0..*. t_road_objects_object attributes: dynamic, hdg, height, id, length, name, orientation, perpToRoad, pitch, radius, roll, s, subtype, t, type, validLength, width, zOffset; children repeat 0..*, material 0..*, validity 0..*, parkingSpace 0..1, markings 0..1 (marking 1..*, cornerReference 2..*), borders 0..1 (border 1..*: outlineId, type, useCompleteOutline, width), outline 0..1 (legacy) and outlines 0..1 (outline 1..*: closed, fillType, id, laneType, outer) each with cornerRoad 0..* (dz, height, id, s, t) or cornerLocal 0..* (height, id, u, v, z), surface 0..1 (CRG: file, hideRoadSurfaceCRG, zScale).",
+  "lesson": "Structure reference for writing objects: outlines wrap outline; cornerRoad and cornerLocal are alternatives; markings reference outline corner ids.",
+  "right": [
+   "Write s, t, zOffset, id, type on every object",
+   "Use <outlines><outline id=..> (not the legacy single <outline>) for new files"
+  ],
+  "wrong": [
+   "Mixing cornerRoad and cornerLocal in one outline",
+   "Omitting required s/t/zOffset"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig090.png",
+  "viewed": true,
+  "figure": "Figure 90",
+  "chapter": "11. Objects",
+  "section": "11 Objects",
+  "caption": "Figure 90. Placing objects on roads",
+  "shows": "Side view (z vs s): a blue road elevation profile that is flat then rises steeply. A long grey flat object is placed at an insertion point on the curve; it cuts into the rising road surface on one end and floats above it at the other.",
+  "lesson": "Objects are rigid and do not follow elevation/superelevation; on roads with elevation or lateral profiles they must be small enough not to intersect or float noticeably. Long objects must be split or made repeated (repeat follows the road).",
+  "right": [
+   "Use <repeat> (continuous, distance=0) for long linear features like guard rails, walls",
+   "Keep single objects short on graded roads; set perpToRoad only for objects smaller than the elevation curvature radius"
+  ],
+  "wrong": [
+   "Placing one long rigid object along a hill",
+   "Ignoring zOffset relative to the reference line elevation"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig091.png",
+  "viewed": true,
+  "figure": "Figure 91",
+  "chapter": "11. Objects",
+  "section": "11.1 Repeating objects",
+  "caption": "Figure 91. One larger angular repeated object",
+  "shows": "Top view: a curved road (lanes -1, -2) and a blue continuous strip beside lane -2 starting at s, extending 'length' along the reference line. Labelled tStart and widthStart at the start, tEnd and widthEnd at the end (lateral offset and width change along the strip). Side view: strip with heightStart / zOffsetStart at the start and heightEnd / zOffsetEnd at the end (height shrinks, zOffset grows).",
+  "lesson": "A repeat with distance=0 is a continuous object (guard rail, wall, noise barrier) whose t, width, height and zOffset are interpolated linearly from Start to End over the repeat length, following the road curvature.",
+  "right": [
+   "Model OSM barrier=guard_rail/wall/fence along a road as one object with <repeat distance=0>",
+   "Use tStart/tEnd to follow the road edge when road width changes"
+  ],
+  "wrong": [
+   "Writing hundreds of small objects for a continuous barrier",
+   "Assuming repeat length is in object-local units (it is along the reference line in s)"
+  ],
+  "formula": "value(s) = valueStart + (valueEnd - valueStart) * (s - sRepeat) / length  for t, width, height, zOffset"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig092.png",
+  "viewed": true,
+  "figure": "Figure 92",
+  "chapter": "11. Objects",
+  "section": "11.1 Repeating objects",
+  "caption": "Figure 92. Several smaller angular repeated objects",
+  "shows": "Top view: same curved road; discrete blue rectangles are repeated every 'distance' along s starting at s; their centres follow a dash-dot line from tStart to tEnd; size shrinks from widthStart/lengthStart to widthEnd/lengthEnd, and each rectangle is rotated to the local road heading. Side view: heights from heightStart to heightEnd, zOffset from zOffsetStart to zOffsetEnd.",
+  "lesson": "A repeat with distance>0 yields discrete instances at s + k*distance; each instance is oriented with the road and parameters are interpolated.",
+  "right": [
+   "Use repeat distance>0 for posts, street lamps, bollards, trees in rows",
+   "Expect instance orientation to follow road heading"
+  ],
+  "wrong": [
+   "Setting distance larger than length and expecting more than one instance"
+  ],
+  "formula": "s_k = s + k*distance, k = 0..floor(length/distance); params interpolated linearly in s"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig093.png",
+  "viewed": true,
+  "figure": "Figure 93",
+  "chapter": "11. Objects",
+  "section": "11.1 Repeating objects",
+  "caption": "Figure 93. Several smaller circular repeated objects",
+  "shows": "As Figure 92 but with circles shrinking from radiusStart to radiusEnd; side view shows heights shrinking and zOffset rising from zOffsetStart to zOffsetEnd.",
+  "lesson": "Circular objects repeat with radiusStart/radiusEnd instead of width/length.",
+  "right": [
+   "Use radiusStart/radiusEnd for round repeated objects (trees, bollards)"
+  ],
+  "wrong": [
+   "Mixing radius and width/length on one repeat"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig094.png",
+  "viewed": true,
+  "figure": "Figure 94",
+  "chapter": "11. Objects",
+  "section": "11.2 Object outline",
+  "caption": "Figure 94. Traffic island as object",
+  "shows": "Road with lanes 3,2 above and -2,-3 below the reference line (s to the right); lane 2 traffic flows left, lane -2 to the right. Around the reference line the inner lanes widen into a lens shape with white hatched (chevron) markings, and in the middle sits a grey rounded-rectangle traffic island lying on the reference line.",
+  "lesson": "A traffic island inside a road is an object (type trafficIsland) with an outline, placed in a region where the inner lanes (typically restricted/median type, widening from zero) open up; hatching is object marking or road marks. Multiple outlines may describe island body, curb border and pedestrian refuge.",
+  "right": [
+   "Model OSM traffic islands as object type=trafficIsland with closed outline + border type=curb",
+   "Widen inner (median/restricted) lanes around the island so driving lanes are pushed outward rather than overlapping the island"
+  ],
+  "wrong": [
+   "Placing an island object on top of driving lanes without lane widening"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig095.png",
+  "viewed": true,
+  "figure": "Figure 95",
+  "chapter": "11. Objects",
+  "section": "11.2.1 Corner roads",
+  "caption": "Figure 95. An object described by corner road coordinates",
+  "shows": "Inertial X/Y grid with an S-shaped road from (10,10) to (45,55); s ticks every 10 m from 0 to 80 with perpendicular dashed lines; t axis shown at s=0. Next to it, a 9-corner polygon with corners [s1,t1]..[s9,t9] (counter-clockwise from left: s1,t1 left, s2,t2 bottom, ... s8,t8 top-left, s9,t9 notch).",
+  "lesson": "cornerRoad corners are given in road coordinates (s, t, dz, height); the outline therefore bends with the road. Points of an area outline should be listed counter-clockwise.",
+  "right": [
+   "Use cornerRoad for objects that hug a road (barriers, islands, crosswalks)",
+   "Order area corners counter-clockwise",
+   "At least two cornerRoad points per outline"
+  ],
+  "wrong": [
+   "Mixing cornerRoad with cornerLocal in one outline",
+   "Clockwise area outlines"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig096.png",
+  "viewed": true,
+  "figure": "Figure 96",
+  "chapter": "11. Objects",
+  "section": "11.2.2 Corner local",
+  "caption": "Figure 96. An object described by corner local coordinates",
+  "shows": "Road from (15,70) curving up; s marks 0..50. A green arrow goes from the road at s=20 to point P (object origin) at s=20, t=-30, zOffset=0, hdg=7pi/4 rad. At P a local u/v frame is rotated by hdg; the same 9-corner polygon is now given in [u1,v1]..[u9,v9].",
+  "lesson": "cornerLocal corners are given in the object's local u/v frame whose origin is (s,t,zOffset) of the object and whose rotation is hdg relative to the road; the outline is rigid (does not bend with the road).",
+  "right": [
+   "Use cornerLocal for buildings, rigid islands, parking lots referenced to one point",
+   "Rotate local u/v by road heading at s plus hdg"
+  ],
+  "wrong": [
+   "Interpreting u/v as inertial axes",
+   "Forgetting hdg is relative to road direction"
+  ],
+  "formula": "x = x_road(s,t) + u*cos(theta) - v*sin(theta); y = y_road(s,t) + u*sin(theta) + v*cos(theta); theta = heading_road(s) + hdg"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig097.png",
+  "viewed": true,
+  "figure": "Figure 97",
+  "chapter": "11. Objects",
+  "section": "11.5 Access rules to parking spaces",
+  "caption": "Figure 97. Parking spaces rectangular (left figure) and rhomboid (right figure)",
+  "shows": "Left: road with reference line on top, lanes -1, -2 and a parking strip below; three green rectangular parking spaces with origins at (s1,t1), (s2,t2), (s3,t3), aligned with s. Right: same, but the spaces are rotated (angled parking) about their origins.",
+  "lesson": "Each parking space is an object type=parkingSpace placed by s/t (and hdg for angled bays), optionally with outline and a <parkingSpace access=...> child.",
+  "right": [
+   "Emit one parkingSpace object per bay, or a repeated object for regular rows",
+   "Use hdg for angled/rhomboid bays"
+  ],
+  "wrong": [
+   "Modelling parking bays as driving lanes"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig098.png",
+  "viewed": true,
+  "figure": "Figure 98",
+  "chapter": "11. Objects",
+  "section": "11.6 Object marking",
+  "caption": "Figure 98. Crosswalk in ASAM OpenDRIVE",
+  "shows": "Two-lane road (lane 1 above, lane -1 below the reference line, each t=3.50 m wide). A trapezoidal crosswalk outline: top corners at s1=5.00 and s4=15.00 (t=+3.5), bottom corners at s2=8.00 and s3=12.00 (t=-3.5). The slanted sides carry dashed white/grey markings. Spec XML: object type=crosswalk id=10 s=10 t=0 length=10 width=7 orientation=none, outline cornerRoad (5,3.5),(8,-3.5),(12,-3.5),(15,3.5), two <marking> elements referencing corners 0-1 and 2-3 (width 0.1, white, lineLength 0.2, spaceLength 0.05, zOffset 0.005).",
+  "lesson": "A crosswalk is an object of type crosswalk spanning the road width with a cornerRoad outline; its edge lines are object markings referencing outline corner ids. It is valid in both directions (orientation=none).",
+  "right": [
+   "Model OSM highway=crossing on a road as object type=crosswalk with cornerRoad outline covering all lanes",
+   "Add <markings> with cornerReference pairs for the edge lines; color must be set",
+   "Use orientation=none",
+   "If the crossing spans several roads, define it once and add <objectReference> on the others"
+  ],
+  "wrong": [
+   "Modelling a plain crosswalk as a signal (only binding traffic signs/marks are signals)",
+   "Marking without color",
+   "cornerReference without an outline"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig099.png",
+  "viewed": true,
+  "figure": "Figure 99",
+  "chapter": "11. Objects",
+  "section": "11.9 Tunnels",
+  "caption": "Figure 99. A tunnel",
+  "shows": "Road with lanes 3,2,1 (traffic to the left) and -1,-2 (traffic to the right); a semi-transparent grey box labelled tunnel covers the full cross section over an s range.",
+  "lesson": "A tunnel is a <tunnel s= length= type= > element (not an <object>), valid for the whole cross section unless restricted by validity.",
+  "right": [
+   "Emit <tunnel> for OSM tunnel=yes segments with s/length on the road",
+   "Always set @type (standard|underpass)"
+  ],
+  "wrong": [
+   "Modelling a tunnel as <object type=...>",
+   "Missing tunnel type"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig100.png",
+  "viewed": true,
+  "figure": "Figure 100",
+  "chapter": "11. Objects",
+  "section": "11.10 Bridges",
+  "caption": "Figure 100. A bridge",
+  "shows": "Same road layout; a grey box labelled bridge spans the full cross section over a shorter s range.",
+  "lesson": "A bridge is a <bridge s= length= type= > element valid for the whole cross section unless restricted.",
+  "right": [
+   "Emit <bridge> for OSM bridge=yes segments with type concrete|steel|wood|brick"
+  ],
+  "wrong": [
+   "Omitting bridge type",
+   "Using an object for the bridge deck"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig101.png",
+  "viewed": true,
+  "figure": "Figure 101",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface",
+  "caption": "Figure 101. CRG for Objects",
+  "shows": "Curved road reference line (s). A green t vector leads from the reference line to the centre of a rotated, chequered CRG patch; the CRG u/v axes are aligned with the object's local frame and the origin (0|0)CRG is the object centre.",
+  "lesson": "Object CRG uses the object's local u/v frame (origin at object centre, so u/v are positive and negative); the CRG reference line is ignored.",
+  "right": [
+   "Only attach <surface><CRG> to angular objects (length/width), not circular or outlined ones"
+  ],
+  "wrong": [
+   "Using the CRG file's own reference line or inertial position"
+  ],
+  "formula": "objectSurfaceHeight(u,v) = crgEvaluv2z(crg,u,v) * zScale"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/img101.png",
+  "viewed": true,
+  "figure": "Table 73 illustration (img101)",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface - Table 73 Total height calculation by attachment mode",
+  "caption": "(no caption) road surface CRG mode=attached, hideRoadSurfaceCRG=true",
+  "shows": "Side view: road elevation curve (blue) with a stepped road-surface CRG profile riding on it from sStart to sEnd; inside the object's extent the road CRG is replaced by a flat-topped object CRG block sitting on the OpenDRIVE elevation.",
+  "lesson": "Total height under an object CRG depends on the road surface CRG mode and hideRoadSurfaceCRG: OpenDRIVE height + object CRG. Where crgEvaluv2z returns NaN the object has no effect.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false whenever an overlapping road CRG is not mode=attached",
+   "Ignore object @height/@zOffset for surface elevation when <surface> is present"
+  ],
+  "wrong": [
+   "hideRoadSurfaceCRG=true over attached0/genuine/global road CRG"
+  ],
+  "formula": "z = OpenDRIVE height + object CRG"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/img102.png",
+  "viewed": true,
+  "figure": "Table 73 illustration (img102)",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface - Table 73 Total height calculation by attachment mode",
+  "caption": "(no caption) road surface CRG mode=attached, hideRoadSurfaceCRG=false",
+  "shows": "Same as img101, but inside the object extent fine object bumps are stacked on top of the road-surface CRG profile.",
+  "lesson": "Total height under an object CRG depends on the road surface CRG mode and hideRoadSurfaceCRG: OpenDRIVE height + road surface CRG + object CRG. Where crgEvaluv2z returns NaN the object has no effect.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false whenever an overlapping road CRG is not mode=attached",
+   "Ignore object @height/@zOffset for surface elevation when <surface> is present"
+  ],
+  "wrong": [
+   "hideRoadSurfaceCRG=true over attached0/genuine/global road CRG"
+  ],
+  "formula": "z = OpenDRIVE height + road surface CRG + object CRG"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/img103.png",
+  "viewed": true,
+  "figure": "Table 73 illustration (img103)",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface - Table 73 Total height calculation by attachment mode",
+  "caption": "(no caption) road surface CRG mode attached0 / genuine / global, hideRoadSurfaceCRG=true (not allowed)",
+  "shows": "Road elevation rises, but the road-surface CRG data stays near z=0 (absolute/genuine data not following the OpenDRIVE elevation); the object block sits on it.",
+  "lesson": "Total height under an object CRG depends on the road surface CRG mode and hideRoadSurfaceCRG: not allowed (hideRoadSurfaceCRG must be false for these modes). Where crgEvaluv2z returns NaN the object has no effect.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false whenever an overlapping road CRG is not mode=attached",
+   "Ignore object @height/@zOffset for surface elevation when <surface> is present"
+  ],
+  "wrong": [
+   "hideRoadSurfaceCRG=true over attached0/genuine/global road CRG"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/img104.png",
+  "viewed": true,
+  "figure": "Table 73 illustration (img104)",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface - Table 73 Total height calculation by attachment mode",
+  "caption": "(no caption) road surface CRG mode attached0 / genuine / global, hideRoadSurfaceCRG=false",
+  "shows": "As img103 with the object's fine bumps added on top of the road-surface CRG.",
+  "lesson": "Total height under an object CRG depends on the road surface CRG mode and hideRoadSurfaceCRG: road surface CRG + object CRG. Where crgEvaluv2z returns NaN the object has no effect.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false whenever an overlapping road CRG is not mode=attached",
+   "Ignore object @height/@zOffset for surface elevation when <surface> is present"
+  ],
+  "wrong": [
+   "hideRoadSurfaceCRG=true over attached0/genuine/global road CRG"
+  ],
+  "formula": "z = road surface CRG + object CRG"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/img105.png",
+  "viewed": true,
+  "figure": "Table 73 illustration (img105)",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface - Table 73 Total height calculation by attachment mode",
+  "caption": "(no caption) no road surface CRG, hideRoadSurfaceCRG=true",
+  "shows": "Only the OpenDRIVE elevation curve with the object block sitting on it.",
+  "lesson": "Total height under an object CRG depends on the road surface CRG mode and hideRoadSurfaceCRG: OpenDRIVE height + object CRG. Where crgEvaluv2z returns NaN the object has no effect.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false whenever an overlapping road CRG is not mode=attached",
+   "Ignore object @height/@zOffset for surface elevation when <surface> is present"
+  ],
+  "wrong": [
+   "hideRoadSurfaceCRG=true over attached0/genuine/global road CRG"
+  ],
+  "formula": "z = OpenDRIVE height + object CRG"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/img106.png",
+  "viewed": true,
+  "figure": "Table 73 illustration (img106)",
+  "chapter": "11. Objects",
+  "section": "11.11 Object surface - Table 73 Total height calculation by attachment mode",
+  "caption": "(no caption) no road surface CRG, hideRoadSurfaceCRG=false",
+  "shows": "Identical to img105: without road CRG the flag has no effect.",
+  "lesson": "Total height under an object CRG depends on the road surface CRG mode and hideRoadSurfaceCRG: OpenDRIVE height + object CRG. Where crgEvaluv2z returns NaN the object has no effect.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false whenever an overlapping road CRG is not mode=attached",
+   "Ignore object @height/@zOffset for surface elevation when <surface> is present"
+  ],
+  "wrong": [
+   "hideRoadSurfaceCRG=true over attached0/genuine/global road CRG"
+  ],
+  "formula": "z = OpenDRIVE height + object CRG"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig102.png",
+  "viewed": true,
+  "figure": "Figure 102",
+  "chapter": "12. Signals",
+  "section": "12 Signals",
+  "caption": "Figure 102. Signals in ASAM OpenDRIVE",
+  "shows": "Perspective road (s along the centre line, t to the left) with three highlighted signal kinds: a painted zebra crossing on the road surface, a 60 speed-limit sign on a post at the right roadside, and a traffic light on a pole at the right roadside.",
+  "lesson": "Signals include traffic signs, traffic lights AND binding road markings (e.g. zebra crossing, painted speed limits). Non-binding road marks are objects, not signals.",
+  "right": [
+   "Emit binding painted markings (stop line, zebra) as signals when they carry a rule; keep geometry as objects/roadMarks",
+   "Place signals by s/t on the road they govern"
+  ],
+  "wrong": [
+   "Modelling non-binding marks as signals",
+   "Signals not attached to a road"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig103.png",
+  "viewed": true,
+  "figure": "Figure 103",
+  "chapter": "12. Signals",
+  "section": "12 Signals",
+  "caption": "Figure 103. Width and height for signal",
+  "shows": "XML of a German speed limit sign (s=3981.4158159146, t=-14.0503, id=5000162, dynamic=no, orientation=+, zOffset=3.8835, country=DE, countryRevision=2017, type=274, subtype=100, value=100, unit=km/h, height=0.77, width=0.77, hOffset=5.7595865) next to the round 100 sign with height=0.77 m and width=0.77 m dimensioned on the sign plate itself.",
+  "lesson": "width/height describe the sign plate (not the post); zOffset is from the road to the bottom edge of the plate. type/subtype are only unique together with country and countryRevision; value requires unit.",
+  "right": [
+   "Always write country (ISO alpha-2) with type/subtype; add countryRevision when known",
+   "Write unit whenever value is present",
+   "Recommend width/height for rendering"
+  ],
+  "wrong": [
+   "value without unit",
+   "zOffset measured to the sign centre",
+   "type/subtype without country"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig104.png",
+  "viewed": true,
+  "figure": "Figure 104",
+  "chapter": "12. Signals",
+  "section": "12 Signals",
+  "caption": "Figure 104. Orientation and hOffset for signal",
+  "shows": "Left: right-hand-traffic perspective road with reference line pointing away. Middle: 100 sign with orientation='+' and zOffset dimension from road surface to bottom of the plate. Right: top view - reference line pointing up, sign at the right roadside, red line = sign plate rotated by hOffset, measured counter-clockwise from the negative reference line direction (arrow pointing down-left). Example hOffset=5.7595865 rad (330 deg).",
+  "lesson": "orientation '+' means the signal applies to traffic driving in +s and with hOffset=0 its face points toward -s (toward oncoming drivers in +s). hOffset rotates counter-clockwise from that base direction; for '-' the base is +s.",
+  "right": [
+   "Set orientation from which carriageway/direction the sign governs (RHT right side, +s traffic -> '+')",
+   "Compute hOffset = wrap(actual_face_heading - (road_heading + pi)) for '+', wrap(actual_face_heading - road_heading) for '-'"
+  ],
+  "wrong": [
+   "Using hOffset relative to +s for orientation '+'",
+   "Using orientation to restrict lanes (use validity)"
+  ],
+  "formula": "faceHeading = roadHeading(s) + pi + hOffset (orientation '+'); faceHeading = roadHeading(s) + hOffset (orientation '-'); hOffset relative to reference line for 'none'"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig105.png",
+  "viewed": true,
+  "figure": "Figure 105",
+  "chapter": "12. Signals",
+  "section": "12 Signals (UML)",
+  "caption": "Figure 105. UML model for signals",
+  "shows": "UML: t_road_signals with signal 0..* and signalReference 0..* (id, orientation, s, t, validity 0..*). t_road_signals_signal: country[0..1], countryRevision[0..1], dynamic, height[0..1], hOffset[0..1], id, name[0..1], orientation, pitch[0..1], roll[0..1], s, subtype, t, text[0..1], type, unit[0..1], value[0..1], width[0..1], zOffset; children validity 0..* (fromLane, toLane), dependency 0..* (id, type[0..1]), reference 0..* (elementId, elementType, type[0..1]), physical position 0..1 = positionRoad (hOffset, pitch, roadId, roll, s, t, zOffset) or positionInertial (hdg, pitch, roll, x, y, z).",
+  "lesson": "Required on signal: id, s, t, zOffset, orientation, dynamic, type, subtype. Physical position is optional and exclusive (road or inertial).",
+  "right": [
+   "Write subtype '-1' or 'none' when unknown (mandatory)",
+   "Use <reference elementType=signal|object> to link stop line and light"
+  ],
+  "wrong": [
+   "Both positionRoad and positionInertial on one signal",
+   "Missing dynamic/orientation"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig106.png",
+  "viewed": true,
+  "figure": "Figure 106",
+  "chapter": "12. Signals",
+  "section": "12.1 Lane validity for signals",
+  "caption": "Figure 106. Lanes with signals in the shape of road marks",
+  "shows": "Road with lanes 4,3,2,1 (traffic leftwards) and -1,-2 (traffic rightwards). Painted speed-limit marks: 60 on lane 3, 80 on lane 2, 100 on lane 1 (all readable for leftward traffic), and 80 on lane -1 (readable for rightward traffic). Each is a separate signal.",
+  "lesson": "Lane-specific rules are expressed with <validity fromLane toLane> on the signal, and the validity lanes must lie on the side allowed by orientation (RHT '+' -> negative lanes, '-' -> positive lanes; LHT reversed; both sides -> 'none').",
+  "right": [
+   "Use one signal per lane-specific mark with validity fromLane=toLane=laneId",
+   "Pick orientation consistent with the validity side"
+  ],
+  "wrong": [
+   "validity spanning positive lanes with orientation '+' in RHT",
+   "fromLane > toLane"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig107.png",
+  "viewed": true,
+  "figure": "Figure 107",
+  "chapter": "12. Signals",
+  "section": "12.2 Signal dependency",
+  "caption": "Figure 107. Lane and type specific speed limit",
+  "shows": "Perspective two-lane road (lane 1 left, -1 right), at the right roadside a 60 sign above a supplementary plate showing a lorry. Spec XML: signal 1 (type 274 subtype 56, 60 km/h) with <dependency id=2/>; signal 2 (type 1048 subtype 12 'LorriesOnly') at the same s/t, lower zOffset.",
+  "lesson": "Supplementary plates are separate signals at the same position, linked by <dependency>; the semantics of the dependency type are application defined.",
+  "right": [
+   "Model a sign + supplementary plate as two signals with a dependency"
+  ],
+  "wrong": [
+   "Encoding the supplementary plate only in the text attribute"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig108.png",
+  "viewed": true,
+  "figure": "Figure 108",
+  "chapter": "12. Signals",
+  "section": "12.4 Signal positioning",
+  "caption": "Figure 108. Junction with signals at physical and logical positions",
+  "shows": "Four-arm junction (RHT) with green-highlighted road edges/medians and turn arrows. Traffic lights: one on a mast arm hanging over the far (north) side, one at the NE corner, one at the near SE corner, one at the near SW corner. Annotation 'logical position' points to a blue dot at the base of the SW light next to the south approach's stop line; 'physical position' lines point to the other light heads (far-side and overhead positions).",
+  "lesson": "The logical position (s/t on the governed road, where the rule starts) can differ from where the hardware stands. Use positionRoad (other road s/t) or positionInertial (x,y,z,hdg) for the physical location; the logical s marks the start of validity.",
+  "right": [
+   "Place the signal's s/t at the stop line of the approach it governs; put the real pole location in positionInertial/positionRoad",
+   "Use positionInertial for lights hanging over a junction or on the far side"
+  ],
+  "wrong": [
+   "Putting a far-side light's s/t on the outgoing road (wrong road gets the rule)"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig109.png",
+  "viewed": true,
+  "figure": "Figure 109",
+  "chapter": "12. Signals",
+  "section": "12.4 Signal positioning (UML)",
+  "caption": "Figure 109. UML Model Physical Position",
+  "shows": "UML: t_physicalPosition with positionRoad (hOffset, pitch[0..1], roadId, roll[0..1], s, t, zOffset) or positionInertial (hdg, pitch[0..1], roll[0..1], x, y, z).",
+  "lesson": "Physical position is either road-based or inertial, never both.",
+  "right": [
+   "Choose one of positionRoad/positionInertial"
+  ],
+  "wrong": [
+   "Writing both"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig110.png",
+  "viewed": true,
+  "figure": "Figure 110",
+  "chapter": "12. Signals",
+  "section": "12.5 Reuse of signal information (UML)",
+  "caption": "Figure 110. UML Model Signal Reference",
+  "shows": "UML: t_road_signals_signalReference (id, orientation, s, t) as 0..* child of t_road_signals (with validity 0..*).",
+  "lesson": "<signalReference> lets other roads (e.g. connecting roads, other lanes sharing a stop line) reuse a signal's content at their own s/t and orientation.",
+  "right": [
+   "Reuse a speed limit or stop line on connecting roads via <signalReference id= s= t= orientation=>",
+   "Add validity to signalReference to restrict lanes"
+  ],
+  "wrong": [
+   "Duplicating identical signals with new ids on every connecting road",
+   "signalReference pointing at an object"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig111.png",
+  "viewed": true,
+  "figure": "Figure 111",
+  "chapter": "12. Signals",
+  "section": "12.6 Controllers",
+  "caption": "Figure 111. Junction with four traffic lights, controlled by two controllers",
+  "shows": "Identical drawing to Figure 86: controller 1 -> NW and SE lights (N/S approaches, green), controller 2 -> NE and SW lights (E/W approaches, red).",
+  "lesson": "Controllers wrap the state of a group of dynamic signals; phase timing is outside OpenDRIVE.",
+  "right": [
+   "Group same-phase lights under one controller"
+  ],
+  "wrong": [
+   "Expecting phase timing inside the .xodr"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig112.png",
+  "viewed": true,
+  "figure": "Figure 112",
+  "chapter": "12. Signals",
+  "section": "12.6 Controllers (UML)",
+  "caption": "Figure 112. UML Model Controller",
+  "shows": "Same as Figure 87: t_controller (id, name[0..1], sequence[0..1]) with control 1..* (signalId, type[0..1]).",
+  "lesson": "Controller is a top-level element under <OpenDRIVE>.",
+  "right": [
+   "Write controllers at top level, reference them from junctions"
+  ],
+  "wrong": [
+   "Nesting <controller> definitions inside <road>"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig113.png",
+  "viewed": true,
+  "figure": "Figure 113",
+  "chapter": "13. Railroads",
+  "section": "13 Railroads (UML)",
+  "caption": "Figure 113. UML Model Railroad",
+  "shows": "UML: t_road_railroad with switch 0..* (id, name, position e_road_railroad_switch_position) each having mainTrack (dir, id, s), sideTrack (dir, id, s) and partner 0..1 (id, name[0..1]).",
+  "lesson": "Rail switches live in <road><railroad><switch> on the main-track road.",
+  "right": [
+   "One road per track; switches reference road ids of main and side tracks"
+  ],
+  "wrong": [
+   "Modelling switches as junctions"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig114.png",
+  "viewed": true,
+  "figure": "Figure 114",
+  "chapter": "13. Railroads",
+  "section": "13.1 Railroad tracks",
+  "caption": "Figure 114. Reference lines for roads and railroads",
+  "shows": "Left: a road whose reference line runs along the top edge with lanes -1,-2,-3 below it. Right: a railway road with a single lane -1 whose reference line runs through the middle of the lane; laneOffset shifts the centre lane (0) up by half the lane width.",
+  "lesson": "For tracks the reference line must be the centre of the rail pair, so use laneOffset = +width/2 with a single rail/tram lane -1 (one rail/tram lane per road).",
+  "right": [
+   "Track road: reference line = track centreline, laneOffset a=width/2, one lane type rail or tram",
+   "Lane width >= vehicle width"
+  ],
+  "wrong": [
+   "Putting the track reference line on the rail edge",
+   "Two rail lanes on one road",
+   "Embedding tram tracks as a lane of a street road (needs its own road)"
+  ],
+  "formula": "laneOffset = laneWidth/2 so that the lane -1 centre coincides with the reference line"
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig115.png",
+  "viewed": true,
+  "figure": "Figure 115",
+  "chapter": "13. Railroads",
+  "section": "13.2 Switches",
+  "caption": "Figure 115. Railroad switches",
+  "shows": "Track 1 (dark blue, A to B, s1 to the right) and track 3 (light blue, C to D, s3 to the left). Side track 2 (s2 up-right) leaves track 1 at switch#12 and joins track 3 at switch#32. Possible connections box: A->B, A->C, B->A, C->A, C->D, D->C.",
+  "lesson": "Switches 12 and 32 are partners linked by side track 2; movements are only possible in the facing/trailing directions shown (no D->A or B->C). mainTrack/sideTrack give track id, s at the switch and dir for entering the side track.",
+  "right": [
+   "Write a <switch> on each main track at the branch s, with <partner> when a side track links two switches",
+   "Side tracks only connect two switches"
+  ],
+  "wrong": [
+   "Using a main track to connect two switches",
+   "Partner on a single switch"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig116.png",
+  "viewed": true,
+  "figure": "Figure 116",
+  "chapter": "13. Railroads",
+  "section": "13.3 Stations",
+  "caption": "Figure 116. Railroad stations",
+  "shows": "Top scenario: dashed station box containing one platform between track 1 (A->B) and track 3 (C->D, opposite direction); the platform is used from both tracks (one segment). Bottom scenario: station with platform 1 above track 5 (C->D) and platform 2 below the bottom track, which is split into track 4 (A to mid) and track 6 (mid to B), so platform 2 has two segments. The text numbers the bottom tracks 3/1/2 while the drawing labels them 5/4/6.",
+  "lesson": "A station has >=1 platform, a platform has >=1 segment, and each segment names a track road, sStart/sEnd and the side. A platform alongside a track split into two roads needs one segment per road.",
+  "right": [
+   "Emit <station><platform><segment roadId sStart sEnd side>; one segment per adjacent track road",
+   "Station can also be used for bus stops"
+  ],
+  "wrong": [
+   "Platform without segment",
+   "Station without platform"
+  ],
+  "formula": null
+ },
+ {
+  "source": "1.7.0 spec",
+  "file": "figures/1.7.0/fig117.png",
+  "viewed": true,
+  "figure": "Figure 117",
+  "chapter": "13. Railroads",
+  "section": "13.3 Stations (UML)",
+  "caption": "Figure 117. UML Model Station",
+  "shows": "The extracted image is NOT the station UML: it is an exact duplicate of Figure 113 (Railroad/switch UML). The station UML must be taken from the text: t_station (id, name, type small|medium|large) -> platform 1..* (id, name) -> segment 1..* (roadId, sEnd, side left|right, sStart).",
+  "lesson": "Figure extraction error: use Tables 88-90 for station attributes.",
+  "right": [
+   "Re-extract fig117 from the spec if the station UML is needed"
+  ],
+  "wrong": [
+   "Trusting fig117.png as station UML"
+  ],
+  "formula": null
+ }
+]

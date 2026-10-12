@@ -1,0 +1,599 @@
+[
+  {
+    "file": "figures/1.7.0/fig001.svg",
+    "figure": "Figure 1",
+    "chapter": "2. Introduction",
+    "section": "2.3.4 Typographic conventions (UML notation)",
+    "caption": "Figure 1. UML notation (see ISO TS 19103, Geographic information - Conceptual schema language)",
+    "shows": "Legend of the UML diagram notation (draw.io SVG, text inside foreignObject). Left column: a role label on an association line from Class #1 to Class #2 (filled arrowhead = navigable association). Multiplicity examples next to 'Class' boxes: no label = 'Only one', '0...*' = 'Zero or more', '0...1' = 'Optional (zero or one)', '1.. *' = 'One or more', 'n' = 'Specific number'. Right column: 'Aggregate class' joined to Class #1..#n ('Aggregation between classes', hollow diamond at the aggregate end) and 'Superclass' with Subclass #1..#n ('Class inheritance (subtyping of classes)'). Labels contain typos ('0...*', 'Associtation').",
+    "lesson": "Every association end in the later UML diagrams carries a multiplicity; an unlabelled end means exactly one. The role name sits at the target end and equals the XML child element name. Inheritance means the subclass carries everything of the superclass (e.g. everything derived from _OpenDriveElement may carry g_additionalData).",
+    "right": [
+      "Treat an unlabelled association end as exactly 1 (mandatory, single)",
+      "Map role names (e.g. +geometry, +lane) directly to XML child element names",
+      "Treat '1..*' as 'at least one must be written'"
+    ],
+    "wrong": [
+      "Reading '0...*' (three dots, a drawing typo) as something other than '0..*'",
+      "Assuming an unlabelled end means optional - it means exactly one, so omitting that child produces invalid output",
+      "Treating aggregation as reference-by-ID - in OpenDRIVE XML aggregation becomes nested child elements"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig002.png",
+    "figure": "Figure 2",
+    "chapter": "2. Introduction",
+    "section": "2.3.4 Typographic conventions (Mandatory and optional attributes)",
+    "caption": "Figure 2. UML attribute notation",
+    "shows": "UML class t_header (abstract parent _OpenDriveElement in italics). All attributes public '+': revMajor: integer and revMinor: integer with no multiplicity; name: string [0..1], version: t_header_Version [0..1], date: string [0..1], north/south/east/west: double [0..1], vendor: string [0..1]. revMinor is boxed red 'mandatory attribute'; name boxed cyan 'optional attribute'.",
+    "lesson": "An attribute without a [0..1] suffix is mandatory and must always be emitted; [0..1] attributes may be omitted entirely. For the header only revMajor and revMinor are required; the bounding box north/south/east/west is optional.",
+    "right": [
+      "Always write <header revMajor=\"1\" revMinor=\"7\">",
+      "Omit optional attributes when no value is known instead of writing empty or zero placeholders",
+      "Write north/south/east/west only when computed from the real geometry bounds"
+    ],
+    "wrong": [
+      "Writing name=\"\" or date=\"\" as fillers (an empty string is a value, not absence)",
+      "Writing north=0 south=0 east=0 west=0 as defaults - asserts a wrong bounding box",
+      "Omitting revMinor because 'version' was written - version is a separate optional attribute"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig003.png",
+    "figure": "Figure 3",
+    "chapter": "3. Relations to other standards",
+    "section": "3.1 Positioning of ASAM OpenDRIVE within ASAM activities",
+    "caption": "Figure 3. Relation between ASAM OpenDRIVE, ASAM OpenCRG, and ASAM OpenSCENARIO",
+    "shows": "Three product tiles: OpenDRIVE = 'Static Road Network Description' (intersection with lane arrows and traffic lights, no vehicles); plus OpenSCENARIO = 'Dynamic Scenario Description' (same intersection with vehicles and coloured trajectories) equals 'Scenario description, with dynamic and static content'. A curved arrow leads from the OpenDRIVE tile down to OpenCRG = 'Static Road Surface Description' (cobblestones, pothole, lane-marking close-up).",
+    "lesson": "OpenDRIVE carries only static road-network content (geometry, lanes, signals, objects). Vehicles, routes and trajectories belong to OpenSCENARIO; fine surface texture/roughness (potholes, cobbles) belongs to OpenCRG and is only referenced from OpenDRIVE.",
+    "right": [
+      "Emit static network only: roads, lanes, junctions, signals, static objects",
+      "Represent detailed surface roughness only via <surface><CRG> references, if at all"
+    ],
+    "wrong": [
+      "Encoding traffic flow, routes or vehicles in OpenDRIVE - that is OpenSCENARIO content",
+      "Modelling potholes or paving texture with elevation/shape polynomials - surface detail is OpenCRG's job"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig004.png",
+    "figure": "Figure 4",
+    "chapter": "5. Additional Data",
+    "section": "5.1 User Data / 5.2 Including Data / 5.4 Description of the data quality (Core UML)",
+    "caption": "Figure 4. UML model ASAM OpenDRIVE Core",
+    "shows": "UML 'class Core'. t_OpenDRIVE (orange) has: +header (no multiplicity = exactly 1) t_header, +road 1..* Road::t_road, +controller 0..* Signal::t_controller, +junction 0..* Junction::t_junction, +junctionGroup 0..* Junction::t_junctionGroup, +station 0..* Railroad::t_station (blue = other packages). All generalise (hollow triangle) to abstract _OpenDriveElement, which has g_additionalData 0..* (t_OpenDRIVE also links to it 0..*). g_additionalData groups +userData 0..* t_userData (code: string mandatory, value: string [0..1], 0..* userDataContent), +include 0..* t_include (file: string), +dataQuality 0..1 t_dataQuality. t_dataQuality has +error 0..1 t_dataQuality_Error (xyAbsolute, xyRelative, zAbsolute, zRelative: double, all mandatory) and +rawData 0..1 t_dataQuality_RawData (date: string, postProcessing: enum, source: enum mandatory; postProcessingComment, sourceComment [0..1]). Separate primitive types t_zeroOne, t_grEqZero, t_grZero, all specialisations of double.",
+    "lesson": "A valid file needs exactly one header and at least one road; junctions/controllers are optional. Any element (not only the root) may carry userData/include/dataQuality, so provenance (e.g. the OSM way id) can be attached per road/lane/object. If <error> is written, all four error values are mandatory. t_grZero = strictly > 0, t_grEqZero = >= 0, t_zeroOne = [0,1].",
+    "right": [
+      "Always emit one <header> and at least one <road>",
+      "Attach OSM provenance as <userData code=\"osm_way_id\" value=\"...\"/> on the element it describes",
+      "If writing <dataQuality><error>, provide xyAbsolute, xyRelative, zAbsolute and zRelative together",
+      "In <rawData> always give date, source and postProcessing; name OpenStreetMap in sourceComment"
+    ],
+    "wrong": [
+      "Producing a file with zero roads (violates road 1..*)",
+      "Writing only xyAbsolute in <error> - the other three are mandatory",
+      "Assuming userData is only allowed at file level",
+      "Treating t_grZero fields (e.g. geometry length) as allowing 0"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig005.png",
+    "figure": "Figure 5",
+    "chapter": "6. Coordinate systems",
+    "section": "6.1 Coordinate systems overview",
+    "caption": "Figure 5. Available coordinate systems in ASAM OpenDRIVE",
+    "shows": "Three identical right-handed axis triads side by side: Inertial System (x blue forward-right, y green to the left, z red up), Reference Line System (s forward, t left, h up), Local System (u forward, v left, z up).",
+    "lesson": "All three systems share the same handedness and layout: the second axis (y, t, v) points LEFT of the first, the third points up. +t / +v is left of the direction of s / u, and positive rotations are counter-clockwise seen from above.",
+    "right": [
+      "Left normal for +t: n = (-sin hdg, cos hdg)",
+      "Treat s->t->h exactly like x->y->z (right-handed)"
+    ],
+    "wrong": [
+      "Using a screen convention with y down, or t pointing right - mirrors every lane",
+      "Feeding a left-handed engine convention (e.g. Unreal/CARLA with y to the right) without converting - flips t, headings and curvature signs"
+    ],
+    "formula": "t-unit = (-sin(hdg), cos(hdg)); h = s x t"
+  },
+  {
+    "file": "figures/1.7.0/fig006.png",
+    "figure": "Figure 6",
+    "chapter": "6. Coordinate systems",
+    "section": "6.1 Coordinate systems overview",
+    "caption": "Figure 6. Coordinate systems in ASAM OpenDRIVE interacting with another",
+    "shows": "Inertial X/Y grid with a blue reference line curving to the upper right. At a point labelled 'reference line system' s is tangent to the line and t perpendicular pointing up-left. A grey segment leads down-right to a 'local system' point, with a right-angle mark between this segment and the tangent; at the local origin u points down-right and v up-right, i.e. the local frame is rotated relative to s/t.",
+    "lesson": "A local origin is found by going to s on the reference line and then moving perpendicular to the tangent by t (here t < 0, i.e. to the right). The local axes may additionally carry their own heading relative to s/t.",
+    "right": [
+      "Place objects/signals at P = refline(s) + t * leftNormal(s)",
+      "Apply an object's heading on top of the reference-line heading at s"
+    ],
+    "wrong": [
+      "Offsetting t along the inertial y-axis instead of perpendicular to the tangent",
+      "Assuming the local u axis is aligned with s - only true when the local heading is 0"
+    ],
+    "formula": "P(s,t) = (x(s) - t*sin(hdg(s)), y(s) + t*cos(hdg(s)))"
+  },
+  {
+    "file": "figures/1.7.0/fig007.png",
+    "figure": "Figure 7",
+    "chapter": "6. Coordinate systems",
+    "section": "6.2 Inertial coordinate systems",
+    "caption": "Figure 7. Inertial coordinate system with defined rotations",
+    "shows": "Three-step rotation sequence. Panel 1 'heading > 0': rotation about z (z = z'), x turns counter-clockwise to x', y to y'. Panel 2 'heading = 0, pitch > 0': rotation about y' (y' = y''); x'' is drawn BELOW x' (tips down) and z'' leans toward the former x direction. Panel 3 'heading = 0, pitch = 0, roll > 0': rotation about x'' (x'' = x'''); y''' is lifted ABOVE y'' and z''' leans away from y (toward the right).",
+    "lesson": "Rotation order is heading (about z), then pitch (about the new y'), then roll (about the new x''). All angles follow the right-hand rule: positive heading = counter-clockwise from above; positive pitch = nose DOWN (x tips toward -z); positive roll = left side (+y) UP, right side down.",
+    "right": [
+      "Build R = Rz(heading) * Ry(pitch) * Rx(roll) (intrinsic z, y', x'')",
+      "An object whose front points uphill has NEGATIVE pitch",
+      "An object banked with its left side higher has positive roll"
+    ],
+    "wrong": [
+      "Using the aviation/graphics habit 'positive pitch = nose up' - inverts every slope",
+      "Applying roll before pitch/heading, or using extrinsic rotations",
+      "Treating heading as a compass bearing (north = 0, clockwise) instead of a CCW angle from +x (east)"
+    ],
+    "formula": "R = Rz(h)*Ry(p)*Rx(r); pitch=+pi/2 -> x'' = -z; roll=+pi/2 -> z''' = -y''"
+  },
+  {
+    "file": "figures/1.7.0/fig008.png",
+    "figure": "Figure 8",
+    "chapter": "6. Coordinate systems",
+    "section": "6.2 Inertial coordinate systems",
+    "caption": "Figure 8. Inertial coordinate system with defined rotations",
+    "shows": "Four box sketches seen from the front (x toward the viewer, y left, z up). (a) all angles 0: only y and z visible. (b) heading < 0: x' appears pointing to the viewer's right and a side face becomes visible, z' = z. (c) heading < 0, pitch < 0: the box tilts so its top face is visible; x'' points right and upward, y'' = y'. (d) heading < 0, pitch < 0, roll > 0: additionally rolled - z''' leans right and the left (y''') edge is raised, x''' = x''.",
+    "lesson": "Same convention as Figure 7, demonstrated with negative angles: negative heading = clockwise from above (x turns toward -y); negative pitch = front lifts up; positive roll = +y side up.",
+    "right": [
+      "Use negative heading for a clockwise yaw from +x",
+      "Use negative pitch for an object whose front points upward"
+    ],
+    "wrong": [
+      "Reading pitch < 0 as nose down - it is nose up",
+      "Interpreting heading < 0 as turning left"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig009.png",
+    "figure": "Figure 9",
+    "chapter": "6. Coordinate systems",
+    "section": "6.3 Reference line coordinate systems",
+    "caption": "Figure 9. Reference line coordinate system",
+    "shows": "Inertial X/Y grid (x = 1..7, y = 1..6) with an S-shaped grey road. A dashed reference line runs down its middle with labels s = 0 .. s = 8 at equal spacing along the line; dashed cross-lines at each tick run perpendicular to the line across the road. At s = 0 (about x = 2.2, y = 1.2) a blue s arrow points along the line and a green t arrow perpendicular to its left. Between neighbouring ticks the outer edge of each bend is visibly longer than the inner edge.",
+    "lesson": "s is arc length ALONG the reference line (in the xy-plane), starting at 0 at the road start; t is measured perpendicular to the local tangent, positive left. Because cross-sections are perpendicular to the reference line, equal ds maps to unequal lengths on lane borders (longer outside a bend, shorter inside).",
+    "right": [
+      "Parameterise lanes, objects and signals by reference-line arc length s starting at 0 for each road",
+      "Compute lane-border lengths separately when needed (e.g. marking dash spacing) - they differ from ds",
+      "Keep |t * curvature| < 1 so cross-sections do not cross on the inside of bends"
+    ],
+    "wrong": [
+      "Using chord length or straight OSM node-to-node distances as s on curved geometry",
+      "Continuing s from the previous road (s restarts at 0 for every road)",
+      "Applying lane widths along x or y instead of along the normal"
+    ],
+    "formula": "offset-curve length element: dl = (1 - t*kappa(s)) ds"
+  },
+  {
+    "file": "figures/1.7.0/fig010.png",
+    "figure": "Figure 10",
+    "chapter": "6. Coordinate systems",
+    "section": "6.3 Reference line coordinate systems",
+    "caption": "Figure 10. Reference line system with defined rotations",
+    "shows": "Two panels. Left: heading rotation about h (h = h'); s turns counter-clockwise to s', t to t'. Right: roll about s (s = s'''); t''' lifted above t, h''' leans away from t (to the right). No pitch panel exists.",
+    "lesson": "The reference-line frame has only two rotational degrees of freedom: heading (from planView geometry) and roll (from superelevation). There is no pitch - elevation lifts the frame vertically without tilting s.",
+    "right": [
+      "Derive the s/t/h frame from planView heading and superelevation roll only",
+      "Positive superelevation = left (+t) side up"
+    ],
+    "wrong": [
+      "Pitching the s-axis with the elevation gradient when computing t-offsets or lane widths",
+      "Treating superelevation as positive when the right side is raised"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig011.png",
+    "figure": "Figure 11",
+    "chapter": "6. Coordinate systems",
+    "section": "6.3 Reference line coordinate systems",
+    "caption": "Figure 11. Heading in reference line",
+    "shows": "Inertial X/Y grid with a grey reference line rising to the right. At its start s points slightly up-right and t up-left; at a later point s' and t' are rotated more steeply, following the tangent. Text in the frame: 'Heading caused by <geometry>'.",
+    "lesson": "The reference-line heading at any s comes solely from planView geometry (start hdg of the containing geometry plus accumulated curvature) and varies continuously along curved geometry.",
+    "right": [
+      "Evaluate heading at s from the containing <geometry> (hdg + integral of curvature)",
+      "Ensure heading continuity at geometry boundaries"
+    ],
+    "wrong": [
+      "Using a single heading per road",
+      "Taking heading from raw OSM segment directions without smoothing (kinks)"
+    ],
+    "formula": "hdg(s) = hdg0 + integral from s0 to s of kappa(u) du"
+  },
+  {
+    "file": "figures/1.7.0/fig012.png",
+    "figure": "Figure 12",
+    "chapter": "6. Coordinate systems",
+    "section": "6.3 Reference line coordinate systems (superelevation)",
+    "caption": "Figure 12. Roll in reference line",
+    "shows": "Cross-section of the road seen looking along +s (s is the blue dot at height 0 on an axis labelled 'Z'; the horizontal axis is labelled 'X'). A thick road line passes through s, higher on the LEFT where the green t arrow points and lower on the right. An arc marks the roll angle between the horizontal and the road line; the dashed vertical h is rotated to h', which leans right. Text: 'Roll caused by <superelevation>'.",
+    "lesson": "Superelevation is a roll of the s/t/h frame about s; positive roll raises the left (+t) side and tilts h toward -t. The pivot is the reference line (t = 0): points with t > 0 rise and t < 0 drop by t*tan(roll).",
+    "right": [
+      "Lateral height: z = z_ref(s) + t*tan(superelevation(s)) (plus lateral shape)",
+      "A right-hand curve (negative curvature) is banked left-side-high, i.e. positive superelevation"
+    ],
+    "wrong": [
+      "Pivoting the bank around the road edge instead of the reference line",
+      "Sign error: raising the right side for positive superelevation",
+      "Reading the horizontal 'X' label literally - the section lies in the t-h plane, with t to the left"
+    ],
+    "formula": "dz(t) = t * tan(roll(s))"
+  },
+  {
+    "file": "figures/1.7.0/fig013.png",
+    "figure": "Figure 13",
+    "chapter": "6. Coordinate systems",
+    "section": "6.3 Reference line coordinate systems (elevation)",
+    "caption": "Figure 13. Elevation in reference line",
+    "shows": "Side view: vertical z axis with 0 marked; a grey elevation curve is flat at z = 0, rises smoothly, then levels off. Two s/t/h frames are drawn, one at z = 0 and one on the rising part; in BOTH s is horizontal and h vertical - the frame is translated up, not tilted. Text: '<elevation> projected on reference line'.",
+    "lesson": "Elevation only shifts the reference-line frame vertically; the frame is never pitched, and s remains the horizontal (xy-projected) arc length. A 10 % grade over 100 m of s still has s-length 100 m, not 100.5 m.",
+    "right": [
+      "Compute s and geometry @length purely in 2D",
+      "Evaluate z(s) from the elevation polynomial and translate (never rotate) the s/t frame"
+    ],
+    "wrong": [
+      "Using 3D arc length (including climb) as s or as geometry length",
+      "Pitching lanes/objects with the slope when computing lateral positions",
+      "Fitting elevation polynomials against 3D distance instead of planar s"
+    ],
+    "formula": "z(s) = a + b*ds + c*ds^2 + d*ds^3 with ds = s - s_start; s measured in the xy-plane"
+  },
+  {
+    "file": "figures/1.7.0/fig014.png",
+    "figure": "Figure 14",
+    "chapter": "6. Coordinate systems",
+    "section": "6.4 Local coordinate systems",
+    "caption": "Figure 14. Local system with defined rotations",
+    "shows": "Same three-panel rotation drawing as Figure 7 with u/v/z: heading about z (u -> u' counter-clockwise), pitch about v (v = v''; u'' tips down, z'' leans forward), roll about u (u = u'''; v''' lifted, z''' leans right).",
+    "lesson": "The local (object) frame uses the identical heading-pitch-roll convention as the inertial frame: heading CCW positive about z, positive pitch = front (u) down, positive roll = left (v) side up, applied in the order heading, pitch, roll.",
+    "right": [
+      "Reuse the same rotation code for local and inertial frames"
+    ],
+    "wrong": [
+      "Using different sign conventions for object orientation than for the inertial system"
+    ],
+    "formula": "R_local = Rz(heading)*Ry(pitch)*Rx(roll)"
+  },
+  {
+    "file": "figures/1.7.0/fig015.png",
+    "figure": "Figure 15",
+    "chapter": "6. Coordinate systems",
+    "section": "6.4 Local coordinate systems",
+    "caption": "Figure 15. Local coordinate systems with heading, pitch, roll",
+    "shows": "Four box sketches identical to Figure 8 but labelled u/v/z: all zero; heading < 0 (u' to the viewer's right); heading < 0 and pitch < 0 (top face visible, u'' pointing right and up, v'' = v'); plus roll > 0 (left edge raised, u''' = u'').",
+    "lesson": "Confirms local angle signs match the inertial convention: negative heading = clockwise, negative pitch lifts the front, positive roll lifts the left side.",
+    "right": [
+      "Same sign handling as Figure 8 for objects placed in local coordinates"
+    ],
+    "wrong": [
+      "Interpreting a local heading as a compass bearing"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig016.png",
+    "figure": "Figure 16",
+    "chapter": "6. Coordinate systems",
+    "section": "6.4 Local coordinate systems",
+    "caption": "Figure 16. Local coordinate system with respect to reference line system",
+    "shows": "Inertial grid with blue reference line; reference-line system at a point with s along the tangent and t up-left (right angle marked). A local origin lies below-right of it (t < 0). At the local origin an unrotated pair u (parallel to s) / v (parallel to t, solid green) is drawn plus a rotated pair u'/v' (dashed) turned counter-clockwise, with an arrow marking the angle from u to u'. Text: 'Heading of local coordinate system with respect to reference line coordinate system'.",
+    "lesson": "An object's local heading is measured relative to the reference-line tangent at its s, not relative to inertial east. Heading 0 means the object faces +s; the unrotated local frame is parallel to s/t at the projected point.",
+    "right": [
+      "Inertial yaw of an object = hdg_refline(s) + object.hdg",
+      "Express orientation of OSM point features relative to the road tangent"
+    ],
+    "wrong": [
+      "Writing an absolute (inertial or compass) yaw into object @hdg - wrong on any road not running due east",
+      "Trusting the phrase '0.0 = east' in the 6.4 text - the figure shows the heading is relative to s"
+    ],
+    "formula": "yaw_inertial = hdg_ref(s) + hdg_local"
+  },
+  {
+    "file": "figures/1.7.0/fig017.png",
+    "figure": "Figure 17",
+    "chapter": "6. Coordinate systems",
+    "section": "6.5 Summary of all available coordinate systems",
+    "caption": "Figure 17. Summary of coordinate system in ASAM OpenDRIVE",
+    "shows": "Perspective sketch: inertial system at lower left (x, y, z); a blue reference line with a reference-line system at one point (s tangent, t left, h up); dashed lines project that point onto the inertial x and y directions; a local system (u, v, z) beside the reference line, linked to the reference point by dashed lines and slightly rotated relative to s/t.",
+    "lesson": "The systems are chained: inertial -> reference line (via geometry x, y, hdg plus elevation/superelevation at s) -> local (via s, t, zOffset and local heading/pitch/roll). Local placements are never given directly in inertial coordinates.",
+    "right": [
+      "Implement local->s/t/h->x/y/z as a composition of two transforms",
+      "Convert OSM point features to (s, t) by projecting onto the nearest road reference line"
+    ],
+    "wrong": [
+      "Writing inertial x/y directly into s/t attributes",
+      "Ignoring reference-line elevation/roll when converting local z to inertial z"
+    ],
+    "formula": "X_obj = X_ref(s) + R_ref(s)*([0, t, 0] + R_local*p_local)"
+  },
+  {
+    "file": "figures/1.7.0/fig018.png",
+    "figure": "Figure 18",
+    "chapter": "6. Coordinate systems",
+    "section": "6.6 Georeferencing in ASAM OpenDRIVE",
+    "caption": "Figure 18. geoReference and offset",
+    "shows": "Inertial X/Y plot with broken axes. Lower left: an S-shaped road in 'OpenDRIVE x/y coordinates' (x about 10-45, y about 10-35), its start marked with a red circle near (15, 10) and small s/t arrows. Upper right: the identical, unrotated road in 'Geo referenced x/y coordinates' (x about 500000-500030, y about 40005-40030), start also circled. Brackets 'x offset' and 'y offset' span the distance between the two start points.",
+    "lesson": "The header <offset> is a translation from small, numerically safe OpenDRIVE coordinates to projected map coordinates (e.g. UTM easting incl. its 500000 m false easting): projected = OpenDRIVE + offset. The figure shows no rotation, consistent with the rule that @hdg should be avoided.",
+    "right": [
+      "Store geometry near (0,0) and write <offset x=E0 y=N0 z=Z0 hdg=\"0\"/> in the header",
+      "Keep <geoReference> as the unmodified EPSG/PROJ string (with its own +x_0/+y_0)",
+      "Recover map coordinates as E = x + offset.x, N = y + offset.y"
+    ],
+    "wrong": [
+      "Writing raw UTM coordinates (~5e5, ~5e6) into geometry @x/@y (precision loss; against the rule)",
+      "Folding the offset into the proj string by editing +x_0/+y_0",
+      "Subtracting the offset when converting to map coordinates (sign inversion)",
+      "Using a non-zero offset @hdg"
+    ],
+    "formula": "x_geo = x_odr + offset.x; y_geo = y_odr + offset.y (with hdg = 0)"
+  },
+  {
+    "file": "figures/1.7.0/fig019.png",
+    "figure": "Figure 19",
+    "chapter": "7. Geometry",
+    "section": "7 Geometry",
+    "caption": "Figure 19. Geometry elements in ASAM OpenDRIVE",
+    "shows": "Five matplotlib thumbnails: 'straight lines' (line from (0,0) to (5,1.25)), 'spirals' (clothoid curling inward), 'arcs' (arc rising and flattening), 'cubic polynomials' (y(x) cubic with a local wiggle on x in [-4,4]), 'Parametric cubic polynomials' (curve bending gently down from 0 to about -0.6 over about 60 m).",
+    "lesson": "Exactly five planView primitives exist: line, spiral, arc, poly3 (deprecated) and paramPoly3. Prefer line/arc/spiral (exact, curvature-continuous) or paramPoly3 for free-form fits.",
+    "right": [
+      "Emit line/spiral/arc for designed shapes and paramPoly3 for smoothed measured polylines"
+    ],
+    "wrong": [
+      "Emitting new poly3 geometry (deprecated in 1.7)",
+      "Approximating curves with many tiny lines (curvature jumps and heading kinks)"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig020.png",
+    "figure": "Figure 20",
+    "chapter": "7. Geometry",
+    "section": "7.1 Road reference line",
+    "caption": "Figure 20. The individual parts of a road",
+    "shows": "Top row: 'reference line' + 'lanes' + 'features' = composite road. Bottom: perspective view of a two-lane road; the blue reference line runs between a yellow lane labelled '1' (left) and a blue lane labelled '-1' (right). Arrows at the bottom: s along the reference line away from the viewer, t pointing left. Speed-limit signs '60' (far) and '80' (near) stand on the right roadside.",
+    "lesson": "A road is three layers: reference line (geometry), lanes defined relative to it, and features (signals/objects) placed in s/t. Lanes left of the reference line (+t) have positive IDs, right lanes negative IDs; the reference line is the zero-width centre lane 0 between them.",
+    "right": [
+      "Put the reference line on the boundary between left and right lanes for two-way roads",
+      "Number lanes 1, 2, ... outward on the left and -1, -2, ... outward on the right",
+      "Place right-roadside signals with t < 0"
+    ],
+    "wrong": [
+      "Giving right-side lanes positive IDs",
+      "Assuming the reference-line direction implies driving direction (the text says it does not)"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig021.png",
+    "figure": "Figure 21",
+    "chapter": "7. Geometry",
+    "section": "7.1 Road reference line (UML RoadGeometry)",
+    "caption": "Figure 21. UML model Road Geometry including the Reference Line elements",
+    "shows": "UML 'class RoadGeometry'. t_road_planView has +geometry 1..* t_road_planView_geometry (hdg: double, length: t_grZero, s: t_grEqZero, x: double, y: double) with children +line (no attributes), +spiral (curvEnd, curvStart: double), +arc (curvature: double), +poly3 (a, b, c, d), +paramPoly3 (aU, aV, bU, bV, cU, cV, dU, dV: double, pRange: e_paramPoly3_pRange - no [0..1], i.e. mandatory). t_road_lateralProfile has +superelevation 0..* (a, b, c, d, s: t_grEqZero) and +shape 0..* (a, b, c, d, s, t). t_road_elevationProfile has +elevation 0..* (a, b, c, d, s). t_road_surface has +CRG 0..* (file, mode, orientation, sStart, sEnd mandatory; hOffset, purpose, sOffset, tOffset, zOffset, zScale optional).",
+    "lesson": "Every planView needs at least one geometry; geometry length must be strictly > 0 (t_grZero), s >= 0. paramPoly3 must always carry pRange. Elevation, superelevation and shape records are optional.",
+    "right": [
+      "Drop or merge zero-length segments before writing geometry",
+      "Always write pRange=\"arcLength\" or \"normalized\" on paramPoly3",
+      "Write geometry records in ascending s, starting at 0"
+    ],
+    "wrong": [
+      "Emitting <geometry length=\"0\"> for degenerate OSM segments",
+      "Omitting pRange and relying on a reader default",
+      "Writing two primitives inside one <geometry>"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig022.png",
+    "figure": "Figure 22",
+    "chapter": "7. Geometry",
+    "section": "7.2 Straight line",
+    "caption": "Figure 22. A straight line",
+    "shows": "matplotlib plot of one straight segment from about (-47, 1) to about (-1.7, 35.7) m; axes 'x-axis [m]', 'y-axis [m]'. It matches the XML example: x = -47.17, y = 0.728, hdg = 0.6548 rad, length = 57.28 (end = (-1.6, 35.4)).",
+    "lesson": "A line is fully defined by start (x, y), hdg and length; the end point follows. hdg is the mathematical angle from +x (0.655 rad ~ 37.5 deg, north-east).",
+    "right": [
+      "End = start + length*(cos hdg, sin hdg)",
+      "Use that end as the next geometry's start (no leaps)"
+    ],
+    "wrong": [
+      "Storing end coordinates instead of length",
+      "Writing hdg in degrees"
+    ],
+    "formula": "x(ds) = x0 + ds*cos(hdg); y(ds) = y0 + ds*sin(hdg)"
+  },
+  {
+    "file": "figures/1.7.0/fig023.png",
+    "figure": "Figure 23",
+    "chapter": "7. Geometry",
+    "section": "7.3 Spiral",
+    "caption": "Figure 23. Road geometry described by a spiral",
+    "shows": "matplotlib plot (sub-metre scale) of a clothoid starting at (0, 0) heading straight up (+y) with zero curvature, bending right (clockwise) with ever-increasing curvature over the top near (0.43, 0.78), down past (0.72, 0.5) and curling inward to end near (0.34, 0.49) - more than a full turn. Not drawn from the XML example values.",
+    "lesson": "A spiral's curvature changes linearly with arc length; as |curvature| grows it winds into an ever-tighter curl. Clockwise winding = negative curvature (right curve). Position requires Fresnel-type integration; an arc approximation is wrong.",
+    "right": [
+      "kappa(ds) = curvStart + (curvEnd - curvStart)*ds/length",
+      "Evaluate via Fresnel integrals or accurate numeric integration",
+      "Use negative curvature values for right-hand transitions"
+    ],
+    "wrong": [
+      "Approximating a spiral by an arc with average curvature",
+      "Assuming spirals must start or end at curvature 0",
+      "Writing curvStart = curvEnd (rule: should differ - use an arc)"
+    ],
+    "formula": "kappa(ds) = cS + (cE - cS)*ds/L; hdg(ds) = hdg0 + cS*ds + (cE - cS)*ds^2/(2L); x = x0 + int cos(hdg) ds; y = y0 + int sin(hdg) ds"
+  },
+  {
+    "file": "figures/1.7.0/fig024.png",
+    "figure": "Figure 24",
+    "chapter": "7. Geometry",
+    "section": "7.4 Arc",
+    "caption": "Figure 24. Road geometry described by an arc",
+    "shows": "matplotlib plot of an arc starting near (0, 72) heading east (+x) and bending clockwise down to about (70.5, 12.5); radius about 71-72 m with the centre near the origin (a single dot is plotted at (0, 0)); sweep about 80 deg. Not drawn from the XML example (example curvature -0.127 1/m).",
+    "lesson": "An arc has constant curvature = 1/R; a clockwise (right-turning) arc has negative curvature and its centre lies on the -t (right) side at distance R from the start.",
+    "right": [
+      "curvature = -1/R for right curves, +1/R for left curves",
+      "Centre = start + (1/kappa)*(-sin hdg, cos hdg)"
+    ],
+    "wrong": [
+      "Writing positive curvature for a clockwise arc",
+      "Writing curvature 0 (use <line>)",
+      "Writing radius instead of curvature"
+    ],
+    "formula": "x = x0 + (sin(hdg0 + k*ds) - sin(hdg0))/k; y = y0 - (cos(hdg0 + k*ds) - cos(hdg0))/k"
+  },
+  {
+    "file": "figures/1.7.0/fig025.png",
+    "figure": "Figure 25",
+    "chapter": "7. Geometry",
+    "section": "7.5 Generating arbitrary road courses from geometry elements",
+    "caption": "Figure 25. Creating a reference line from geometry elements",
+    "shows": "Left: five colour-coded pieces in order - line (orange), spiral (blue), arc (green), spiral (blue), arc (green). Right: they are chained into one smooth reference line bending left toward the upper right, with s/t frames at start (t up-left) and end (s pointing up, t pointing left). Bottom: curvature-vs-s plot - 0 along the line, linear ramp up (spiral), constant (arc), linear ramp DOWN to a smaller but still positive value (spiral), constant (arc); steering-wheel icons show straight, turning left, held, partly unwound, held.",
+    "lesson": "Geometry elements are concatenated so that position, heading AND curvature are continuous; spirals play the role of turning the steering wheel between different curvatures, including arc-to-arc transitions between two non-zero curvatures. Positive curvature = left turn.",
+    "right": [
+      "Insert spirals between line and arc and between arcs of different radius",
+      "Check position, heading and curvature continuity at every geometry join",
+      "Use spirals with non-zero curvStart and curvEnd for compound curves"
+    ],
+    "wrong": [
+      "Line directly followed by arc (curvature jump - allowed but not recommended)",
+      "Assuming spiral curvature always returns to zero",
+      "Heading mismatch at joins producing kinks"
+    ],
+    "formula": "kappa(s) piecewise linear and continuous"
+  },
+  {
+    "file": "figures/1.7.0/fig026.png",
+    "figure": "Figure 26",
+    "chapter": "7. Geometry",
+    "section": "7.6.1 Background information on cubic polynoms (deprecated)",
+    "caption": "Figure 26. A cubic polynom",
+    "shows": "matplotlib plot of y(x) for x in [-100, 100] m: starts at y = -75, flattens to a plateau near y = 20 around x = 0, climbs to y = 125 at x = 100. Coefficients a = 20, b = 0, c = 0.0005, d = 0.0001.",
+    "lesson": "A plain cubic in inertial x/y is a function y(x): one y per x. This is only background; <poly3> is evaluated in a local u/v frame.",
+    "right": [
+      "Sanity check: y(100) = 20 + 5 + 100 = 125, y(-100) = 20 + 5 - 100 = -75"
+    ],
+    "wrong": [
+      "Evaluating <poly3> coefficients against inertial x instead of local u"
+    ],
+    "formula": "y(x) = a + b*x + c*x^2 + d*x^3"
+  },
+  {
+    "file": "figures/1.7.0/fig027.png",
+    "figure": "Figure 27",
+    "chapter": "7. Geometry",
+    "section": "7.6.2 Creating roads using cubic polynoms (deprecated)",
+    "caption": "Figure 27. A curve which cannot be represented by a cubic polynom w.r.t x parameter",
+    "shows": "Inertial X/Y grid with a curve from (3, 1.5) rising and bending back over itself near x = 5; a vertical red line at x ~ 4.85 hits the curve twice (y ~ 3.3 and y ~ 4.3). Warning icon and text 'two Y-values for one X-value'.",
+    "lesson": "A curve that turns back in x cannot be written as y(x); poly3 must be expressed in a rotated local frame where it is a single-valued function of u, so u must increase monotonically along the curve.",
+    "right": [
+      "Choose the local u axis along the start heading so v(u) is single-valued",
+      "Use paramPoly3 when the heading changes by ~90 deg or more relative to the start"
+    ],
+    "wrong": [
+      "Fitting poly3 in global x",
+      "Using poly3 where u would not be monotonic"
+    ],
+    "formula": null
+  },
+  {
+    "file": "figures/1.7.0/fig028.png",
+    "figure": "Figure 28",
+    "chapter": "7. Geometry",
+    "section": "7.6.2 Creating roads using cubic polynoms (deprecated)",
+    "caption": "Figure 28. Transformation from a u/v- to a x/y coordinate system with a=b=0",
+    "shows": "Inertial grid; poly3 starts at (3, 1.45) with s/t arrows; orange u axis along the start heading (angle 'hdg' from horizontal) and v axis perpendicular to the left. A curve point near (5, 4.5) is decomposed into u (along u) and v(u) (perpendicular) and into inertial x(u), y(u). Text: 'Cubic polynom with a = b = 0', 'For every u-value only one v-value is possible', and formulas beta = hdg + arctan(v(u)/u), x(u) = x(u=0) + sqrt(u^2 + v(u)^2)*cos(beta), y(u) = y(u=0) + sqrt(u^2 + v(u)^2)*sin(beta).",
+    "lesson": "With a = b = 0 the u/v frame coincides with s/t at the start: origin = (x, y), u along hdg, v to the left. A curve point is the start plus the local (u, v) vector rotated by hdg; the polar form shown is just a rotation.",
+    "right": [
+      "x = x0 + u*cos(hdg) - v*sin(hdg); y = y0 + u*sin(hdg) + v*cos(hdg)",
+      "Use a rotation matrix or atan2, not arctan(v/u)",
+      "Write a = b = 0 for smooth reference lines"
+    ],
+    "wrong": [
+      "Implementing beta = hdg + arctan(v/u) literally - divides by zero at u = 0 and loses the quadrant if u < 0",
+      "Treating u as arc length (u is a projection; @length is the curve length)"
+    ],
+    "formula": "beta = hdg + atan2(v,u); x = x0 + sqrt(u^2+v^2)cos(beta); y = y0 + sqrt(u^2+v^2)sin(beta); v(u) = a + b*u + c*u^2 + d*u^3"
+  },
+  {
+    "file": "figures/1.7.0/fig029.png",
+    "figure": "Figure 29",
+    "chapter": "7. Geometry",
+    "section": "7.6.2 Creating roads using cubic polynoms (deprecated)",
+    "caption": "Figure 29. Transformation from a u/v- to a x/y coordinate system with a!=0 and b!=0",
+    "shows": "Despite the poly3 caption it is drawn with paramPoly3 labels (practically identical to Figure 32): a u/v frame whose origin (orange dot near (2.6, 0.45)) is offset from the geometry start (x(p=0), y(p=0)) ~ (3.05, 1.45); the start lies at u = aU, v = aV in that frame (segments labelled 'aU', 'aV'). The u axis is inclined by 'hdg' to the horizontal; the curve's initial tangent (s arrow) is inclined a further 'arctan(bV/bU)' relative to u. A curve point near (4.8, 4.8) is decomposed into u(p), v(p) and x(u), y(u).",
+    "lesson": "Non-zero a terms (aU/aV) shift the curve start away from the u/v origin and a non-zero bV rotates the start tangent away from hdg; hdg is then the orientation of the u axis, not of the curve. Start point, hdg and true tangent stop agreeing - avoid this.",
+    "right": [
+      "Write aU = aV = bV = 0, bU > 0 (and poly3 a = b = 0) so (x, y, hdg) are the true start point and tangent",
+      "Initial tangent angle = hdg + atan2(bV, bU)"
+    ],
+    "wrong": [
+      "Emitting non-zero aU/aV/bV - readers disagree on whether (x, y) is the u/v origin or the curve start, giving shifted roads",
+      "Assuming hdg is the curve's start tangent when bV != 0",
+      "Taking this poly3-captioned figure as poly3 semantics (it shows paramPoly3 parameters; the poly3 text puts (x, y) at u = 0 on the v axis)"
+    ],
+    "formula": "tangent0 = hdg + atan2(bV, bU); point = origin_uv + R(hdg)*(u(p), v(p))"
+  },
+  {
+    "file": "figures/1.7.0/fig030.png",
+    "figure": "Figure 30",
+    "chapter": "7. Geometry",
+    "section": "7.7.1 Generating roads using parametric cubic curves",
+    "caption": "Figure 30. A parametric cubic polynom for interpolation of u coordinate",
+    "shows": "Plot of u versus parameter p (p = 1..7): cubic starting at u = aU ~ 1.4 with initial slope angle 'arctan(bU)', rising to a maximum ~3.4 near p ~ 3.3 and then falling to ~2.85 at p ~ 4.85. A red marker at (p ~ 4.85, u ~ 4.3) with lines labelled 'p' and 'u(p)' is NOT on the drawn curve (schematic inconsistency).",
+    "lesson": "u is an independent cubic in p: u(0) = aU, du/dp(0) = bU. u need not be monotonic in p, so the curve may move backwards in u (which poly3 cannot).",
+    "right": [
+      "u(p) = aU + bU p + cU p^2 + dU p^3, evaluated independently of v",
+      "For smooth reference lines use aU = 0, bU = 1 with pRange = arcLength"
+    ],
+    "wrong": [
+      "Reading values off this schematic (the marked point is inconsistent with the curve)",
+      "Assuming u(p) is monotonic"
+    ],
+    "formula": "u(p) = aU + bU*p + cU*p^2 + dU*p^3"
+  },
+  {
+    "file": "figures/1.7.0/fig031.png",
+    "figure": "Figure 31",
+    "chapter": "7. Geometry",
+    "section": "7.7.1 Generating roads using parametric cubic curves",
+    "caption": "Figure 31. A parametric cubic polynom for interpolation of v coordinate",
+    "shows": "Plot of v versus p: cubic starting at v = aV ~ 2.6 with small initial slope angle 'arctan(bV)', rising monotonically to ~4.3 at p ~ 4.85, marked by a red point with lines labelled 'p' and 'v(p)'.",
+    "lesson": "v is an independent cubic in p: v(0) = aV, dv/dp(0) = bV. It is the lateral deviation from the start tangent; with bV = 0 the curve leaves exactly along hdg.",
+    "right": [
+      "v(p) = aV + bV p + cV p^2 + dV p^3",
+      "Use bV = 0 for tangent-continuous joins"
+    ],
+    "wrong": [
+      "Non-zero bV producing a heading kink against the previous geometry"
+    ],
+    "formula": "v(p) = aV + bV*p + cV*p^2 + dV*p^3"
+  },
+  {
+    "file": "figures/1.7.0/fig032.png",
+    "figure": "Figure 32",
+    "chapter": "7. Geometry",
+    "section": "7.7.1 Generating roads using parametric cubic curves",
+    "caption": "Figure 32. A parametric cubic polynom",
+    "shows": "Same drawing as Figure 29: u/v frame origin (orange dot) offset from the start point by aU (along u) and aV (along v); u axis rotated by hdg; initial curve tangent rotated a further arctan(bV/bU); a curve point decomposed into u(p), v(p) and inertial x(u), y(u).",
+    "lesson": "paramPoly3 evaluates u(p), v(p), rotates by hdg and translates into the inertial frame. p is NOT arc length except at the endpoints for pRange = arcLength; the true curve length (numerical integral) must match @length. Aligned form: aU = aV = bV = 0, bU > 0.",
+    "right": [
+      "x = x0 + u cos hdg - v sin hdg; y = y0 + u sin hdg + v cos hdg (with aU = aV = 0)",
+      "Compute @length by numerically integrating |(u'(p), v'(p))| over the p range",
+      "Invert p(s) numerically for s lookups instead of assuming p = s"
+    ],
+    "wrong": [
+      "Assuming p equals arc length in the interior",
+      "Setting @length to the chord length, or to 1 when pRange = normalized",
+      "Non-zero aU/aV (ambiguous start point)"
+    ],
+    "formula": "x(p) = x0 + u(p)cos(hdg) - v(p)sin(hdg); y(p) = y0 + u(p)sin(hdg) + v(p)cos(hdg); length = integral sqrt(u'(p)^2 + v'(p)^2) dp"
+  }
+]

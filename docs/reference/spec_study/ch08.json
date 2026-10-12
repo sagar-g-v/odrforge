@@ -1,0 +1,1341 @@
+{
+ "chapters": [
+  {
+   "id": "8",
+   "title": "Roads",
+   "sections": [
+    {
+     "id": "8",
+     "title": "Roads (road element)",
+     "summary": "The road network is a set of <road> elements, each running along exactly one reference line (planView). A road may represent a long stretch, a piece between junctions, or a connecting road inside a junction (junction attr != -1). A new <road> should only begin when properties can no longer be expressed in the previous one or a junction is needed. Driving direction convention comes from @rule (RHT default).",
+     "concepts": [
+      "road",
+      "road reference line",
+      "connecting road",
+      "junction membership (@junction=-1 for none)",
+      "road length in xy-plane",
+      "traffic rule RHT/LHT",
+      "road overlap",
+      "isolated road",
+      "road network"
+     ],
+     "elements": [
+      {
+       "name": "<road>",
+       "parent": "<OpenDRIVE>",
+       "attributes": [
+        {
+         "name": "id",
+         "type": "string",
+         "unit": null,
+         "required": true,
+         "meaning": "Unique ID in the file; if numeric it should fit uint32_t."
+        },
+        {
+         "name": "junction",
+         "type": "string",
+         "unit": null,
+         "required": true,
+         "meaning": "ID of the junction the road belongs to as connecting road; '-1' if not part of a junction. (1.8+: also cross paths / junction boundary roads.)"
+        },
+        {
+         "name": "length",
+         "type": "t_grZero (>0)",
+         "unit": "m",
+         "required": true,
+         "meaning": "Total reference-line length measured in the xy-plane; elevation does not add length."
+        },
+        {
+         "name": "name",
+         "type": "string",
+         "unit": null,
+         "required": false,
+         "meaning": "Free-form name."
+        },
+        {
+         "name": "rule",
+         "type": "e_trafficRule {RHT,LHT}",
+         "unit": null,
+         "required": false,
+         "meaning": "Standard driving direction rule; RHT assumed when absent."
+        }
+       ]
+      },
+      {
+       "name": "children of <road> (XSD order)",
+       "parent": "<road>",
+       "attributes": [
+        {
+         "name": "link",
+         "type": "t_road_link",
+         "unit": null,
+         "required": false,
+         "meaning": "0..1 predecessor/successor"
+        },
+        {
+         "name": "type",
+         "type": "t_road_type",
+         "unit": null,
+         "required": false,
+         "meaning": "0..*"
+        },
+        {
+         "name": "planView",
+         "type": "t_road_planView",
+         "unit": null,
+         "required": true,
+         "meaning": "1, geometry (ch.7)"
+        },
+        {
+         "name": "elevationProfile",
+         "type": "",
+         "unit": null,
+         "required": false,
+         "meaning": "0..1"
+        },
+        {
+         "name": "lateralProfile",
+         "type": "",
+         "unit": null,
+         "required": false,
+         "meaning": "0..1"
+        },
+        {
+         "name": "lanes",
+         "type": "",
+         "unit": null,
+         "required": true,
+         "meaning": "1 (ch.9)"
+        },
+        {
+         "name": "objects / signals / surface / railroad",
+         "type": "",
+         "unit": null,
+         "required": false,
+         "meaning": "0..1 each"
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "road length",
+       "expr": "road@length = sum(geometry@length) (xy-plane arc length of reference line)",
+       "vars": "geometry@length from <planView>",
+       "notes": "Elevation never changes s or length (the 3D arc length is longer on slopes but s is planar). 1.9 adds an explicit should-rule for the sum."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Every road needs at least one lane whose width is > 0.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Start a new <road> only if properties cannot be described in the previous one, or a junction is required.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.overlap_inside_junction",
+       "level": "shall",
+       "text": "Only roads sharing the same junction id may overlap on the same level; roads on different levels (bridges) are exempt.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.no_overlap_outside_junction",
+       "level": "shall",
+       "text": "Roads outside a junction must not overlap one another.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.no_overlap_self",
+       "level": "shall",
+       "text": "A road must not overlap itself.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.length_sum_geometries",
+       "level": "should",
+       "text": "Road @length should equal the sum of the lengths of all its <geometry> elements.",
+       "since": "1.9"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "If @rule is missing, right-hand traffic is assumed.",
+       "since": "1.5"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM way split at intersections",
+       "how": "Emit one <road> per way segment between junction nodes with junction='-1'; connecting roads inside an intersection get junction='<junctionId>'."
+      },
+      {
+       "case": "Left-hand-traffic country (UK, JP)",
+       "how": "Set rule='LHT' on every road; standard driving side flips relative to the reference line."
+      }
+     ],
+     "right": [
+      "Compute @length as the exact sum of geometry lengths (write with full precision, e.g. %.17g).",
+      "Keep junction='-1' for all non-junction roads.",
+      "Split roads only where properties or topology require it."
+     ],
+     "wrong": [
+      "Overlapping two non-junction roads (e.g. parallel duplicate OSM ways on top of each other) - prohibited.",
+      "Self-overlapping road footprint (tight loops with wide lanes) - prohibited.",
+      "Including elevation (3D length) in @length - length is planar.",
+      "Roads with only zero-width lanes."
+     ],
+     "changes_1_8_1_9": [
+      "1.9.0: new rule road.length_sum_geometries (length should equal sum of geometry lengths).",
+      "1.8.0: @junction description extended - roads may also belong to a junction as cross paths or junction boundary roads (new junction concepts).",
+      "1.8.0: <poly3> geometry a-d deprecated (planView, ch.7).",
+      "1.9 numbering: Roads is chapter 10 (10.1-10.6)."
+     ],
+     "figures": [
+      "Figure 33: UML of t_road and its children - one road owns link, type, planView, elevation/lateral profiles, lanes, objects, signals, surface.",
+      "Figure 34: UML of road geometry (planView/geometry): geometry is a choice of line/spiral/arc/poly3/paramPoly3."
+     ]
+    },
+    {
+     "id": "8.1",
+     "title": "Properties for road sections and cross section",
+     "summary": "Road properties are of two kinds: cross-section properties (e.g. superelevation) that apply to the full road width at an s position, and road-section properties (lanes, elevation, type) defined along s in plan view, which may apply to only some lanes. Sections are introduced by child elements with a start @s; each section's length is implicit (next start minus this start).",
+     "concepts": [
+      "road cross section",
+      "road section",
+      "plan view",
+      "s-start",
+      "implicit section length",
+      "ascending s order",
+      "piecewise definition"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "implicit section length",
+       "expr": "len_i = s_{i+1} - s_i ; last section: len_n = road.length - s_n",
+       "vars": "s_i start of section i",
+       "notes": "A section's value is valid until the next element of the same kind starts or the road ends."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Sections (any s-started child list) are stored in ascending order of s.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Cross-section properties hold for the whole road width; road-section properties may hold for selected lanes only.",
+       "since": "1.6"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Evaluate a piecewise property at s",
+       "how": "Find the last element with s_i <= s (upper_bound - 1), then evaluate with ds = s - s_i."
+      }
+     ],
+     "right": [
+      "Sort every s-started list before writing; dedupe identical s values.",
+      "Lookup: last element with start <= s."
+     ],
+     "wrong": [
+      "Unsorted s lists - readers assume order and pick the wrong segment.",
+      "Zero-length sections (two elements with identical s) - ambiguous."
+     ],
+     "changes_1_8_1_9": [
+      "No content changes in 1.8/1.9 (section renumbered to 10.2; still no rule ids)."
+     ],
+     "figures": []
+    },
+    {
+     "id": "8.2",
+     "title": "Road linkage",
+     "summary": "Roads are connected via <link><predecessor/><successor/></link>. The predecessor attaches at the start of this road's reference line (s=0) and the successor at its end (s=length). A link target is a road (elementType, elementId, contactPoint) or a junction (elementType+elementId; virtual junctions also elementS+elementDir). Reference lines of linked roads must actually touch; gaps/overlaps in the reference line are prohibited, while lane-boundary gaps/overlaps at a kink are tolerated but should be avoided.",
+     "concepts": [
+      "predecessor (start of reference line)",
+      "successor (end of reference line)",
+      "contactPoint start/end (on the linked element)",
+      "elementType road/junction",
+      "elementId",
+      "virtual junction elementS/elementDir",
+      "direct road-to-road linkage",
+      "linkage via junction",
+      "isolated road",
+      "self-linking road",
+      "both-sides consistency",
+      "reference-line continuity"
+     ],
+     "elements": [
+      {
+       "name": "<link>",
+       "parent": "<road>",
+       "attributes": []
+      },
+      {
+       "name": "<predecessor> / <successor>",
+       "parent": "<link>",
+       "attributes": [
+        {
+         "name": "elementType",
+         "type": "e_road_link_elementType {road,junction}",
+         "unit": null,
+         "required": true,
+         "meaning": "Kind of linked element."
+        },
+        {
+         "name": "elementId",
+         "type": "string",
+         "unit": null,
+         "required": true,
+         "meaning": "ID of linked road or junction."
+        },
+        {
+         "name": "contactPoint",
+         "type": "e_contactPoint {start,end}",
+         "unit": null,
+         "required": false,
+         "meaning": "Which end of the LINKED road touches this road: start = linked road's s=0, end = linked road's s=length. Required when elementType=road; not used for junctions."
+        },
+        {
+         "name": "elementS",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": false,
+         "meaning": "Virtual junctions only: s on the linked road (not at its ends) where the connection is; only with elementType=road."
+        },
+        {
+         "name": "elementDir",
+         "type": "e_elementDir {+,-}",
+         "unit": null,
+         "required": false,
+         "meaning": "Given with elementS: direction on the linked road (relative to its s) from which this road is entered."
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "connection points",
+       "expr": "P_this = refline(this, 0) for predecessor, refline(this, this.length) for successor; P_other = refline(other, 0) if contactPoint=start else refline(other, other.length); require |P_this - P_other| ~ 0",
+       "vars": "refline(road,s) = (x,y) from planView",
+       "notes": "Recommended G1: same contactPoint pairing (start-start or end-end) implies headings differ by pi; end->start pairing implies equal headings. Elevation should match too."
+      },
+      {
+       "name": "reciprocal contactPoint",
+       "expr": "A.successor=(road B, start) <=> B.predecessor=(road A, end); A.successor=(B, end) <=> B.successor=(A, end); A.predecessor=(B, start) <=> B.predecessor=(A, start); A.predecessor=(B, end) <=> B.successor=(A, start)",
+       "vars": "",
+       "notes": "Rule: which element (pred/succ) you write on A is set by A's end; the contactPoint is set by B's end. Matches Figure 36 tables."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.linkage.is_junction_needed",
+       "level": "shall",
+       "text": "Link two roads directly only if the relation is unambiguous; if more than one successor/predecessor is possible, a junction must be used.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "A road may have a road, a junction, or nothing as predecessor/successor.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "A road may be its own predecessor or successor (e.g. closed loop).",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.linkage.road_link_attribute_usage",
+       "level": "shall",
+       "text": "Road targets use elementType, elementId and contactPoint.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.linkage.junc_link_attribute_usage",
+       "level": "shall",
+       "text": "Common and direct junction targets use elementType and elementId only (no contactPoint).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.linkage.virtjunc_link_attribute_usage",
+       "level": "shall",
+       "text": "Virtual junction targets use elementType, elementId, elementS and elementDir.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.9.0:road.linkage.both_sides_consistency",
+       "level": "shall",
+       "text": "Linkage must be declared on both linked elements (the counterpart <predecessor>/<successor>) and the two declarations must agree.",
+       "since": "1.9"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Avoid overlaps or leaps between lanes of linked roads; tolerated only if the reference lines connect properly.",
+       "since": "1.6"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Linkage is not possible when the two reference lines do not connect (no gap, no overlap in reference line).",
+       "since": "1.6"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Isolated roads may omit <link>.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Two roads in same direction (1 -> 2)",
+       "how": "Road1 successor: road 2 contactPoint=start; Road2 predecessor: road 1 contactPoint=end."
+      },
+      {
+       "case": "Opposite directions meeting at their starts",
+       "how": "Road1 predecessor: road 2 contactPoint=start; Road2 predecessor: road 1 contactPoint=start."
+      },
+      {
+       "case": "Opposite directions meeting at their ends",
+       "how": "Road1 successor: road 2 contactPoint=end; Road2 successor: road 1 contactPoint=end."
+      },
+      {
+       "case": "Road ends at an intersection",
+       "how": "Road successor: elementType=junction elementId=J (no contactPoint). Connecting roads inside J (junction=J) link to the incoming/outgoing roads with elementType=road + contactPoint; the junction's <connection> lists incomingRoad/connectingRoad/contactPoint."
+      },
+      {
+       "case": "Fork (one road splits into two)",
+       "how": "Ambiguous successor -> must use a junction (Figure 37), not a direct link. A lane count change without split can stay in one road via a new laneSection."
+      },
+      {
+       "case": "Closed ring road",
+       "how": "Single road may be its own successor (road=self, contactPoint=start) and own predecessor (road=self, contactPoint=end)."
+      }
+     ],
+     "right": [
+      "Write links on BOTH roads and verify every reciprocal pair programmatically before output.",
+      "Derive contactPoint from which end of the OTHER road coincides with this road's end.",
+      "Make reference-line endpoints coincide exactly (position; ideally heading and elevation too).",
+      "Use a junction whenever a road end touches more than one other road end."
+     ],
+     "wrong": [
+      "Gap in the reference line between linked roads (Figure 35 top-left) - prohibited.",
+      "Overlap of reference lines at the joint (Figure 35 top-right) - prohibited.",
+      "Direct link where the reference line jumps across lanes / lane layout ambiguous (Figure 36 bottom-right) - prohibited, use a junction or keep reference line continuous.",
+      "contactPoint on a junction link, or omitting contactPoint on a road link.",
+      "One-sided links (A->B without B->A) - violates 1.9 both_sides_consistency.",
+      "Linking a non-junction road end directly to several roads."
+     ],
+     "changes_1_8_1_9": [
+      "1.9.0: new rule road.linkage.both_sides_consistency (predecessor/successor declared on both sides and consistent).",
+      "1.7.0 rule ids for junction/virtual-junction attribute sets retained; 1.9 marks elementType/elementId required, others optional.",
+      "1.9 numbering: section 10.3, figures 38-41."
+     ],
+     "figures": [
+      "Figure 35: four cases - gap in reference line (prohibited), overlap in reference line (prohibited), gap/overlap only in lane areas at a kink (allowed, warning), smooth tangent-continuous join (recommended). Lesson: reference lines must touch; aim for G1 continuity.",
+      "Figure 36: allowed linkage without junctions, with link tables: same direction (1 succ=2-start, 2 pred=1-end); opposite, both starting at joint (1 pred=2-start, 2 pred=1-start); opposite, both ending at joint (1 succ=2-end, 2 succ=1-end); prohibited: reference line shifts sideways across lanes at the joint.",
+      "Figure 37: a road splitting into a through road and a branch is modeled with connecting roads inside a junction.",
+      "Figure 38: UML of t_road_link with predecessor/successor (t_road_link_predecessorSuccessor)."
+     ]
+    },
+    {
+     "id": "8.3",
+     "title": "Road type and speed limits",
+     "summary": "<type> gives the road's main purpose (motorway, rural, town...) and applies to the whole cross section from its @s until the next <type> or road end. A <speed> child gives the default maximum speed for that type; it must be repeated per <type> since types carry no global speed. Lane types and lane speeds may differ from the road's; speed limits from signals take precedence.",
+     "concepts": [
+      "road type",
+      "country code ISO 3166-1 alpha-2",
+      "state identifier",
+      "default maximum speed",
+      "speed unit",
+      "lane speed override",
+      "signal precedence"
+     ],
+     "elements": [
+      {
+       "name": "<type>",
+       "parent": "<road>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start s of this type."
+        },
+        {
+         "name": "type",
+         "type": "e_roadType {unknown,rural,motorway,town,lowSpeed,pedestrian,bicycle,townExpressway,townCollector,townArterial,townPrivate,townLocal,townPlayStreet}",
+         "unit": null,
+         "required": true,
+         "meaning": "Road type."
+        },
+        {
+         "name": "country",
+         "type": "e_countryCode",
+         "unit": null,
+         "required": false,
+         "meaning": "ISO 3166-1 alpha-2 (optionally with state id) selecting national rules held by the application."
+        }
+       ]
+      },
+      {
+       "name": "<speed>",
+       "parent": "<type>",
+       "attributes": [
+        {
+         "name": "max",
+         "type": "t_maxSpeed (double or 'no limit'/'undefined')",
+         "unit": "per @unit",
+         "required": true,
+         "meaning": "Default max speed for this type."
+        },
+        {
+         "name": "unit",
+         "type": "e_unitSpeed {m/s,mph,km/h}",
+         "unit": null,
+         "required": false,
+         "meaning": "Unit of max; m/s if absent (1.9 table lists it required)."
+        }
+       ]
+      }
+     ],
+     "formulas": [],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.type.create_new_type_in_parent",
+       "level": "shall",
+       "text": "A change of road type requires a new <type> element in the parent <road>.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.type.only_alpha_2_country_codes",
+       "level": "shall",
+       "text": "Use only ISO alpha-2 country codes (alpha-3 cannot carry state identifiers).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.type.lane_type_may_differ_from_parent",
+       "level": "may",
+       "text": "Lanes may have a type different from the road type; both are valid.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.type.elem_asc_order",
+       "level": "shall",
+       "text": "<type> elements in ascending s order.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Country code and state may be added; the national rule data lives in the application.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Speed limit must be defined per <type> element; a new <type> needs its own <speed> if a limit applies.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Lanes may override with lane-level <speed>.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Speed limits derived from signals always take precedence over type speed.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Map OSM highway=* to road type",
+       "how": "motorway/trunk->motorway, primary/secondary/tertiary outside towns->rural (inside: townArterial/townCollector), residential->town/townLocal, living_street->townPlayStreet, footway->pedestrian, cycleway->bicycle; maxspeed tag -> <speed max unit='km/h'/>."
+      },
+      {
+       "case": "Speed changes mid-road without type change",
+       "how": "Add another <type> at the new s with the same type and new <speed>, or use lane speed / signals."
+      }
+     ],
+     "right": [
+      "Emit <type s='0'> at least once per road so consumers know its class.",
+      "Give an explicit unit (km/h or mph) for OSM-derived speeds.",
+      "Country code alpha-2, e.g. 'DE'."
+     ],
+     "wrong": [
+      "Alpha-3 country codes ('DEU') - prohibited.",
+      "Assuming a <speed> carries over to the next <type> - it does not.",
+      "Using road-type speed to override posted signs - signals win."
+     ],
+     "changes_1_8_1_9": [
+      "1.8.0: header <defaultRegulations> can provide default speeds per road type; 1.9 text notes types have no global speed unless defaultRegulations gives one.",
+      "1.8.0: signal semantics <speed> with literals maximum/minimum/recommended/zone (+End).",
+      "No changes to <type>/<speed> attributes in 1.8/1.9."
+     ],
+     "figures": []
+    },
+    {
+     "id": "8.4",
+     "title": "Methods of elevation (overview)",
+     "summary": "Road surface height is built from elevation along s (elevationProfile), the lateral profile in t (superelevation roll and/or shape), and objects that can raise road height. The s coordinate and road length never change because of elevation.",
+     "concepts": [
+      "elevation along s",
+      "lateral profile",
+      "superelevation",
+      "shape",
+      "crossfall",
+      "s is planar",
+      "objects influencing height"
+     ],
+     "elements": [
+      {
+       "name": "<elevationProfile>",
+       "parent": "<road>",
+       "attributes": []
+      },
+      {
+       "name": "<lateralProfile>",
+       "parent": "<road>",
+       "attributes": []
+      }
+     ],
+     "formulas": [
+      {
+       "name": "surface point (combined, derived)",
+       "expr": "phi = sElev(s); z_ref = elev(s); h = hShape(s,t) (+ lane height); XY = refXY(s) + n(s)*(t*cos(phi) - h*sin(phi)); Z = z_ref + t*sin(phi) + h*cos(phi)",
+       "vars": "n(s): unit left normal of reference line in xy; t measured in the rotated (superelevated) cross-section plane; h along the rotated up axis",
+       "notes": "Derived from Figures 40/42: superelevation rolls the whole t-h frame about the reference line; positive phi lowers the right side (t<0). Plan-view offset is t*cos(phi): projected width shrinks, actual width kept. Many tools approximate with lateral=t."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Elevation does not alter s length.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [],
+     "right": [
+      "Keep s purely 2D; apply z afterwards."
+     ],
+     "wrong": [
+      "Recomputing s or road length from 3D distance."
+     ],
+     "changes_1_8_1_9": [
+      "1.8.0: new <crossSectionSurface> in lateralProfile as alternative cross-section height model (see 8.4.3)."
+     ],
+     "figures": [
+      "Figure 39: three panels - elevation along s, superelevation roll about s (h rotates to h'), road shape with per-t polynomials (crossfall)."
+     ]
+    },
+    {
+     "id": "8.4.1",
+     "title": "Road elevation",
+     "summary": "<elevation> elements inside <elevationProfile> give the reference-line height (inertial z) as cubic polynomials in ds, valid from @s until the next element. Default elevation is 0 (what zero means depends on georeferencing).",
+     "concepts": [
+      "elevation polynomial",
+      "inertial z",
+      "ds restart per element",
+      "default zero elevation",
+      "georeferenced zero"
+     ],
+     "elements": [
+      {
+       "name": "<elevation>",
+       "parent": "<elevationProfile>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start s."
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Elevation at ds=0."
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1",
+         "required": true,
+         "meaning": "Slope (m/m)."
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": "Quadratic coefficient."
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": true,
+         "meaning": "Cubic coefficient."
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "elevation",
+       "expr": "elev(ds) = a + b*ds + c*ds^2 + d*ds^3, ds = s - sStart",
+       "vars": "elev: z of reference line; sStart: element @s",
+       "notes": "Slope = b + 2c*ds + 3d*ds^2. ds resets per element. C0 at s_{i+1}: a_{i+1} = elev_i(L_i); C1: b_{i+1} = elev_i'(L_i)."
+      },
+      {
+       "name": "absolute s",
+       "expr": "s = sStart + ds",
+       "vars": "",
+       "notes": ""
+      },
+      {
+       "name": "Hermite fit (implementation aid)",
+       "expr": "given z0,z1,m0,m1 over L: a=z0, b=m0, c=(3(z1-z0)/L - 2m0 - m1)/L, d=(m0 + m1 - 2(z1-z0)/L)/L^2",
+       "vars": "m = dz/ds",
+       "notes": "Not from the spec; standard way to produce C1 elevation pieces."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.elevation.elev_along_ref_line",
+       "level": "shall",
+       "text": "Road elevation is defined along the reference line.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.elevation.elem_asc_order",
+       "level": "shall",
+       "text": "<elevation> elements in ascending s.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Elevation may be standalone or combined with superelevation and shape.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Each elevation element remains valid until the next one.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "OSM/DEM heights per node",
+       "how": "Fit piecewise cubic Hermite per segment; emit one <elevation> per segment."
+      },
+      {
+       "case": "Bridges/layer tags",
+       "how": "Raise elevation smoothly over ramps; linked roads must share endpoint z."
+      }
+     ],
+     "right": [
+      "Match z (and slope) at road joints so linked roads are continuous.",
+      "Emit <elevation s='0' a='z' b='0' c='0' d='0'/> at minimum when z is known."
+     ],
+     "wrong": [
+      "Elevation discontinuities between consecutive elements or linked roads.",
+      "Unordered elevation elements."
+     ],
+     "changes_1_8_1_9": [
+      "None for road <elevation> (1.8 center/left/right elevation attributes belong to junction elevation grids)."
+     ],
+     "figures": []
+    },
+    {
+     "id": "8.4.2",
+     "title": "Superelevation",
+     "summary": "Superelevation is the roll angle (rad) of the whole cross section around the reference line, as a cubic in ds. Positive values make the road fall to the right (t<0 lower). It keeps actual lane width but reduces projected (plan-view) width; lanes can opt out via lane @level=true.",
+     "concepts": [
+      "roll angle",
+      "cross slope",
+      "banking in curves",
+      "projected width vs actual width",
+      "lane @level exclusion",
+      "tilted t-axis"
+     ],
+     "elements": [
+      {
+       "name": "<superelevation>",
+       "parent": "<lateralProfile>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start s."
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "rad",
+         "required": true,
+         "meaning": "Roll at ds=0."
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "rad/m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "rad/m^2",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "rad/m^3",
+         "required": true,
+         "meaning": ""
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "superelevation",
+       "expr": "sElev(ds) = a + b*ds + c*ds^2 + d*ds^3, ds = s - sStart",
+       "vars": "sElev: roll angle [rad]",
+       "notes": "Positive = falls to right; ds resets per element."
+      },
+      {
+       "name": "cross-section rotation",
+       "expr": "lateral_xy = t*cos(sElev) ; dz = t*sin(sElev)",
+       "vars": "t: distance along tilted t-axis",
+       "notes": "Figure 40: point t1 on the tilted axis projects to t1*cos(a) in plan view. Inverse xy->st must divide by cos(sElev)."
+      },
+      {
+       "name": "level lane",
+       "expr": "lane with @level=true keeps its inner-border height and stays horizontal (not rolled)",
+       "vars": "",
+       "notes": "Defined in chapter 9 (excluding lanes from superelevation)."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.superelevation.elem_asc_order",
+       "level": "shall",
+       "text": "<superelevation> elements ascending in s.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Superelevation applies to the entire road cross section.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Individual lanes can be excluded with @level.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "May be combined with road elevation.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Each element valid until the next starts or the reference line ends; default 0.",
+       "since": "1.4"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Banked curve",
+       "how": "Cubic ramp-in from 0 to phi over the transition, constant in the arc, ramp-out."
+      },
+      {
+       "case": "Sidewalk staying flat on a banked road",
+       "how": "Set sidewalk lane level='true'."
+      }
+     ],
+     "right": [
+      "Use radians; sign: positive lowers right side.",
+      "Ramp roll continuously (cubic) to avoid steps."
+     ],
+     "wrong": [
+      "Degrees instead of radians.",
+      "Treating lane widths as plan-view widths when superelevation is non-zero (projected width shrinks by cos).",
+      "Encoding a two-sided crown as superelevation (needs shape)."
+     ],
+     "changes_1_8_1_9": [
+      "1.9 text: shape combined with superelevation is deprecated; 1.8 <crossSectionSurface> must not be combined with superelevation."
+     ],
+     "figures": [
+      "Figure 40: a=0 flat cross section vs a>0 tilted t-axis; the h axis rotates with it and t1 projects to t1*cos(a). Lesson: superelevation is a rigid rotation of the t-h frame about the reference line."
+     ]
+    },
+    {
+     "id": "8.4.3",
+     "title": "Shape definition (lateral shape)",
+     "summary": "<shape> elements give detailed cross-section height as cubic polynomials in dt, starting at @t, grouped into profiles at given @s; several shapes per s cover different t ranges. Between profiles the height is interpolated linearly along s. The t range must cover the road's maximum lateral extent, and lane offsets (especially non-linear ones) should be avoided with shapes.",
+     "concepts": [
+      "lateral profile at s",
+      "piecewise cubic in t",
+      "linear interpolation along s",
+      "t-definition coverage",
+      "crossfall",
+      "curved track surface",
+      "shape rotated by superelevation",
+      "actual vs projected width"
+     ],
+     "elements": [
+      {
+       "name": "<shape>",
+       "parent": "<lateralProfile>",
+       "attributes": [
+        {
+         "name": "s",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "s of the profile."
+        },
+        {
+         "name": "t",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start t of this polynomial piece."
+        },
+        {
+         "name": "a",
+         "type": "double",
+         "unit": "m",
+         "required": true,
+         "meaning": "Height at dt=0 relative to the reference plane."
+        },
+        {
+         "name": "b",
+         "type": "double",
+         "unit": "1",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "c",
+         "type": "double",
+         "unit": "1/m",
+         "required": true,
+         "meaning": ""
+        },
+        {
+         "name": "d",
+         "type": "double",
+         "unit": "1/m^2",
+         "required": true,
+         "meaning": ""
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "shape polynomial",
+       "expr": "hShape(dt) = a + b*dt + c*dt^2 + d*dt^3, dt = t - tStart",
+       "vars": "tStart: shape @t; piece valid until next @t in the same profile",
+       "notes": "1.7 labels it hShape(ds) but the variable is dt."
+      },
+      {
+       "name": "interpolation between profiles",
+       "expr": "h(sP,tP) = hR1(tP) + (hR2(tP) - hR1(tP)) * (sP - sR1)/(sR2 - sR1)",
+       "vars": "hR1,hR2: each profile evaluated at tP with its own piece containing tP",
+       "notes": "Figure 41 prints (hR1+hR2)*(sP-sR1)/(sR2-sR1), which is a typo; the text says linear interpolation, so use standard lerp. Profiles may have different piece counts (5 vs 3). Beyond the last profile its values hold."
+      },
+      {
+       "name": "shape with superelevation",
+       "expr": "Z = elev(s) + t*sin(phi) + h*cos(phi); lateral = t*cos(phi) - h*sin(phi)",
+       "vars": "phi = sElev(s), h = hShape",
+       "notes": "Figure 42: the shape is carried along by the superelevation rotation; width projected onto the superelevated plane unchanged, plan-view projection changed."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.4.0:road.shape.elem_asc_order",
+       "level": "shall",
+       "text": "<shape> ascending first by s, then by t.",
+       "since": "1.4"
+      },
+      {
+       "id": "asam.net:xodr:1.4.0:road.shape.t_definition_coverage",
+       "level": "shall",
+       "text": "At every s the shape t range must cover the road's maximum width (max t-extent of the whole <road>).",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "No lane offset when using shapes; non-linear lane offsets must be avoided since shapes interpolate linearly in s.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "may",
+       "text": "Shapes may be combined with superelevation (deprecated per 1.9 text) and road elevation.",
+       "since": "1.4"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Model shapes starting from the right side (most negative t) toward positive t.",
+       "since": "1.6"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Linear crossfall (Figure 51)",
+       "how": "Profile at s=0: piece t=-4 (flat 0), t=-3 (a=0,b=0.15 rising), t=0 (a=0.45,b=-0.10 falling), t=4 (a=0.05 flat). Crown 0.45 m at centre."
+      },
+      {
+       "case": "Roof-shaped crown for drainage",
+       "how": "Two linear pieces per profile; one profile at s=0 holds for the whole road unless width changes."
+      }
+     ],
+     "right": [
+      "Cover from the right-most to left-most lane border along the whole road in every profile.",
+      "Keep pieces C0-continuous in t (a_{k+1} = h_k(t_{k+1}-t_k)).",
+      "Prefer shape-only or superelevation-only; for 1.8+ consider crossSectionSurface."
+     ],
+     "wrong": [
+      "Shapes not covering outer lanes -> undefined height at the road edge.",
+      "Shapes with non-linear laneOffset -> lanes slide across the linearly interpolated profile.",
+      "Using Figure 41's printed formula literally (sums heights)."
+     ],
+     "changes_1_8_1_9": [
+      "1.8.0: <crossSectionSurface> (in lateralProfile) with <tOffset>, <surfaceStrips>/<strip id=+-1,+-2 mode=relative|independent>, <width>, <constant>/<linear>/<quadratic>/<cubic> each holding <coefficients s a b c d>; h(s,t)=co(s)+li(s)*dt+qu(s)*dt^2+cu(s)*dt^3 with dt = t - tOffset (minus inner strip width for outer strips). Rules asam.net:xodr:1.8.0:road.cross_section_surface.{lane_def_valid,start_end_match_with_refline,use_strip,use_width,height,no_shape_superelevation}: valid only within lanes; starts/ends with reference line; single strip per side has id 1/-1 and no width; with two strips the inner needs width; lane @height added on top; not combined with shape or superelevation.",
+      "1.9 text marks shape combined with superelevation as deprecated."
+     ],
+     "figures": [
+      "Figure 41: lateral profiles at sR1 (5 pieces) and sR2 (3 pieces), point (sP,tP) between them; t range must span the full road; heights interpolated linearly in s.",
+      "Figure 42: shape alone (left) vs shape on a superelevated section (right): the shape is rotated with the t-axis; plan-view position becomes t1*cos(a).",
+      "Figure 51: crossfall example cross section with lane widths 1/4/3/1 m and heights 0, 0.45, 0.05 m."
+     ]
+    },
+    {
+     "id": "8.5",
+     "title": "Road surface (OpenCRG)",
+     "summary": "<surface><CRG> references an OpenCRG curved-regular-grid file adding detailed elevation (or friction) to a road between sStart and sEnd. Modes: attached (CRG relative height added to OpenDRIVE height, evaluated along the OpenDRIVE reference line), attached0 (CRG height only, along OpenDRIVE line), genuine (CRG placed by offsets relative to the road, CRG geometry and height used), global (CRG in native world coordinates, CRG height only; only mode for <junction>). No visual data is carried.",
+     "concepts": [
+      "OpenCRG",
+      "curved regular grid",
+      "u/v coordinates",
+      "attachment mode attached/attached0/genuine/global",
+      "orientation same/opposite",
+      "sOffset/tOffset/hOffset/zOffset/zScale",
+      "friction purpose",
+      "CRG on junctions",
+      "last entry wins"
+     ],
+     "elements": [
+      {
+       "name": "<surface>",
+       "parent": "<road>",
+       "attributes": []
+      },
+      {
+       "name": "<CRG>",
+       "parent": "<surface>",
+       "attributes": [
+        {
+         "name": "file",
+         "type": "string",
+         "unit": null,
+         "required": true,
+         "meaning": "CRG file name."
+        },
+        {
+         "name": "sStart",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "Start of application."
+        },
+        {
+         "name": "sEnd",
+         "type": "t_grEqZero",
+         "unit": "m",
+         "required": true,
+         "meaning": "End of application."
+        },
+        {
+         "name": "orientation",
+         "type": "e_direction {same,opposite}",
+         "unit": null,
+         "required": true,
+         "meaning": "Orientation relative to road; opposite only for attached/attached0."
+        },
+        {
+         "name": "mode",
+         "type": "e_road_surface_CRG_mode {attached,attached0,genuine,global}",
+         "unit": null,
+         "required": true,
+         "meaning": "Attachment mode."
+        },
+        {
+         "name": "purpose",
+         "type": "e_road_surface_CRG_purpose {elevation,friction}",
+         "unit": null,
+         "required": false,
+         "meaning": "Default elevation."
+        },
+        {
+         "name": "sOffset",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Default 0; not with global."
+        },
+        {
+         "name": "tOffset",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Default 0; not with global; unaffected by orientation."
+        },
+        {
+         "name": "hOffset",
+         "type": "double",
+         "unit": "rad",
+         "required": false,
+         "meaning": "Default 0; 1.7: genuine only; 1.9: genuine or global."
+        },
+        {
+         "name": "zOffset",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "Default 0; elevation purpose only."
+        },
+        {
+         "name": "zScale",
+         "type": "double",
+         "unit": null,
+         "required": false,
+         "meaning": "Default 1; elevation purpose only."
+        },
+        {
+         "name": "xOffset / yOffset",
+         "type": "double",
+         "unit": "m",
+         "required": false,
+         "meaning": "New in 1.9.0; global mode only."
+        }
+       ]
+      }
+     ],
+     "formulas": [
+      {
+       "name": "attached",
+       "expr": "(u,v) = (s - sOffset, t - tOffset); totalHeight = crgEvaluv2z(u,v)*zScale + zOffset + laneHeightNoCRG(road,s,t)",
+       "vars": "",
+       "notes": "orientation=same."
+      },
+      {
+       "name": "attached0",
+       "expr": "(u,v) = (s - sOffset, t - tOffset); totalHeight = crgEvaluv2z(u,v)*zScale + zOffset",
+       "vars": "",
+       "notes": "OpenDRIVE height treated as 0; set sStart/sEnd exactly to the CRG extent to avoid zero-height gaps."
+      },
+      {
+       "name": "genuine",
+       "expr": "(xS,yS,hS) = st2xyh(road,sOffset,tOffset); hRot = hS + hOffset - REFERENCE_LINE_START_PHI; [xC,yC] = [[cos hRot, sin hRot],[-sin hRot, cos hRot]]*([x,y]-[xS,yS]) + [REFERENCE_LINE_START_X, REFERENCE_LINE_START_Y]; totalHeight = crgEvalxy2z(xC,yC)*zScale + zOffset",
+       "vars": "REFERENCE_LINE_START_* from CRG file",
+       "notes": "CRG geometry must match road geometry within tolerance."
+      },
+      {
+       "name": "global",
+       "expr": "totalHeight = crgEvalxy2z(x,y)*zScale + zOffset",
+       "vars": "",
+       "notes": "1.9 adds xOffset/yOffset/hOffset transform."
+      },
+      {
+       "name": "orientation opposite",
+       "expr": "(u,v) = R180 * (s - sOffset, t - tOffset), R180 = [[-1,0],[0,-1]]",
+       "vars": "",
+       "notes": "1.7 prints matrix [[0,-1],[-1,0]], which is not a 180 deg rotation (likely erratum); text says rotation by 180 deg about the uv origin."
+      }
+     ],
+     "rules": [
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.attach_vs_friction",
+       "level": "shall",
+       "text": "mode=attached must not be used with purpose=friction.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.friction_no_z_offset_scale",
+       "level": "shall",
+       "text": "zOffset/zScale must not be set for friction (computed as 0/1).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.use_last_entry",
+       "level": "shall",
+       "text": "Several CRG entries for the same purpose at a location: the last in file order wins; others ignored.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.junction",
+       "level": "shall",
+       "text": "If a <junction> has <CRG>, none of its connecting roads may have one.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.no_opposite",
+       "level": "shall",
+       "text": "orientation=opposite only with attached/attached0.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "shall",
+       "text": "hOffset only with genuine (1.7). Replaced in 1.9 by asam.net:xodr:1.9.0:road.crg.h_offset_only_genuine_global (genuine or global).",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.s_t_offset_no_global",
+       "level": "shall",
+       "text": "sOffset/tOffset not with mode=global.",
+       "since": "1.7"
+      },
+      {
+       "id": "asam.net:xodr:1.7.0:road.crg.only_on_per_s",
+       "level": "should",
+       "text": "Only one CRG per s-position and purpose per road/junction.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Use mode=global for junctions.",
+       "since": "1.7"
+      },
+      {
+       "id": null,
+       "level": "should",
+       "text": "Outside the CRG area, OpenDRIVE elevation must remain usable; elevation/superelevation may be added as fallback for non-CRG tools.",
+       "since": "1.7"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Pot holes on a road",
+       "how": "mode=attached with relative CRG heights."
+      },
+      {
+       "case": "Measured race track",
+       "how": "mode=genuine with offsets matching the track start."
+      },
+      {
+       "case": "Junction surface",
+       "how": "mode=global on the <junction>."
+      },
+      {
+       "case": "Friction map",
+       "how": "purpose=friction with attached0/genuine/global; replaces lane <material> friction."
+      }
+     ],
+     "right": [
+      "OdrForge (OSM source) normally emits no <surface>; if added, one CRG per purpose and keep OpenDRIVE elevation as fallback."
+     ],
+     "wrong": [
+      "attached + friction; hOffset in attached modes; s/tOffset in global; CRG on both a junction and its connecting roads."
+     ],
+     "changes_1_8_1_9": [
+      "1.9.0: <CRG> gains xOffset and yOffset (global only); hOffset allowed for genuine and global (rule road.crg.h_offset_only_genuine_global).",
+      "1.9 global mode: only x/y/z/hOffset transform the data."
+     ],
+     "figures": [
+      "Figure 43: CRG surface with cobblestones/pot holes.",
+      "Figure 44: CRG u/v vs x/y coordinate systems along the CRG reference line.",
+      "Figure 45: CRG positioned along the OpenDRIVE reference line with tOffset.",
+      "Figures 46-48: attached, attached with elevation, attached0 with elevated reference line (zero-height gaps outside CRG).",
+      "Figure 49: genuine placement.",
+      "Figure 50: orientation same/opposite."
+     ]
+    },
+    {
+     "id": "8.6",
+     "title": "Use cases for roads",
+     "summary": "Worked example: two-lane road with a linear crossfall modeled by four <shape> pieces at s=0, starting at the right side (negative t) and moving to positive t.",
+     "concepts": [
+      "crossfall",
+      "drainage gradient",
+      "shape pieces from right to left"
+     ],
+     "elements": [],
+     "formulas": [
+      {
+       "name": "crossfall example",
+       "expr": "t in [-4,-3]: h=0; t in [-3,0]: h=0.15*(t+3); t in [0,4]: h=0.45-0.10*t; t>=4: h=0.05",
+       "vars": "",
+       "notes": "Heights relative to the reference plane."
+      }
+     ],
+     "rules": [
+      {
+       "id": null,
+       "level": "shall",
+       "text": "Shape elements start at the right side of the road (negative t) and proceed in positive t.",
+       "since": "1.6"
+      }
+     ],
+     "use_cases": [
+      {
+       "case": "Drainage crossfall",
+       "how": "Shape pieces with linear b per side; one profile at s=0 valid for the whole road."
+      }
+     ],
+     "right": [
+      "Order shape pieces by increasing t starting with the most negative t."
+     ],
+     "wrong": [
+      "Starting at t=0 and leaving right-side lanes undefined."
+     ],
+     "changes_1_8_1_9": [
+      "1.8+: crossSectionSurface is an alternative way to model crossfall (not with shape/superelevation)."
+     ],
+     "figures": [
+      "Figure 51: crossfall cross section with t marks and heights 0 / 0.45 / 0.05 m."
+     ]
+    }
+   ]
+  }
+ ]
+}

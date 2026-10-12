@@ -1,0 +1,1319 @@
+[
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_full_reality.png",
+  "viewed": true,
+  "figure": "Figure 1",
+  "chapter": "6 Common junctions",
+  "section": "6.1 Introduction",
+  "caption": "Figure 1. Complex junction",
+  "shows": "Real-world style top view of a signalised 5-arm junction: N arm two-way with a curb-side BUS lane (southbound) and a painted/raised teardrop splitter island between the inbound and outbound halves; E arm two-way with left/straight turn arrows and a stop line set back from a zebra; W arm two-way inbound with two eastbound arrows and a stop line; SW arm one-way inbound (northbound) with straight, right-turn and a dashed BUS+bicycle lane; SE arm one-way outbound (blue one-way arrow sign pointing away, red no-entry disk at the corner). Zebra crossings sit just inside every arm mouth. Vehicle signals (3-aspect, arrow aspects, white-bar tram/bus aspects), pedestrian signals at both crossing ends, give-way triangles and mandatory-direction signs are drawn once per approach.",
+  "lesson": "A single real junction mixes one-way in/out arms, bus/bike lanes, splitter islands, zebras and many signal kinds; the guideline builds it up from T to X to the full 5-road case.",
+  "right": [
+   "Treat the whole mouth area (all arms up to and including the zebras) as one common junction.",
+   "Represent duplicated real signal heads only where needed; the figure shows one head per approach/crossing."
+  ],
+  "wrong": [
+   "Splitting the 5-arm node into several small junctions just because the arms are skewed.",
+   "Dropping one-way arms or bus/bike lanes from the junction model."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_reality.png",
+  "viewed": true,
+  "figure": "Figure 2",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.1 Example",
+  "caption": "Figure 2. Basic T junction",
+  "shows": "T junction: a two-lane two-way road enters from the W, a two-way road from the ENE and a two-way road from the S. The priority road bends between E and S (yellow priority diamonds with the supplementary bent-priority plate on the E and S approaches), shown by a dashed white guide line curving from the E arm into the S arm through the junction. The W approach has a give-way triangle with the same bent-priority plate. Dark grey bands outside thin white edge lines are curb+sidewalk on all arms; inner corners are rounded curbs.",
+  "lesson": "Priority in a T can follow a bent through-route; priority is expressed with traffic signs, and the dashed guide marking belongs to the connecting road of the priority movement.",
+  "right": [
+   "Keep curb + sidewalk running continuously around every corner of the junction.",
+   "Model the priority route with priority signs on the main arms and a yield sign on the minor arm."
+  ],
+  "wrong": [
+   "Assuming the geometrically straight pair (W-E) is the priority road.",
+   "Ending sidewalks at the junction boundary."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_reference_lines.png",
+  "viewed": true,
+  "figure": "Figure 3",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 3. Road reference lines",
+  "shows": "Blue arrows on the road centre lines: road 4 (W) runs W->E and ends at the W mouth of the junction; road 6 (E) runs E->W and ends at the E mouth; road 5 (S) starts at the S mouth and runs southward. All three reference lines stop exactly where the curb returns begin (the gore points), nothing of them lies inside the junction area.",
+  "lesson": "Reference lines of the arm roads end/start at the junction outline (the curb-return tangent points), and their direction is free: a road may start or end at the junction.",
+  "right": [
+   "Cut each OSM way at the junction outline and let its reference line start or end there.",
+   "Allow either direction (road may end or start at the junction); record the correct contactPoint."
+  ],
+  "wrong": [
+   "Running an arm reference line into the junction centre (the OSM node).",
+   "Reversing ways just to make all of them point into the junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_lane_types.png",
+  "viewed": true,
+  "figure": "Figure 4",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 4. Lanes on the road with @id=\"4\"",
+  "shows": "Road 4 coloured by lane: lane 1 (beige, left of reference line) and lane -1 (light blue, right) are driving lanes; at each outer edge a thin violet strip (curb) and a dark-red band (walking/sidewalk). Code 2: left 3 walking, 2 curb, 1 driving; right -1 driving, -2 curb, -3 walking, level=false.",
+  "lesson": "Standard urban cross-section per side: driving, then a narrow curb lane, then a walking lane, ids counted outward from the centre lane.",
+  "right": [
+   "Per side: driving lanes, then type curb (~0.15 m), then type walking.",
+   "Number lanes outward from 0: left positive, right negative."
+  ],
+  "wrong": [
+   "Modelling sidewalks as separate roads parallel to the carriageway when they are attached to it.",
+   "Omitting the curb lane between driving and walking lanes."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_lane_types_all.png",
+  "viewed": true,
+  "figure": "Figure 5",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 5. Lanes on all roads",
+  "shows": "All three arms with the same cross-section. Road 6 (reference line pointing W into the junction) has -1 on its N side and 1 on its S side; road 5 (reference line pointing S, starting at junction) has -1 on the W side and 1 on the E side. The junction interior is still unmodelled grey.",
+  "lesson": "Lane ids follow each road's own reference-line direction, so the same physical side can be +1 on one arm and -1 on another.",
+  "right": [
+   "Derive lane ids per road from its s-direction, not from compass side."
+  ],
+  "wrong": [
+   "Assuming lane -1 always means the inbound lane of a junction arm."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_junction_area.png",
+  "viewed": true,
+  "figure": "Figure 6",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 6. Junction area between the roads",
+  "shows": "Red outline = junction 10: straight cut lines across the full road width (including curbs and sidewalks) at the three road ends, joined by the outer curb lines; the inner corners follow the rounded curb returns (W-S corner is a tight rounded return, S-E corner a long sweeping curve), the N side is the straight continuation of the north sidewalk.",
+  "lesson": "The junction area is the polygon bounded by the arm end cuts and the curb/sidewalk outer edges; it contains the sidewalk corners too. Keep it as small as possible but as big as needed.",
+  "right": [
+   "Cut each arm perpendicular to its reference line across the full width incl. sidewalks.",
+   "Close the polygon along the outer edges of the corner sidewalks/curbs."
+  ],
+  "wrong": [
+   "A junction polygon that only covers the carriageway and leaves sidewalk corners unassigned.",
+   "An oversized junction that swallows long stretches of the arms."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_connecting_roads.png",
+  "viewed": true,
+  "figure": "Figure 7",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 7. Connecting roads",
+  "shows": "Inside the red outline three blue connecting-road reference lines: road 46 straight from end of road 4 to end of road 6; road 45 curving right from end of road 4 to start of road 5; road 56 curving from start of road 5 to end of road 6. Each connecting road starts and ends exactly at the arm reference-line end points.",
+  "lesson": "One connecting road per pair of arms (per path), its reference line continuous in position and heading with the arm reference lines at both ends; connecting roads may overlap each other.",
+  "right": [
+   "Start/end every connecting road at the arm reference-line endpoint with matching heading (G1).",
+   "Use predecessor/successor with contactPoint start/end matching where the arm road begins or ends."
+  ],
+  "wrong": [
+   "Connecting roads that start at lane centres instead of the arm reference line without a laneOffset.",
+   "A kink in heading where the connecting road meets the arm."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_connecting_roads_lanes.png",
+  "viewed": true,
+  "figure": "Figure 8",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 8. Connecting road with @id=\"46\" and its lanes",
+  "shows": "Connecting road 46 (straight W->E along the N side) carries lane 1 (beige) and -1 (blue) driving lanes, and on its left (north) side curb lane 2 and walking lane 3 which continue the north curb+sidewalk of roads 4 and 6 straight through the junction. Its right (south) side has no curb/sidewalk because that side faces the open junction interior.",
+  "lesson": "Curbs and sidewalks are carried THROUGH the junction on the connecting roads that run along the junction edge; sides facing the interior get only driving lanes.",
+  "right": [
+   "Give boundary connecting roads curb+walking lanes on the side that follows the junction outline.",
+   "Give interior-facing sides only the driving lanes."
+  ],
+  "wrong": [
+   "Breaking the sidewalk at the junction boundary.",
+   "Adding curb/sidewalk lanes on interior sides of connecting roads where they would overlap other paths."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_lane_links.png",
+  "viewed": true,
+  "figure": "Figure 9",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 9. Lane links for lanes with @type=\"driving\"",
+  "shows": "Six red arrows inside the junction, one per permitted driving movement: 4->6 straight, 6->4 straight, 4->5 right turn, 5->4 left turn, 5->6 right turn, 6->5 left turn. Each arrow runs from the inbound lane of one arm to the outbound lane of another.",
+  "lesson": "Every permitted movement needs a lane link from the inbound lane of the incoming road to the matching connecting-road lane; two-way connecting roads serve both directions.",
+  "right": [
+   "Create one laneLink per permitted (incoming lane -> connecting lane) relation, for both directions of travel.",
+   "Also link curb and walking lanes where the connecting road carries them (Code 7)."
+  ],
+  "wrong": [
+   "Linking only one direction of a two-way connecting road.",
+   "Linking outbound lanes of an arm as 'from' lanes."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_traffic_signs.png",
+  "viewed": true,
+  "figure": "Figure 10",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 10. Traffic signs for priority",
+  "shows": "Lane-coloured T junction with the red junction outline, the three connecting reference lines and signs: priority-road diamond + bent-priority plate at the E and S arms, yield triangle + bent-priority plate on the W arm just before the junction (road 4, s=68 near its end, t=-4 on the right side).",
+  "lesson": "Priority is set with sign signals on the incoming roads at their junction end, valid for the inbound lane; the sign can carry semantics priority type=yield.",
+  "right": [
+   "Place the priority/yield sign as a signal on the incoming road near the junction with validity on the inbound lane(s).",
+   "Add semantics (priority yield) for machine-readable priority."
+  ],
+  "wrong": [
+   "Placing approach signs on the connecting roads inside the junction.",
+   "Omitting lane validity so the sign applies to the opposite direction too."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_basic_road_markings.png",
+  "viewed": true,
+  "figure": "Figure 11",
+  "chapter": "6 Common junctions",
+  "section": "6.3.1.3 Modeling approach",
+  "caption": "Figure 11. Complete basic T junction",
+  "shows": "Final basic T: all arms with lane colours, junction outline, white road-end bars, grey edge lines continuing as curves through the junction along the curb returns, a dashed grey guide line through the junction on the priority bend (E->S) and dashed centre lines on the arms; yield triangle on W, priority diamonds on E and S.",
+  "lesson": "Road marks complete the junction: broken centre line on the arms, edge lines continued along the connecting roads, guide line for the priority route on its connecting road.",
+  "right": [
+   "Put centre-line roadMark (broken, laneChange both) on lane 0 of the arms.",
+   "Continue edge lines through the junction on the connecting roads that follow the curbs."
+  ],
+  "wrong": [
+   "Drawing every connecting road's markings (would clutter the interior).",
+   "No edge markings inside the junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_lowered_sidewalk.png",
+  "viewed": true,
+  "figure": "Figure 12",
+  "chapter": "6 Common junctions",
+  "section": "6.3.2 Excursus: Lowered curb and sidewalk",
+  "caption": "Figure 12. Lowered sidewalk",
+  "shows": "3D render: zebra crossing meets a curb that is fully lowered over the crossing width with short ramps at both ends; behind it the sidewalk is lowered only on its curb side (sloping up to full height on the grass side); lamp post on the grass.",
+  "lesson": "Lowered curbs and sidewalks at crossings are modelled with lane <height> records (inner/outer) on the curb and walking lanes, not with geometry changes.",
+  "right": [
+   "Curb lane: height 0.12 -> 0.02 over 0.5 m, hold 0.02 over the crossing, back to 0.12 (Code 11).",
+   "Walking lane: lower only the inner (curb) edge to 0.02, keep outer at 0.12 (Code 12)."
+  ],
+  "wrong": [
+   "Cutting the curb lane (width 0) at the crossing.",
+   "Lowering the whole sidewalk width."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_advanced_reality.png",
+  "viewed": true,
+  "figure": "Figure 13",
+  "chapter": "6 Common junctions",
+  "section": "6.3.3.1 Example",
+  "caption": "Figure 13. Advanced T junction",
+  "shows": "Same T as Fig. 2 plus signals: on each approach a stop line across the inbound lane, a vehicle signal on a mast arm over the lane and one at the roadside; pedestrian crossings on all three arms just inside the junction mouth (W arm marked by two dotted lines, E and S arms as zebras), with pedestrian signals at both ends of every crossing. Priority signs remain.",
+  "lesson": "Signalised T: stop lines on the incoming roads, vehicle lights and controllers, pedestrian crossings with their own stop lines, lights and controllers.",
+  "right": [
+   "Model each approach: stop line + one or more lights + controller.",
+   "Model each crossing as its own walking road with invisible stop lines and pedestrian lights."
+  ],
+  "wrong": [
+   "Treating the zebra only as a road mark with no crossing road / crossPath."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_advanced_traffic_lights.png",
+  "viewed": true,
+  "figure": "Figure 14",
+  "chapter": "6 Common junctions",
+  "section": "6.3.3.3 Modeling approach",
+  "caption": "Figure 14. Traffic lights and stop lines",
+  "shows": "Lane-coloured T with the red outline: grey stop-line bars on the inbound lane of each arm just outside the junction outline; for each approach two signal heads (one on a mast arm above the lane, one at the roadside) placed just inside the junction at the start of the connecting roads; priority signs kept.",
+  "lesson": "Stop lines live on the incoming road; traffic lights are placed at their physical location, which may be on a connecting road inside the junction (s=2.5 of road 46).",
+  "right": [
+   "Put the stop line on the incoming road near its junction end with lane validity.",
+   "Put the light on whatever road it physically stands at; link it by <reference> to the stop line."
+  ],
+  "wrong": [
+   "Moving the light onto the incoming road just to sit next to the stop line.",
+   "Giving the traffic light its own lane validity."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_advanced_pedestrian_crossings.png",
+  "viewed": true,
+  "figure": "Figure 15",
+  "chapter": "6 Common junctions",
+  "section": "6.3.3.3 Modeling approach",
+  "caption": "Figure 15. Pedestrian crossings",
+  "shows": "Three crossing roads (hatched dark-red walking areas with blue reference lines across the carriageway) placed just inside the junction outline on the W, E and S arms, beyond the stop lines. Each reference line runs from the sidewalk on one side of the arm to the sidewalk on the other side.",
+  "lesson": "Pedestrian crossings inside a common junction are extra roads of that junction (junction=id) carrying one walking lane, and are tied to the sidewalks via crossPath.",
+  "right": [
+   "Create the crosswalk road inside the junction, just after the stop line, spanning sidewalk to sidewalk.",
+   "Set its junction attribute to the junction id."
+  ],
+  "wrong": [
+   "Placing the crossing road outside the junction on the arm when it lies within the junction mouth.",
+   "Linking crossing roads with connections/laneLinks instead of crossPath."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_advanced_detail_ids.png",
+  "viewed": true,
+  "figure": "Figure 16",
+  "chapter": "6 Common junctions",
+  "section": "6.3.3.3 Modeling approach",
+  "caption": "Figure 16. Details of the stop lines and traffic lights",
+  "shows": "Close-up at the W mouth: road 4 reference line ends, roads 46 (straight) and 45 (right turn) begin; stop line 1 across road 4's inbound lane; traffic light 4 on a mast arm over the lane and light 2 at the roadside, both at the start of road 46; crossing road 75 runs N->S across the mouth (dotted edges); pedestrian light 9 + invisible stop line 20 at its N end, invisible stop line 21 + pedestrian light 3 at its S end.",
+  "lesson": "Shows the id wiring: lights 2/4 reference stop line 1; stop line 1 depends on lights 2 and 4; pedestrian lights on road 75 reference the invisible stop line at the opposite end of the crossing.",
+  "right": [
+   "Pedestrian waiting positions are invisible stop lines (type 11000001, semantics waitingLine) on the crossing road.",
+   "A pedestrian light on one kerb controls pedestrians waiting at the other kerb (it faces them)."
+  ],
+  "wrong": [
+   "Referencing the stop line on the same side as the pedestrian light by default."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_advanced_pedestrian_crossing_detail_ids.png",
+  "viewed": true,
+  "figure": "Figure 17",
+  "chapter": "6 Common junctions",
+  "section": "6.3.3.3 Modeling approach",
+  "caption": "Figure 17. Details of a pedestrian crossing",
+  "shows": "Lane ids at the W mouth: road 4 lanes 3,2,1 | 0 | -1,-2,-3; road 46 (straight, along N edge) lanes 3,2,1,0,-1; road 45 (right turn) lanes 1,0,-1,-2,-3 with curb -2 and walking -3 hugging the inner corner. Crossing road 75 (single walking lane 1) spans from road 46's walking lane 3 (north sidewalk) to road 45's walking lane -3 (corner sidewalk).",
+  "lesson": "crossPath links the crossing road to the sidewalk lanes OF THE CONNECTING ROADS (roadAtStart=46 lane 3, roadAtEnd=45 lane -3), which proves sidewalks run on connecting roads inside the junction.",
+  "right": [
+   "Carry corner sidewalks on the turning connecting roads (road 45 has curb -2 and walking -3).",
+   "Point crossPath start/end lane links at those connecting-road walking lanes."
+  ],
+  "wrong": [
+   "Linking the crosswalk to the arm road's sidewalk outside the junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_t_advanced_abstract.png",
+  "viewed": true,
+  "figure": "Figure 18",
+  "chapter": "6 Common junctions",
+  "section": "6.3.3.3 Modeling approach",
+  "caption": "Figure 18. Complete advanced T junction",
+  "shows": "Combined OpenDRIVE view: lanes, red junction outline, connecting reference lines, three hatched crossing roads with blue reference lines, stop lines, vehicle and pedestrian lights, priority signs (UC_T_Junction.xodr).",
+  "lesson": "Complete signalised T: arm roads, three connecting roads, three crossing roads, stop lines, lights, controllers referenced from the junction, crossPaths.",
+  "right": [
+   "List every controller of the junction's lights in <junction><controller>."
+  ],
+  "wrong": [
+   "Controllers defined but not referenced by the junction (OpenSCENARIO cannot sync them)."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_reality.png",
+  "viewed": true,
+  "figure": "Figure 19",
+  "chapter": "6 Common junctions",
+  "section": "6.4.1 Example",
+  "caption": "Figure 19. X junction",
+  "shows": "X junction: N arm two-way with a curb-side BUS lane widened into a separate lane before the stop line and turn arrows; E arm two-way with lane arrows and a set-back stop line; W arm two-way with a stop line; S arm ONE-WAY inbound (blue one-way sign pointing north) with straight, right-turn and a dashed BUS+bicycle lane. Zebras on all four arms, vehicle signals incl. bus (white-bar) aspects and arrow aspects, pedestrian signals, give-way triangles, no-entry disk on the S side.",
+  "lesson": "X junctions differ geometrically from a T: start from scratch rather than extending a T; handle one-way arms, restricted lanes, shared stop lines.",
+  "right": [
+   "Model a one-way inbound arm with lanes on one side only."
+  ],
+  "wrong": [
+   "Extending a T junction model by appending a fourth arm."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_reference_lines.png",
+  "viewed": true,
+  "figure": "Figure 20",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 20. Road reference lines at the X junction",
+  "shows": "Blue reference lines: road 7 (N) runs southward and ends at the N stop line, before the zebra; road 6 (E) runs westward and ends before the E zebra; road 4 (W) runs eastward ending before the W zebra; road 5 (S one-way) starts at the S mouth and runs southward along the WEST edge of the carriageway. Reference lines of N and E are offset from the visible centre line.",
+  "lesson": "Arm reference lines must stop before any cross path in the junction; their direction does not matter; a reference line need not be on the painted centre line.",
+  "right": [
+   "End arm reference lines before the crosswalk so the crosswalk lies inside the junction.",
+   "Place the reference line where convenient (edge of one-way road) and use laneOffset to align lanes."
+  ],
+  "wrong": [
+   "Ending the arm inside the zebra area.",
+   "Forcing the reference line onto the painted centre line."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_lane_types.png",
+  "viewed": true,
+  "figure": "Figure 21",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 21. Lane types at the X junction in ASAM OpenDRIVE view",
+  "shows": "Lane ids per arm. N road 7: -4 walk, -3 curb, -2,-1 driving | 0 | 1 driving, 2 curb, 3 walk. E road 6: -4,-3 walk/curb, -2,-1 driving | 0 | 1 driving, 2 curb, 3 walk. W road 4: 4,3 walk/curb, 2,1 driving | 0 | -1 driving, -2 curb, -3 walk. S road 5 (one-way, reference line pointing S): lane 0 at the W edge, left lanes 1,2,3 driving (northbound towards junction), 4 curb, 5 walk; right side -1 curb, -2 walk. Junction outline in red encloses the four zebras and corner sidewalks.",
+  "lesson": "A one-way inbound road with reference line pointing away gets only positive (left) driving lanes, plus curb/walking lanes on both sides; laneOffset aligns lane 0 away from the reference line on road 5.",
+  "right": [
+   "One-way: put all driving lanes on the side whose travel direction matches (left lanes travel against s).",
+   "Still add curb+walking on the other side (right -1 curb, -2 walking)."
+  ],
+  "wrong": [
+   "Using negative lanes on a one-way road whose reference line points opposite to traffic.",
+   "Dropping the sidewalk on the lane-less side of a one-way road."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_widen_lane_section.png",
+  "viewed": true,
+  "figure": "Figure 22",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 22. Widened lanes and additional lane in lane section",
+  "shows": "N arm road 7 alone: first lane section with -1,-2 (plus curb/sidewalk); the carriageway widens and a dashed black line marks a new lane section where three lanes -1,-2,-3 exist (two turn-arrowed lanes and the bus lane); a grey stop line across all three at the road end, the red junction outline and the zebra beyond.",
+  "lesson": "To split a lane before the junction, widen it and start a new lane section where the inner lane has two successors (-1 -> -1 and -2); this is preferred over other approaches.",
+  "right": [
+   "Widen first, then start a lane section; give the splitting lane two <successor> entries.",
+   "Renumber outer lanes in the new section and link them one-to-one (old -2 -> new -3, etc.)."
+  ],
+  "wrong": [
+   "Inserting a zero-width lane without links, or starting a new road for the extra lane."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_bus_lanes.png",
+  "viewed": true,
+  "figure": "Figure 23",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 23. Restricted lanes for buses and cyclists",
+  "shows": "Lane-coloured X with 'BUS' markings on the N arm outer southbound lane and a 'BUS' + bicycle shared lane on the S arm's outer lane; stop lines drawn as grey bars; junction interior white (no connecting roads yet).",
+  "lesson": "Restricted lanes stay type driving and get <access rule=allow> with restriction bus (and bicycle for shared lanes) from the point where the restriction starts (sOffset).",
+  "right": [
+   "Keep type driving and add access allow restrictions (bus, bicycle) with sOffset."
+  ],
+  "wrong": [
+   "Using lane type bus/biking for a lane cyclists and buses share, or dropping the restriction at a lane-section change."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_connecting_roads.png",
+  "viewed": true,
+  "figure": "Figure 24",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 24. Connecting roads",
+  "shows": "Blue connecting reference lines: from N to W and E (and from the N arm end points), from E to W (straight) and N (right), from W to E (straight) and N, from S to N (straight) and to W and E; arrows end at the W, E and N arm ends. No connecting road ends at the S arm because it is one-way inbound.",
+  "lesson": "Only permitted relations get connecting roads; a one-way inbound arm is only a start of paths; several parallel connecting roads per relation are allowed for multi-lane turns.",
+  "right": [
+   "Generate connecting roads only for legal turn relations (respect one-way and turn restrictions)."
+  ],
+  "wrong": [
+   "Creating connecting roads into a one-way inbound arm."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_pedestrian_crossings.png",
+  "viewed": true,
+  "figure": "Figure 25",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 25. Pedestrian crossings",
+  "shows": "Same as Fig. 24 plus hatched crossing roads with blue reference lines across all four arms inside the junction, each spanning sidewalk to sidewalk; grey curb lines inside the junction follow the corner connecting roads.",
+  "lesson": "Each arm's zebra becomes a crossing road + crossPath in the junction.",
+  "right": [
+   "One crossing road and one crossPath per zebra (split at islands when needed)."
+  ],
+  "wrong": [
+   "Omitting crossPaths for crosswalks on one-way arms."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_x_abstract.png",
+  "viewed": true,
+  "figure": "Figure 26",
+  "chapter": "6 Common junctions",
+  "section": "6.4.3 Modeling approach",
+  "caption": "Figure 26. Complete X junction",
+  "shows": "Complete X in OpenDRIVE view with signals (vehicle, arrow, bus and pedestrian lights), signs (yield, mandatory direction, one-way, no-entry) at their physical positions (UC_X_Junction.xodr).",
+  "lesson": "Complete X: shared stop line signal on one lane with signalReference on the others and on connecting roads (Code 27).",
+  "right": [
+   "Define a stop line once (validity on one lane) and reuse it with <signalReference> for other lanes/roads."
+  ],
+  "wrong": [
+   "Duplicating the same physical stop line as several signals."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_full_reality.png",
+  "viewed": true,
+  "figure": "Figure 27",
+  "chapter": "6 Common junctions",
+  "section": "6.5.1 Example",
+  "caption": "Figure 27. Complete junction",
+  "shows": "Same image as Figure 1: signalised 5-road junction with one-way roads (SW inbound, SE outbound), pedestrian crossings, bus lanes and a splitter island on the N arm.",
+  "lesson": "The full case: start from scratch rather than extending the X junction.",
+  "right": [
+   "Build multi-arm junctions as one common junction with all arms."
+  ],
+  "wrong": [
+   "Chaining an X junction and a T junction to represent a 5-arm node."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_full_no_traffic_lights_reality.png",
+  "viewed": true,
+  "figure": "Figure 28",
+  "chapter": "6 Common junctions",
+  "section": "6.5.3 Modeling approach",
+  "caption": "Figure 28. 5-road junction with two one-way roads",
+  "shows": "5-arm geometry without signals: N arm with splitter teardrop island and crossings split in two halves; E, W arms two-way; SW arm one-way inbound (bus/bike lane); SE arm one-way OUTBOUND (blue sign arrow pointing away, no-entry disk at its mouth, yield triangles on W and N).",
+  "lesson": "An outgoing one-way road is not an incoming road: it never appears as incomingRoad in <connection>, only as successor of connecting roads.",
+  "right": [
+   "Do not list outgoing-only arms as incomingRoad."
+  ],
+  "wrong": [
+   "Creating connections with incomingRoad = an exit-only one-way road."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_full_connecting_roads.png",
+  "viewed": true,
+  "figure": "Figure 29",
+  "chapter": "6 Common junctions",
+  "section": "6.5.3 Modeling approach",
+  "caption": "Figure 29. Connecting roads",
+  "shows": "Blue connecting reference lines including curves into the SE arm: its reference line starts at the junction outline and points SE; connecting roads from N, E, W and SW arms terminate at that start point. The SE arm has only blue (right/negative) lanes. Grey curb lines inside the junction show the corner connecting roads; the N-arm splitter outline is visible.",
+  "lesson": "Outgoing one-way road appears only as successor of connecting roads.",
+  "right": [
+   "Terminate connecting roads at the outgoing road's start with contactPoint start."
+  ],
+  "wrong": [
+   "Making the outgoing arm a predecessor of any connecting road."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_full_junction_reference_line.png",
+  "viewed": true,
+  "figure": "Figure 30",
+  "chapter": "6 Common junctions",
+  "section": "6.5.3 Modeling approach",
+  "caption": "Figure 30. Junction reference line",
+  "shows": "Red straight arrow drawn across the N part of the junction (WSW->ENE), passing near the N arm end: this is the junction's own planView line used as a local frame for objects (the traffic island) that belong to the junction.",
+  "lesson": "A junction may get its own <planView> reference line (1.8) to position junction objects (e.g. trafficIsland via cornerLocal) independent of any road.",
+  "right": [
+   "Use a junction reference line when objects span several connecting roads."
+  ],
+  "wrong": [
+   "Attaching a junction-wide island to a single arbitrary connecting road."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_example_full_abstract.png",
+  "viewed": true,
+  "figure": "Figure 31",
+  "chapter": "6 Common junctions",
+  "section": "6.5.3 Modeling approach",
+  "caption": "Figure 31. Complete 5-road junction",
+  "shows": "Complete 5-road junction in OpenDRIVE view: all connecting roads, crossings on all five arms (incl. SE), signals and signs (UC_5Road_Junction.xodr).",
+  "lesson": "Complete multi-arm junction incl. boundary, elevation grid, restricted island lane, junction objects.",
+  "right": [
+   "Close the junction with <boundary> (lane and joint segments) and an <elevationGrid> matching arm elevations."
+  ],
+  "wrong": [
+   "Leaving junction surface height undefined between connecting roads."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/06_common_junctions/fig_bidirectional_junction.png",
+  "viewed": true,
+  "figure": "Figure 32",
+  "chapter": "6 Common junctions",
+  "section": "6.6.1 Example",
+  "caption": "Figure 32. Bidirectional junction",
+  "shows": "Incoming road 1 (W, two lanes 1 and -1) and incoming roads 2 (E) and 3 (S) each with a single lane -1 usable in both directions (@direction=both). Orange connecting roads: road 5 and road 6 between roads 1 and 2 (one per direction, each single lane -1), road 4 (@direction=both, lane -1) curving between road 3 and road 2.",
+  "lesson": "A single bidirectional lane connects via one connecting road with direction both, referenced by two connections (one from each end).",
+  "right": [
+   "Use one connecting road with direction both and two <connection>s (contactPoint start from one side, end from the other).",
+   "Use separate one-way connecting roads where the other road has separate lanes per direction."
+  ],
+  "wrong": [
+   "Creating two overlapping connecting roads for a single-lane bidirectional link."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_motorway_junction_entry_exit_clean.png",
+  "viewed": true,
+  "figure": "Figure 33",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.1 Introduction",
+  "caption": "Figure 33. Motorway with entry lanes and exit lanes",
+  "shows": "Dual carriageway motorway with green median. Upper carriageway (traffic leftward): an exit lane branches up-left; a solid line separates the diverging lane from the adjacent lane over the overlap stretch before the physical split. Lower carriageway (traffic rightward): an entry ramp comes from the lower left and runs parallel as an acceleration lane, with a dashed line from the gore point onward.",
+  "lesson": "Two entry/exit types: non-overlapping (the lanes never share area) and overlapping (the exit lane shares area with a main lane until it separates).",
+  "right": [
+   "Classify each ramp junction as overlapping or non-overlapping before choosing where to cut."
+  ],
+  "wrong": [
+   "Treating every ramp as a common junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_non-overlapping_motorway_entry_clean.png",
+  "viewed": true,
+  "figure": "Figure 34",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.2.1 Example",
+  "caption": "Figure 34. Motorway with an entry",
+  "shows": "One carriageway (median on top, traffic left->right) with two lanes; a ramp approaches from the lower left and joins as a third lane exactly where the lane-divider dashes start (gore point).",
+  "lesson": "Non-overlapping entry: the ramp lane continues as an extra outer lane with no shared area.",
+  "right": [
+   "Recognise a parallel acceleration lane starting at the gore."
+  ],
+  "wrong": [
+   "Merging the ramp lane directly into an existing main lane."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_non-overlapping_motorway_entry_direct_junction.png",
+  "viewed": true,
+  "figure": "Figure 35",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.2.2.1 Junction type",
+  "caption": "Figure 35. Direct junction",
+  "shows": "Same scene with a yellow circle around the gore point where the ramp edge meets the main carriageway edge.",
+  "lesson": "Place the direct junction where the entry joins the main road (at the gore).",
+  "right": [
+   "Cut all involved roads at the gore point of a merge."
+  ],
+  "wrong": [
+   "Cutting far upstream or downstream of the gore."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_non-overlapping_motorway_entry_referencelines.png",
+  "viewed": true,
+  "figure": "Figure 36",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.2.2.2 Road reference lines",
+  "caption": "Figure 36. Road reference lines",
+  "shows": "Vertical red line = direct junction cut at the gore. Main road reference line runs along the median edge and stops at the cut; the downstream road starts at the cut on the same line. The ramp reference line runs along its left edge and ends at the cut at the boundary between main lane -2 and the new outer lane of the downstream road.",
+  "lesson": "All three roads start/end at the direct-junction cut; the ramp ends at a lateral offset from the downstream reference line (direct junctions link lanes directly, no connecting road).",
+  "right": [
+   "End/start all roads at one cut line; link lanes in the direct junction."
+  ],
+  "wrong": [
+   "Building connecting roads for a simple merge."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_non-overlapping_motorway_entry.png",
+  "viewed": true,
+  "figure": "Figure 37",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.2.2.3 Lane types",
+  "caption": "Figure 37. Motorway with a non-overlapping entry",
+  "shows": "Road 315 (lanes -1,-2 driving, light blue) and ramp road 292 (lane -1 onRamp, yellow) end at the red cut; road 313 starts there with -1,-2 driving and -3 entry (pale yellow).",
+  "lesson": "Lane types: onRamp before the junction on the ramp road, entry for the outermost lane after it, driving for the rest; no overlap, no crossing -> direct junction.",
+  "right": [
+   "Ramp lane type onRamp; acceleration lane on the main road type entry."
+  ],
+  "wrong": [
+   "Typing the acceleration lane as driving or the ramp as entry."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_overlapping_motorway_exit_clean.png",
+  "viewed": true,
+  "figure": "Figure 38",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.3.1 Example",
+  "caption": "Figure 38. Motorway with an exit",
+  "shows": "Carriageway (median at bottom, traffic right->left) with three lanes on the right part; the outer lane curves away up-left; a solid line separates the exit from the next lane over a stretch where both still share the paved area; the exit becomes a 2-lane ramp.",
+  "lesson": "Overlapping exit: exit lane and adjacent main lane share area over the overlap stretch.",
+  "right": [
+   "Identify the overlap stretch between the cut and the physical separation."
+  ],
+  "wrong": [
+   "Ignoring the overlap and placing the cut at the physical gore only."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_overlapping_motorway_exit_direct_junction.png",
+  "viewed": true,
+  "figure": "Figure 39",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.3.2.1 Junction type",
+  "caption": "Figure 39. Direct junction",
+  "shows": "Yellow circle placed where the exit lane starts to branch (where the full-width exit lane begins to curve away), upstream of the physical separation.",
+  "lesson": "Place the direct junction where the exit branches from the main road; direct junctions allow one overlapping lane.",
+  "right": [
+   "Cut at the start of the branching, not at the physical gore."
+  ],
+  "wrong": [
+   "Using a common junction when only one lane overlaps and no traffic crosses."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_overlapping_motorway_exit_referencelines.png",
+  "viewed": true,
+  "figure": "Figure 40",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.3.2.2 Road reference lines",
+  "caption": "Figure 40. Road reference lines",
+  "shows": "Red vertical cut; main road reference line along the median edge (bottom) ending at the cut and the downstream main road starting there; the exit road reference line starts at the cut at the boundary between main lanes -1 and -2 and curves up-left, so its first lane lies over main lane -2.",
+  "lesson": "The exit road starts at the cut inside the main carriageway, so its lane overlaps the downstream main lane until it separates.",
+  "right": [
+   "Start the exit road's reference line at the cut at the lateral position of its innermost lane."
+  ],
+  "wrong": [
+   "Starting the exit road only where it is physically separated."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/07_entries_exits/fig_overlapping_motorway_exit.png",
+  "viewed": true,
+  "figure": "Figure 41",
+  "chapter": "7 Junctions with entry and exit lanes",
+  "section": "7.3.2.3 Lane types",
+  "caption": "Figure 41. Motorway with an overlapping exit",
+  "shows": "Road 300 (-1,-2 driving, -3 exit) ends at the cut; road 305 (-1,-2 driving) continues; road 308 starts with lane -1 exit (overlapping 305's lane -2, labelled overlapZone) and lane -2 offRamp; a dotted line marks road 308's second lane section where lane -1 becomes offRamp after the overlap.",
+  "lesson": "Before cut: outermost lane exit; after cut: overlapping lane exit, outer exiting lane offRamp; new lane section on the exit road after the overlap switches exit->offRamp; set @overlapZone on the lane links of the overlapping lanes.",
+  "right": [
+   "Use lane sections on the exit road: overlapping part (type exit) then offRamp.",
+   "Set overlapZone at least as long as the overlap but as small as possible."
+  ],
+  "wrong": [
+   "Leaving lane type exit for the whole ramp.",
+   "Omitting overlapZone so tools think lanes collide."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes.png",
+  "viewed": true,
+  "figure": "Figure 42",
+  "chapter": "8 Slip lanes",
+  "section": "8.1 Introduction",
+  "caption": "Figure 42. Slip lanes",
+  "shows": "Signalised 4-arm crossing of two dual carriageways (green medians, N at top, RHT). In each corner a free right-turn slip lane bypasses the central junction: NW (southbound -> westbound), NE (westbound -> northbound), SE (northbound -> eastbound), SW (eastbound -> southbound). Some slip lanes start from a parallel deceleration lane and/or end in a parallel acceleration lane, others branch/merge directly with a taper. Signals and stop lines are only at the central intersection.",
+  "lesson": "Slip lanes start/end at the outermost lane, are one-way, cross no other traffic of the same junction, yield where they merge, usually have no lights.",
+  "right": [
+   "Detect free right turns (left in LHT) that bypass the main node and model them separately."
+  ],
+  "wrong": [
+   "Routing slip-lane traffic through the central common junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_clean.png",
+  "viewed": true,
+  "figure": "Figure 43",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.1 Example",
+  "caption": "Figure 43. Large junction with variations of slip lanes",
+  "shows": "Same junction without labels; variations: slip lane branching after a parallel exit lane, slip lane merging into a parallel entry lane, slip lanes branching/merging with tapers only.",
+  "lesson": "Large junction with several slip-lane variants to choose junction types for.",
+  "right": [
+   "Choose junction type per split/merge point."
+  ],
+  "wrong": [
+   "One giant common junction covering all slip lanes."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_direct_junctions.png",
+  "viewed": true,
+  "figure": "Figure 44",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.1 Junction types",
+  "caption": "Figure 44. Direct junctions",
+  "shows": "Eight yellow circles: at every point where a slip lane splits from or merges into a straight carriageway (two on each arm: one on the inbound carriageway diverge, one on the outbound carriageway merge).",
+  "lesson": "Use a direct junction at every split/merge of slip lane and straight road; lanes may overlap if direction is the same and no traffic crosses.",
+  "right": [
+   "Direct junction at each slip-lane diverge and merge."
+  ],
+  "wrong": [
+   "Common junction for a simple same-direction split/merge."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_direct_junctions_simplified.png",
+  "viewed": true,
+  "figure": "Figure 45",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.1 Junction types",
+  "caption": "Figure 45. Simplified direct junctions",
+  "shows": "N arm: the two circles replaced by one ellipse spanning both carriageways (diverge and merge at the same station). W arm: one tall ellipse spanning both carriageways. E and S arms keep two separate circles because their diverge and merge are at different stations.",
+  "lesson": "Direct junctions at the same position for both directions can be combined into one, if model accuracy allows.",
+  "right": [
+   "Combine opposite-direction split/merge points at the same station into one direct junction."
+  ],
+  "wrong": [
+   "Combining points at clearly different stations."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_common_junction.png",
+  "viewed": true,
+  "figure": "Figure 46",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.1 Junction types",
+  "caption": "Figure 46. Common junction",
+  "shows": "One yellow circle around the central intersection area (between the four stop lines).",
+  "lesson": "The centre, where straight traffic and crossing turns meet, is a common junction.",
+  "right": [
+   "Common junction only for the crossing area."
+  ],
+  "wrong": [
+   "Using direct junctions where traffic crosses."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_referencelines_ew_sn.png",
+  "viewed": true,
+  "figure": "Figure 47",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.2 Road reference lines",
+  "caption": "Figure 47. Straight road reference lines",
+  "shows": "Red lines = direct junction cuts (N: one cut across both carriageways; W: one cut across both; E: separate cuts on each carriageway; S: separate cuts); red rectangle = central common junction. Blue reference lines run on the medians: S->N (from bottom edge to S cut, S cut to centre, centre to N cut, N cut to top) and E->W (right edge to E cut, E cut to centre, centre to W cut, W cut to left edge).",
+  "lesson": "Junctions define where roads are needed; between a combined direct junction and the centre one road (both carriageways, reference line on the median) suffices.",
+  "right": [
+   "Place one reference line on the median for both carriageways between combined junctions."
+  ],
+  "wrong": [
+   "Separate roads per carriageway where one road would do."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_referencelines_straight.png",
+  "viewed": true,
+  "figure": "Figure 48",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.2 Road reference lines",
+  "caption": "Figure 48. Straight road reference lines for opposite direction of travel",
+  "shows": "Additional blue reference lines for the carriageways whose direct junctions are not combined: southbound centre->S (beside the median, with a further road beyond the S cut) and eastbound centre->E (beside the median, beyond the E cut).",
+  "lesson": "Where the two directions are cut at different stations, each direction needs its own road.",
+  "right": [
+   "Split into per-direction roads only where cut positions differ."
+  ],
+  "wrong": [
+   "Forcing a single two-way road across non-aligned cuts."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_referencelines.png",
+  "viewed": true,
+  "figure": "Figure 49",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.2 Road reference lines",
+  "caption": "Figure 49. Road reference lines for slip lanes",
+  "shows": "Four curved blue reference lines, one per slip lane, each running from one direct-junction cut to another (e.g. NW: from N cut inside the southbound carriageway to the W cut at the north edge).",
+  "lesson": "Each slip lane is its own road between two direct junctions.",
+  "right": [
+   "Slip-lane road from diverge cut to merge cut."
+  ],
+  "wrong": [
+   "Slip lanes as connecting roads of the central junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_referencelines_all.png",
+  "viewed": true,
+  "figure": "Figure 50",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.2 Road reference lines",
+  "caption": "Figure 50. Road reference lines inside the central junction",
+  "shows": "Central red rectangle with connecting reference lines: straight N->S, S->N, E->W, W->E and curved left turns; no right turns inside the centre because those use slip lanes.",
+  "lesson": "Central junction follows chapter 6 rules; right-turn relations served by slip lanes are omitted from it.",
+  "right": [
+   "Do not duplicate slip-lane relations inside the central junction."
+  ],
+  "wrong": [
+   "Adding right-turn connecting roads in the centre as well."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_entry_exit.png",
+  "viewed": true,
+  "figure": "Figure 51",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.3 Lane types",
+  "caption": "Figure 51. Lanes with @type=\"entry\" or @type=\"exit\"",
+  "shows": "Coloured lanes: entry (yellow) on the W arm north edge after the NW merge and on the E arm south edge after the SE merge; exit (blue) on the W arm south edge before the SW diverge and on the S arm east edge before the SE diverge.",
+  "lesson": "Parallel acceleration/deceleration sections belong to the main road and are typed entry/exit.",
+  "right": [
+   "Parallel deceleration lane = exit on the main road; acceleration lane = entry."
+  ],
+  "wrong": [
+   "Typing the parallel lanes slipLane or giving them their own road."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_slip-lanes.png",
+  "viewed": true,
+  "figure": "Figure 52",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.3 Lane types",
+  "caption": "Figure 52. Lanes with @type=\"slipLane\"",
+  "shows": "Four green curved slip-lane roads labelled slipLane between their direct-junction cuts.",
+  "lesson": "The slip lane itself is type slipLane (1.8).",
+  "right": [
+   "Type the slip-lane road's lane slipLane."
+  ],
+  "wrong": [
+   "Typing it driving or connectingRamp in a 1.8 output."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_driving.png",
+  "viewed": true,
+  "figure": "Figure 53",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.3 Lane types",
+  "caption": "Figure 53. Lanes with @type=\"driving\"",
+  "shows": "All remaining lanes coloured: light blue (right-side lanes) and beige (left-side lanes: N arm southbound and W arm eastbound carriageways, travelling against the median reference line), grey central junction.",
+  "lesson": "All other lanes are driving; one road per arm carries both carriageways with the reference line on the median.",
+  "right": [
+   "Default lane type driving."
+  ],
+  "wrong": [
+   "Leaving lane types none."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/08_slip_lanes/fig_slip_lanes_overlapping.png",
+  "viewed": true,
+  "figure": "Figure 54",
+  "chapter": "8 Slip lanes",
+  "section": "8.3.3.4 Overlapping lanes",
+  "caption": "Figure 54. Slip lanes overlapping other lanes",
+  "shows": "White brackets labelled overlapZone at the NW slip start (overlapping the southbound outer lane below the N cut), the NE slip end near the N cut and the NE slip start near the E cut, and the SW slip end above the S cut; overlap brackets are slightly longer than the shaded overlap.",
+  "lesson": "Set overlapZone on the laneLink to cover the whole overlap, chosen slightly larger than needed.",
+  "right": [
+   "overlapZone >= overlap length (slightly larger)."
+  ],
+  "wrong": [
+   "overlapZone shorter than the overlap."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/09_traffic_lights/fig_road_two_traffic_lights_one_stop_line_rht_id_in.png",
+  "viewed": true,
+  "figure": "Figure 55",
+  "chapter": "9 Traffic lights",
+  "section": "9.3.1 Example",
+  "caption": "Figure 55. Roads with traffic lights and stop line",
+  "shows": "Perspective: road 4 (lanes 1 beige, -1 blue, s/t axes drawn) ends, road 46 continues; stop line signal 1 across lane -1 at the end of road 4; signal 2 on a mast arm above the lane and signal 4 on the pole at the roadside, both on road 46.",
+  "lesson": "One stop line serves two lights located on another road.",
+  "right": [
+   "Lights at physical position (road 46), stop line on road 4."
+  ],
+  "wrong": [
+   "Moving lights to road 4."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/09_traffic_lights/fig_road_two_traffic_lights_one_stop_line_rht_id_in_refdep.png",
+  "viewed": true,
+  "figure": "Figure 56",
+  "chapter": "9 Traffic lights",
+  "section": "9.3.3 Modeling approach",
+  "caption": "Figure 56. References and dependencies between traffic lights and stop line",
+  "shows": "Same scene with arrows: yellow 'reference id=1' arrows from each light down to stop line 1; orange 'dependency id=2' and 'dependency id=4' arrows from the stop line up to the lights. (The page text below the figure states the directions the other way round; the drawing matches the rules in 9.2 and Codes 38-39.)",
+  "lesson": "Light -> stop line via <reference elementType=signal type=stopLine>; stop line -> each light via <dependency type=trafficLight>.",
+  "right": [
+   "Bidirectional wiring: reference on lights, dependency on stop line."
+  ],
+  "wrong": [
+   "Only one direction of linkage.",
+   "Following the swapped description in the text under Figure 56."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/09_traffic_lights/fig_t-junction_three_traffic_lights_two_stop_lines_rht.png",
+  "viewed": true,
+  "figure": "Figure 57",
+  "chapter": "9 Traffic lights",
+  "section": "9.4.1 Example",
+  "caption": "Figure 57. T-junction with three traffic lights and two stop lines",
+  "shows": "T junction: road 1 (S, reference line pointing S from the junction, lanes 1 left-turn and 2 straight approach northward) with two staggered stop lines 203 (lane 1, s=3) and 204 (lane 2, s=4); road 2 (N, reference line pointing N) with signal 102 on a mast at its E side beyond the junction; road 3 (W, reference line pointing W, lanes 1-3 eastbound) with signal 105 (yellow/green left arrows) at the NW corner; signal 103 on a pole beside road 1 near the junction.",
+  "lesson": "Lights may be behind the junction (far-side); stop line 203 depends on 102, 103, 105; stop line 204 on 102, 103; each light references the stop lines it governs.",
+  "right": [
+   "Model per-lane stop lines with validity on one lane each.",
+   "Use orientation '-' for signals on lanes travelling against s."
+  ],
+  "wrong": [
+   "Giving far-side lights a validity on their own road's lanes."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/crossing_rail_real.png",
+  "viewed": true,
+  "figure": "Figure 58",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.1 Introduction",
+  "caption": "Figure 58. A rail road crossing",
+  "shows": "Two-lane road crossing a single railway track at an angle; St. Andrew's crosses at the right of each approach; each approach has a solid centre line ending in a transverse stop bar before the track.",
+  "lesson": "Crossings: traffic of two roads crosses but cannot change roads.",
+  "right": [
+   "Use a crossing junction for rail level crossings."
+  ],
+  "wrong": [
+   "Common junction with connecting roads for a rail crossing."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_real.png",
+  "viewed": true,
+  "figure": "Figure 59",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.1 Example",
+  "caption": "Figure 59. Pedestrian crossing",
+  "shows": "Straight road with sidewalks top and bottom, two lanes in one direction (upper) and one (lower); a hatched painted island with two green raised halves and a paved gap in the middle (pedestrian refuge) between the directions.",
+  "lesson": "Mid-block pedestrian crossing through a refuge island.",
+  "right": [
+   "Model mid-block crossings with a virtual junction and crossPath."
+  ],
+  "wrong": [
+   "Cutting the main road into pieces for a mid-block crossing."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_reference_line_vehicles.png",
+  "viewed": true,
+  "figure": "Figure 60",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 60. Road reference line",
+  "shows": "Blue reference line of the general-traffic road running left->right along the lower edge of the island (lane divider between the single lane and the island).",
+  "lesson": "The main road stays one continuous road through the crossing.",
+  "right": [
+   "Keep the main road continuous."
+  ],
+  "wrong": [
+   "Splitting the road at the crossing."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_lane_types_continuous.png",
+  "viewed": true,
+  "figure": "Figure 61",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 61. Lanes on the road for general traffic",
+  "shows": "Road 1: left 1,2 driving (beige), 3 curb (violet strip), 4 walking (dark red); right -1 driving (blue), -2 curb, -3 walking.",
+  "lesson": "Main road cross-section incl. curbs and sidewalks.",
+  "right": [
+   "driving + curb + walking per side."
+  ],
+  "wrong": [
+   "Omitting sidewalks that the crossing must connect."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_lane_types_restricted.png",
+  "viewed": true,
+  "figure": "Figure 62",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 62. Restricted lane and changed lane width",
+  "shows": "Dotted lines mark lane-section boundaries; in the middle section a new lane 1 of type restricted (orange) opens next to the reference line, widens to full width, holds, and narrows again; left lanes shift to ids 2,3 driving, 4 curb, 5 walking; outside the section ids revert to 1,2,3,4.",
+  "lesson": "The traffic island is a restricted lane inserted with its own lane section and cubic widths; outer lanes renumber and are linked across sections.",
+  "right": [
+   "Insert island as restricted lane in a dedicated lane section; link renumbered lanes."
+  ],
+  "wrong": [
+   "Using an object only and leaving the drivable area overlapping the island."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_reference_line_pedestrians.png",
+  "viewed": true,
+  "figure": "Figure 63",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 63. Road reference line of the pedestrian crossing",
+  "shows": "Road 2 reference line perpendicular to road 1, from the middle of the bottom walking lane -3 to the middle of the top walking lane 5, crossing the island at its widest part.",
+  "lesson": "Crossing road starts and ends in the middle of the walking lanes it connects.",
+  "right": [
+   "Start/end crossing reference line at sidewalk centres."
+  ],
+  "wrong": [
+   "Ending the crossing at the curb line."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_lane_types.png",
+  "viewed": true,
+  "figure": "Figure 64",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 64. All lanes of the pedestrian crossing",
+  "shows": "Road 2 with a single walking lane -1 (dark red) on the right of its reference line, spanning road 1 from sidewalk to sidewalk over the island.",
+  "lesson": "Crossing road has one walking lane.",
+  "right": [
+   "One walking lane on the crossing road."
+  ],
+  "wrong": [
+   "Driving lanes on a crossing road."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_virtual_junction_detail.png",
+  "viewed": true,
+  "figure": "Figure 65",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 65. Virtual junction for the pedestrian crossing",
+  "shows": "Red dashed lines on road 1 marking @sStart and @sEnd of the virtual junction, tightly around the crossing walking lane.",
+  "lesson": "Virtual junction with mainRoad=1 and sStart/sEnd clearly outside the area of crossing traffic.",
+  "right": [
+   "sStart/sEnd bracket the crossing with margin."
+  ],
+  "wrong": [
+   "sStart/sEnd inside the crossing width."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/cross_path_abstract.png",
+  "viewed": true,
+  "figure": "Figure 66",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.3.3 Modeling approach",
+  "caption": "Figure 66. Complete pedestrian crossing",
+  "shows": "Complete view: island hatching and lane markings added, crossing road over the refuge.",
+  "lesson": "Complete mid-block crossing: main road uncut, crossing road junction=virtual id, crossPath with start/end lane links, priority high=main low=crossing.",
+  "right": [
+   "Main road junction=-1; crossing road junction=virtual junction id."
+  ],
+  "wrong": [
+   "Setting the main road's junction attribute to the virtual junction."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/crossing_rail_real.png",
+  "viewed": true,
+  "figure": "Figure 67",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.4.1 Example",
+  "caption": "Figure 67. A rail road crossing",
+  "shows": "Same image as Figure 58: rail track with priority crossing a two-lane road.",
+  "lesson": "Rail crossing: crossing junction, rail has priority.",
+  "right": [
+   "priority high = rail road."
+  ],
+  "wrong": [
+   "Road priority over rail."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/crossing_rail_reference_lines.png",
+  "viewed": true,
+  "figure": "Figure 68",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.4.3 Modeling approach",
+  "caption": "Figure 68. Road reference lines",
+  "shows": "Road 1 (vehicle road) reference line S->N along its centre; road 2 (rail) reference line WSW->ENE along the track centre; both pass straight through the crossing point without cuts.",
+  "lesson": "Both roads stay continuous; neither is part of the junction.",
+  "right": [
+   "Do not cut road or rail at a level crossing."
+  ],
+  "wrong": [
+   "Splitting both roads at the crossing point."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/crossing_rail_lane_types.png",
+  "viewed": true,
+  "figure": "Figure 69",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.4.3 Modeling approach",
+  "caption": "Figure 69. Lanes on the roads",
+  "shows": "Road 1 lanes 1 (beige) and -1 (blue) driving; road 2 single lane -1 of type rail (dark blue).",
+  "lesson": "Rail road gets a rail lane.",
+  "right": [
+   "Rail lane type rail."
+  ],
+  "wrong": [
+   "Track modelled as a driving lane."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/crossing_rail_road_sections.png",
+  "viewed": true,
+  "figure": "Figure 70",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.4.3 Modeling approach",
+  "caption": "Figure 70. Road sections",
+  "shows": "@sStart/@sEnd tick marks on both roads bracketing the crossing area: on road 1 below and above the track, on road 2 left and right of the road.",
+  "lesson": "Crossing junction holds one roadSection per road with sStart/sEnd outside the crossing area.",
+  "right": [
+   "roadSection per road; margins outside the overlap."
+  ],
+  "wrong": [
+   "roadSection limits inside the overlap."
+  ],
+  "formula": null
+ },
+ {
+  "source": "junction guideline 1.0.0",
+  "file": "docs/reference/asam_opendrive_junction_guideline_1.0.0/_assets/junction-guidelines/_images/10_crossings_cross_paths/crossing_rail_complete.png",
+  "viewed": true,
+  "figure": "Figure 71",
+  "chapter": "10 Crossings and cross paths",
+  "section": "10.4.3 Modeling approach",
+  "caption": "Figure 71. Complete rail road crossing",
+  "shows": "Complete: St. Andrew's crosses at each approach, centre lines with stop bars before the track as grey markings.",
+  "lesson": "Add road markings and signs to the crossing.",
+  "right": [
+   "Signs + stop markings on the road before the track."
+  ],
+  "wrong": [
+   "No warning signs."
+  ],
+  "formula": null
+ }
+]

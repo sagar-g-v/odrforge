@@ -1,0 +1,1117 @@
+[
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lanes_overview.png",
+    "viewed": true,
+    "figure": "Figure 57",
+    "chapter": "11. Lanes",
+    "section": "11.1 Introduction to lanes",
+    "caption": "Figure 57. Center lane for road with lanes of different driving directions",
+    "shows": "Two-way road, reference line (blue solid arrow, pointing right) coincides with the centre lane 0 (blue dash-dot, drawn a few px above it only for visibility). Left (tan) lanes 3,2,1; lane 3 is separated from 2 by a white gap (a narrow outer lane, e.g. border). Right (blue) lanes -1,-2. A vertical line marks a lane-section change: after it a new right lane appears; the dashed -1/-2 marking stays, a second dashed line peels away from it and the outer black edge swings outward, so the right side ends with -1,-2,-3. No lane offset.",
+    "lesson": "Lane ids count outward from the centre lane 0 (+ left, - right). A change in lane count starts a new lane section; a lane that opens inside the cross-section shifts the ids of every lane outside it.",
+    "right": [
+      "Centre lane 0 equals the reference line when there is no laneOffset",
+      "New lane starts at width 0 at the section start and widens with the cubic",
+      "Outer lanes keep their geometry but get new ids after an inserted lane"
+    ],
+    "wrong": [
+      "Matching lanes across a section boundary by id instead of by lateral position",
+      "Giving the centre lane a width"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same drawing as 1.7 Figure 52; renumbered. Surrounding rules now speak of lane layers ('each layer' has its own centre lane) and the rule 'at least one lane with width>0' was dropped in 1.9."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lanes_oneway.png",
+    "viewed": true,
+    "figure": "Figure 58",
+    "chapter": "11. Lanes",
+    "section": "11.1 Introduction to lanes",
+    "caption": "Figure 58. Center lane for road with lanes of identical driving direction",
+    "shows": "One-way road: reference line (blue arrow pointing right) at the right edge, centre lane 0 on it, only left lanes 1,2 (dashed separator) and an outer lane 3 behind a white gap. Hollow arrows in lanes 1 and 2 point LEFT, i.e. against the reference line, which is the RHT default for left lanes. No right lanes.",
+    "lesson": "A one-way road can be modelled with all lanes on one side of the centre lane; the side together with the road's traffic rule fixes the driving direction.",
+    "right": [
+      "One-way road with only <left> (or only <right>) lanes",
+      "Left lanes in RHT drive against s",
+      "Prefer right lanes with the reference line along traffic for OSM oneway=yes so the default direction is correct without @direction"
+    ],
+    "wrong": [
+      "Placing lanes on both sides of a one-way road and relying on @direction to fix it",
+      "Forgetting that left lanes in RHT run against s"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Unchanged from 1.7 Figure 53. 1.8+ adds @direction (standard/reversed/both) to override the side-based default."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_CD586CD1_8333_46a3_A103_8F63F2BCE9C1.png",
+    "viewed": true,
+    "figure": "Figure 59",
+    "chapter": "11. Lanes",
+    "section": "11.1 Introduction to lanes",
+    "caption": "Figure 59. UML class diagram of the Lanes class",
+    "shows": "UML: t_road_lanes has @layer (e_layerType, default permanent) and two constraints: (1) if layer is permanent then laneSection/@length is not allowed; (2) if any laneOffset exists then no laneSection//border. Children: laneOffset 0..* (s,a,b,c,d) and laneSection 1..* (length 0..1, s, singleSide 0..1). laneSection has center 1, left 0..1, right 0..1. Center lane: id=0, type and level marked DEPRECATED. Left lane id positiveInteger, right lane id negativeInteger; both derive from t_road_lanes_laneSection_lr_lane with type, advisory (default none), direction (default standard), dynamicLaneType, dynamicLaneDirection, level, roadWorks (default false). lane children: link 0..1 (predecessor/successor 0..* with id and layer default permanent), roadMark 0..*, height 0..*, LaneGeometry xor-choice width 1..* | border 1..*, rule, material (sOffset, surface, friction, roughness), speed (sOffset, max, unit), access 0..* (sOffset, rule, deprecated restriction attr; child restriction 0..* with type).",
+    "lesson": "Schema-level: <lanes> may occur twice per road (permanent + temporary layer); width and border are mutually exclusive per lane; laneOffset excludes border; centre lane no longer carries type/level.",
+    "right": [
+      "<lanes> without @layer = permanent",
+      "Use <access rule=...><restriction type=.../></access> children",
+      "Every lane needs width (or border) from sOffset 0"
+    ],
+    "wrong": [
+      "Writing @type on the centre lane in a 1.9 file (deprecated)",
+      "Mixing <width> and <border>",
+      "laneOffset together with border",
+      "@length on a permanent lane section"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 54 had no @layer, no laneSection@length, no advisory/direction/dynamic*/roadWorks, no link@layer, access only via @restriction. All of those are 1.8/1.9 additions; centre-lane type/level deprecated in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_sway.png",
+    "viewed": true,
+    "figure": "Figure 60",
+    "chapter": "11. Lanes",
+    "section": "11.2 Lane layers",
+    "caption": "Figure 60. Road with two lane layers \"permanent\" (white markings) and \"temporary\" (yellow markings) in a roadworks setting",
+    "shows": "3D rendering of a motorway roadworks zone: white permanent markings stay in place while yellow temporary markings swing across them; red/white beacons block parts of the permanent lanes. On the right carriageway an outer permanent lane is blocked; on the left a permanent inner lane is closed for its own direction but a temporary lane on top of it carries traffic of the OPPOSITE carriageway (contraflow). Concrete barrier separates the old carriageways.",
+    "lesson": "Temporary lanes are an overlay with their own lane ids, sections, offset and markings; they take precedence for driving but inherit surface/height from the permanent layer.",
+    "right": [
+      "Mark blocked permanent lanes with @roadWorks=true",
+      "Temporary layer total width (per lane group) <= permanent",
+      "Temporary lanes have no <height>/<material>"
+    ],
+    "wrong": [
+      "Rebuilding the permanent geometry for a roadworks zone",
+      "Letting a temporary lane extend outside the permanent surface"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8 (lane layers). Not present in 1.7."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_multi_layer_example.png",
+    "viewed": true,
+    "figure": "Figure 61",
+    "chapter": "11. Lanes",
+    "section": "11.2 Lane layers",
+    "caption": "Figure 61. Example with lanes on the permanent and temporary lane layer",
+    "shows": "Rendered road view: near section has only permanent lanes (white solid edge lines, white dashed centre). Further away yellow temporary lines branch off the white ones: on the left the yellow edge bends inward, the yellow dashed lane line shifts sideways, on the right a yellow edge line bends outward onto the shoulder. XML excerpt: permanent and temporary layers both have a laneSection at s=40 with right lanes -1 median 2.0, -2 border 0.75, -3/-4 driving 3.75, -5 border, -6 stop 3.0, -7 shoulder 1.5; permanent lanes list successor on BOTH layers (successor id=-3 layer=permanent and successor id=-3 layer=temporary); temporary lanes use cubic widths (c,d non-zero) to shift.",
+    "lesson": "Entering a temporary layer section is expressed by permanent lanes having two successors (same id on permanent and temporary layer); a new permanent lane section must start exactly where that link happens.",
+    "right": [
+      "link/successor@layer to jump between layers",
+      "Start a permanent lane section wherever a temporary section starts/ends",
+      "Shift temporary lanes with their own cubic width or laneOffset"
+    ],
+    "wrong": [
+      "Linking layers without a permanent lane-section break",
+      "Omitting the layer link so the temporary lanes are unreachable"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8/1.9 (layers, link@layer, laneSection@length). No 1.7 counterpart."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lanes_group.png",
+    "viewed": true,
+    "figure": "Figure 62",
+    "chapter": "11. Lanes",
+    "section": "11.3 Lane groups",
+    "caption": "Figure 62. Lane grouping with left, center, right",
+    "shows": "Braces group lanes 3,2,1 as 'left', lane 0 on the reference line as 'center', -1,-2 as 'right'. Hollow arrows: lanes 1 and 2 point against s (left), lane -1 along s (right) -> RHT. Lanes 3 and -2 are narrow outer strips without arrows.",
+    "lesson": "Lanes are grouped into <left>/<center>/<right>; direction is derived from side and road @rule unless @direction overrides it (both = bidirectional).",
+    "right": [
+      "RHT: right lanes along s, left lanes against s",
+      "LHT: left lanes along s",
+      "Use @direction=both instead of deprecated type=bidirectional",
+      "List lanes left-to-right (descending id)"
+    ],
+    "wrong": [
+      "Using @direction=reversed to flip a whole road from RHT to LHT (explicitly forbidden)",
+      "Emitting type=bidirectional"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same figure as 1.7 Figure 55. Text gained 11.3.1 'Driving direction' with @direction, @dynamicLaneDirection (1.8)."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_section_1.png",
+    "viewed": true,
+    "figure": "Figure 63",
+    "chapter": "11. Lanes",
+    "section": "11.4 Lane sections",
+    "caption": "Figure 63. Road section with lane sections",
+    "shows": "Lane section A: 3,2,1 | 0 | -1,-2. Dotted vertical boundary. Lane section B: a dashed grey line leaves the reference line and swings down to become the -1/-2 boundary; the old solid -1/-2 boundary and the outer edge swing outward in parallel. End of B: -1 (new inner lane grown from zero width), -2 (old -1), -3 (old -2). Left side unchanged. s/t axes drawn; label 'center lane' on the reference line.",
+    "lesson": "Every change of lane count needs a new lane section; an appearing lane starts with width 0 and has no predecessor, all lanes outside it are renumbered.",
+    "right": [
+      "New section exactly where count changes",
+      "Zero-width-start lane gets no <predecessor>",
+      "Old -1 -> new -2 linked by predecessor id=-1"
+    ],
+    "wrong": [
+      "Linking by equal id across sections",
+      "Zero-length lane section"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Identical to 1.7 Figure 56. 1.9 adds laneSection@length (temporary layer only) and the rule against long zero-width lanes."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_section_2.png",
+    "viewed": true,
+    "figure": "Figure 64",
+    "chapter": "11. Lanes",
+    "section": "11.4 Lane sections",
+    "caption": "Figure 64. Lane sections defined separately for both sides of the road",
+    "shows": "Left (tan) half: section A_left ends early (dotted line at about 1/3 length); before it an outer white solid edge curves down onto the dashed lane line (lane closing to zero), after it the line continues solid. Right (blue) half: A_right is long; its boundary is at about 2/3 length; before it the outer edge curves up to the dashed line (lane closing). So left and right sides change at different s.",
+    "lesson": "@singleSide=true lane sections let left and right sides change at different s without forcing a split of the other side.",
+    "right": [
+      "singleSide for asymmetric lane drops",
+      "Alternative: normal sections for both sides with duplicated, unchanged lanes"
+    ],
+    "wrong": [
+      "Assuming every reader supports singleSide - many tools ignore it, so OdrForge should prefer full sections and copy unchanged lanes"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 57."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lanes_offset.png",
+    "viewed": true,
+    "figure": "Figure 65",
+    "chapter": "11. Lanes",
+    "section": "11.5 Lane offset",
+    "caption": "Figure 65. Lane offset",
+    "shows": "Section A: 3,2,1 | 0 on reference line | -1,-2. Section B: centre lane (dotted) rises smoothly from the reference line to the old 1/2 boundary; lane 1 shrinks to zero above it while a new right lane -1 grows between reference line and centre lane; ids read 3,2,1,0,-1,-2,-3. Section C: 2,1 | 0 shifted by constant 'lane offset' (double arrow) | -1,-2,-3. Reference line unchanged (blue dash-dot). A faint stray white curve below the road between B and C is a drawing artefact.",
+    "lesson": "laneOffset shifts the centre lane laterally (typical: left-turn pocket). Lanes may effectively move from one side to the other, which changes counts per side and needs lane sections; ids renumber.",
+    "right": [
+      "Linear/cubic laneOffset with separate elements whenever polynomial changes",
+      "Each layer has its own laneOffset",
+      "Prefer linear offset when road shape is used"
+    ],
+    "wrong": [
+      "laneOffset with <border>",
+      "Giving lane 1 in B a successor (it ends with zero width)"
+    ],
+    "formula": "offset(ds) = a + b*ds + c*ds^2 + d*ds^3, ds = s - s_start (restarts per element)",
+    "new_vs_1_7": "Same drawing as 1.7 Figure 58. 1.9 adds: temporary layer needs its own laneOffset."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_links.png",
+    "viewed": true,
+    "figure": "Figure 66",
+    "chapter": "11. Lanes",
+    "section": "11.6 Lane linkage",
+    "caption": "Figure 66. Lane links for road with id 10",
+    "shows": "Three roads in a row: road 30 (1 | 0 | -1,-2, arrow right), road 10 (1 | 0 | -1,-2, arrow right), road 20 drawn with -1 on top, 0, 1,2 below and its reference line arrow pointing LEFT (reversed, end-to-end contact with road 10). Table: road 10 lane 1 pred = road 30 lane 1, succ = road 20 lane -1; lane -1 pred 30/-1, succ 20/1; lane -2 pred 30/-2, succ 20/2.",
+    "lesson": "Predecessor/successor are defined by s-direction of the lane's own road, not by traffic direction; when the neighbour road is reversed the lane ids flip sign.",
+    "right": [
+      "Flip sign of lane id across an end-end or start-start contact",
+      "Link lanes in both directions"
+    ],
+    "wrong": [
+      "Copying ids unchanged across reversed roads",
+      "Interpreting successor as 'where traffic goes'"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 59. Table now has a layer concept (default permanent)."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_linkage_01.png",
+    "viewed": true,
+    "figure": "Figure 67",
+    "chapter": "11. Lanes",
+    "section": "11.6 Lane linkage",
+    "caption": "Figure 67. Example of an ending bikeway",
+    "shows": "Top-down rendering: a red bike lane with white edge line and bicycle symbol/arrow runs along the right edge and ends abruptly at about 2/3 of the image; after that the outer driving lane occupies that space. Dashed white lane line between two driving lanes.",
+    "lesson": "When a lane ends abruptly with non-zero width and traffic continues on a neighbour, the ending lane gets that neighbour as successor; the continuing lane then has two predecessors (multiple links).",
+    "right": [
+      "Multiple predecessors/successors for abrupt merges/splits with non-zero width",
+      "Only when physical and semantic connection exists"
+    ],
+    "wrong": [
+      "Linking a lane that tapers to zero width",
+      "Linking a parking lane to grass (no semantic connection)"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 60 (caption shortened)."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_linkage_02.png",
+    "viewed": true,
+    "figure": "Figure 68",
+    "chapter": "11. Lanes",
+    "section": "11.6 Lane linkage",
+    "caption": "Figure 68. Example of a splitting driving lane",
+    "shows": "Top-down rendering, one direction: left part a single wide lane between edge lines; at about 30% a dashed lane line starts and the space becomes two lanes with turn arrows (upper: straight+left, lower: straight+right). Width is non-zero on both sides of the split.",
+    "lesson": "Abrupt split of one lane into two -> the single lane has two successors; the newly appearing lane beside a continuing lane must NOT get the original as predecessor (rule new_lane_appear).",
+    "right": [
+      "Two successors for an abrupt split",
+      "If a lane merely appears beside, link only the continuing lane"
+    ],
+    "wrong": [
+      "Linking a widening-from-zero lane"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 61."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/fig_uml_class_lanes_lanesection_lr_lane.png",
+    "viewed": true,
+    "figure": "Figure 69",
+    "chapter": "11. Lanes",
+    "section": "11.6 Lane linkage",
+    "caption": "Figure 69. UML class diagram of the t_road_lanes_laneSection_lcr_lane_link element in the Lanes class",
+    "shows": "UML: lr_lane (type, advisory=none, direction=standard, dynamicLaneType, dynamicLaneDirection, level, roadWorks=false) -> link 0..1 -> predecessor 0..* and successor 0..*, each with id:integer and layer:e_layerType [0..1]=permanent.",
+    "lesson": "Lane links carry an optional @layer; multiple predecessors/successors are allowed by the schema.",
+    "right": [
+      "Omit <link> when lane starts/ends in a junction or has no link",
+      "layer default permanent"
+    ],
+    "wrong": [
+      "Emitting empty successor elements without id"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 62 had no @layer and no 1.8 lane attributes."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/fig_uml_class_lanes_lane_properties.png",
+    "viewed": true,
+    "figure": "Figure 70",
+    "chapter": "11. Lanes",
+    "section": "11.7 Lane geometry",
+    "caption": "Figure 70. UML model for lane geometry in the Lanes class",
+    "shows": "UML: abstract LaneGeometry with children width 0..* (a,b,c,d,sOffset) and border 0..* (a,b,c,d,sOffset), plus height 0..* (inner, outer, sOffset) attached via LaneGeometry 1..*.",
+    "lesson": "Lane geometry = width or border (exclusive) plus optional height; all relative to the lane section start via sOffset.",
+    "right": [
+      "sOffset relative to laneSection s",
+      "Ascending sOffset per type"
+    ],
+    "wrong": [
+      "Reading this diagram's 0..* as 'width optional' - the text and Figure 59 require width (or border) from sOffset 0"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 63 showed lane properties together; 1.9 splits geometry into its own diagram. Multiplicities here (0..*) disagree with Figure 59 (1..* in xor)."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_section_3.png",
+    "viewed": true,
+    "figure": "Figure 71",
+    "chapter": "11. Lanes",
+    "section": "11.7.1 Lane width",
+    "caption": "Figure 71. Change of lane width per lane section",
+    "shows": "Section A: lanes 1 | -1, lane -1 constant width (a=const, b=c=d=0), ds1 arrow from section start. Section B: lane -1 unchanged, a new lane -2 grows from a=0 with b,c,d widening it (outer black edge S-curves outward); grey dashed -1/-2 marking starts only where -2 has gained width. ds2 restarts at section B start.",
+    "lesson": "Width polynomial restarts at every lane section and every <width> element; a new lane is created with a=0 and widened by b,c,d.",
+    "right": [
+      "ds measured from start of the width element (sSection + sOffset)",
+      "Width >= 0 everywhere",
+      "A <width> at sOffset 0 is mandatory"
+    ],
+    "wrong": [
+      "Using global s in the polynomial",
+      "Negative widths from overshooting cubic"
+    ],
+    "formula": "width(ds) = a + b*ds + c*ds^2 + d*ds^3; s = s_section + sOffset + ds",
+    "new_vs_1_7": "Same as 1.7 Figure 64."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_border.png",
+    "viewed": true,
+    "figure": "Figure 72",
+    "chapter": "11. Lanes",
+    "section": "11.7.2 Lane borders",
+    "caption": "Figure 72. Lane with varying border shape",
+    "shows": "Same layout as Figure 71 but with green t-arrows from the centre lane: section A border of -1 = a const, b=c=d=0. Section B: border of -1 a const; border of -2 starts at a_-2 = a_-1 (zero width) and b,c,d widen it; later a_-2 constant. Text in B for lane -1 reads 'b = c = d' without '= 0' (typo).",
+    "lesson": "Border gives the absolute t of the lane's outer edge (from centre lane), independent of inner lanes; useful for measured data.",
+    "right": [
+      "Border is outer-edge t, not width",
+      "No laneOffset with border",
+      "Borders must not cross inner lanes"
+    ],
+    "wrong": [
+      "Mixing width and border in one lane group",
+      "Treating border a as width"
+    ],
+    "formula": "t_border(ds) = a + b*ds + c*ds^2 + d*ds^3",
+    "new_vs_1_7": "Same as 1.7 Figure 65. 1.9 text says width wins if both present."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_height_1.png",
+    "viewed": true,
+    "figure": "Figure 73",
+    "chapter": "11. Lanes",
+    "section": "11.7.3 Lane height",
+    "caption": "Figure 73. Lane height",
+    "shows": "Cross section looking along s: h axis up (red), t axis left (green) from point s on the reference line. Lanes 4,3,2,1 | -1,-2,-3,-4; lane 4 has an orange raised top; lane -4 (pedestrian) is raised by 'lane height' (grey block) next to a car on lane -3; 'lane width' dimension on -4.",
+    "lesson": "Lane height is a small vertical offset (inner/outer) of a lane above the road surface, e.g. sidewalk/curb, not elevation.",
+    "right": [
+      "Sidewalk/curb lanes with <height inner=.. outer=..> ~0.1-0.15 m",
+      "Centre lane never elevated"
+    ],
+    "wrong": [
+      "Using lane height for road grade or superelevation",
+      "Height on temporary-layer lanes"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 73."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_height_2.png",
+    "viewed": true,
+    "figure": "Figure 74",
+    "chapter": "11. Lanes",
+    "section": "11.7.4 Excluding lanes from lateral profile",
+    "caption": "Figure 74. Lanes excluded from road elevation",
+    "shows": "Same cross section tilted by superelevation (h_superelevation, t_superelevation dashed axes). Lanes 3..-3 follow the tilt; outermost lanes 4 and -4 carry a red crossed circle and stay horizontal (level=true) at the height of the outer edge of their inner neighbour; -4 also has lane height.",
+    "lesson": "@level=true keeps a lane flat (no superelevation/shape/cross-section surface) starting from the inner neighbour's outer edge; once a lane is level all further outer lanes must be level.",
+    "right": [
+      "Sidewalks level=true from the curb outward",
+      "Avoid changing level between lane sections"
+    ],
+    "wrong": [
+      "level=true on an inner lane but not on outer lanes"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same picture as 1.7 Figure 74; 1.9 also excludes level lanes from shape and CRG cross-section surface."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_CD586CD1_8333_46a3_A103_8F63F2BCE9C1.png",
+    "viewed": true,
+    "figure": "Figure 75",
+    "chapter": "11. Lanes",
+    "section": "11.8 Additional lane properties",
+    "caption": "Figure 75. UML class diagram of the Lanes class",
+    "shows": "Same image file as Figure 59 (full Lanes class diagram); see that entry. Here it introduces material, speed, access (with restriction children), rule.",
+    "lesson": "Lane properties (type, material, speed, access, rule) are per lane and valid from sOffset until the next element or section end.",
+    "right": [
+      "Re-emit all access restrictions at each new sOffset"
+    ],
+    "wrong": [
+      "Mixing allow and deny at the same sOffset"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Reused diagram; 1.7 had separate 'lane properties' UML."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_type_64.png",
+    "viewed": true,
+    "figure": "Figure 76",
+    "chapter": "11. Lanes",
+    "section": "11.8.1 Lane type",
+    "caption": "Figure 76. Lane types for a motorway",
+    "shows": "3D view of one motorway carriageway. Left to right: shoulder (grass median side, with the blue reference-line arrow inside it), border (narrow brown), driving x3 (dashed separators), stop (brown hard shoulder), shoulder (green), none (white, outside).",
+    "lesson": "Motorway cross-section pattern: border on the median side, driving lanes, stop (emergency lane), shoulder, none.",
+    "right": [
+      "Emergency lane = stop",
+      "Use none for the area beyond the road"
+    ],
+    "wrong": [
+      "Calling the hard shoulder 'shoulder' or 'driving'"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 66."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_type_65.png",
+    "viewed": true,
+    "figure": "Figure 77",
+    "chapter": "11. Lanes",
+    "section": "11.8.1 Lane type",
+    "caption": "Figure 77. Lane types for a rural road",
+    "shows": "3D view of a two-way rural road: none | shoulder | driving | restricted (hatched yellow island growing from zero to a wedge between the directions) | driving | shoulder | none.",
+    "lesson": "A painted island between directions is a restricted lane (same height as driving lanes) with varying width.",
+    "right": [
+      "restricted for hatched areas",
+      "Width from 0 so no predecessor"
+    ],
+    "wrong": [
+      "Modelling a painted island as median (median implies physical separation)"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 67."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_type_66.png",
+    "viewed": true,
+    "figure": "Figure 78",
+    "chapter": "11. Lanes",
+    "section": "11.8.1 Lane type",
+    "caption": "Figure 78. Lane types for an urban road",
+    "shows": "3D urban dual carriageway, left to right: border, curb, driving, driving, curb, median (grass), curb, driving, driving, border, curb, parking (paved bay, width varies), shoulder (grass, width complements the bay), biking (red, arrow), walking. Text describes the outer order as walking, biking, shoulder and calls it 'the right side', whereas the picture shows both carriageways and the order shoulder-biking-walking outward.",
+    "lesson": "Curbs are their own narrow lanes; median between curbs; parking bays as a parking lane of varying width with the shoulder absorbing the complement.",
+    "right": [
+      "walking (not deprecated sidewalk)",
+      "curb lanes beside median and sidewalk",
+      "Varying parking width, constant outer edge"
+    ],
+    "wrong": [
+      "Using lane type 'sidewalk' (deprecated)",
+      "Trusting the text order over the picture"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same picture as 1.7 Figure 68; 1.9 label is 'walking' instead of 'sidewalk'."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_type_67.png",
+    "viewed": true,
+    "figure": "Figure 79",
+    "chapter": "11. Lanes",
+    "section": "11.8.1 Lane type",
+    "caption": "Figure 79. Lane types for motorway exit and entry",
+    "shows": "Aerial: upper carriageway (traffic right-to-left) has an exit lane (brown) on its outer side, followed by a short offRamp lane piece and then a curved offRamp road leaving to the upper left. Lower carriageway (left-to-right) gets a curved onRamp road from lower left, a short parallel onRamp piece, then an entry lane (green) beside the 3 driving lanes.",
+    "lesson": "Lane type sequence along a diverge: exit -> offRamp(parallel) -> offRamp(curved road); along a merge: onRamp(curved) -> onRamp(parallel) -> entry.",
+    "right": [
+      "Deceleration lane = exit, acceleration lane = entry",
+      "Ramp roads use onRamp/offRamp lane type"
+    ],
+    "wrong": [
+      "Typing the decel lane as driving"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 69."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_type_68.png",
+    "viewed": true,
+    "figure": "Figure 80",
+    "chapter": "11. Lanes",
+    "section": "11.8.1 Lane type",
+    "caption": "Figure 80. Lane types for motorway connecting to another motorway",
+    "shows": "Same layout as Figure 79 but the ramp lanes are connectingRamp (both diverge and merge): exit -> connectingRamp -> curved connectingRamp; curved connectingRamp -> connectingRamp -> entry.",
+    "lesson": "Motorway-to-motorway links use connectingRamp instead of onRamp/offRamp.",
+    "right": [
+      "connectingRamp for interchange links (OSM highway=motorway_link between motorways)"
+    ],
+    "wrong": [
+      "Using offRamp for motorway-to-motorway links"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 70."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_speed_limit.png",
+    "viewed": true,
+    "figure": "Figure 81",
+    "chapter": "11. Lanes",
+    "section": "11.8.3 Lane speed limit",
+    "caption": "Figure 81. Lane-specific speed limits",
+    "shows": "Road with lanes 3 (outer strip), 2 and 1 (arrows against s), -1 (arrow along s), -2 (outer strip). Painted speed circles: lane 2 = 60 and lane 1 = 80 (drawn upside down, readable for traffic going left), lane -1 = 80 (readable for traffic going right).",
+    "lesson": "Lane <speed max unit> overrides road speed; signals override both.",
+    "right": [
+      "unit=km/h explicitly (default is m/s)",
+      "Lane speed only when differs from road type speed"
+    ],
+    "wrong": [
+      "Omitting unit and writing km/h numbers (interpreted as m/s)",
+      "Speed on centre lane"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 71."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/11_lanes/lane_access.png",
+    "viewed": true,
+    "figure": "Figure 82",
+    "chapter": "11. Lanes",
+    "section": "11.8.4 Lane access",
+    "caption": "Figure 82. Lane access, bus lane",
+    "shows": "Lanes 3, 2 (BUS marking, arrow against s), 1 (arrow against s) | -1 (arrow along s), -2. Lane 2 restricted to buses.",
+    "lesson": "Access is now <access sOffset rule=allow|deny> with one or more <restriction type=...> children; allow bans everything else, deny allows everything else.",
+    "right": [
+      "Bus lane: <access rule=allow><restriction type=bus/></access>",
+      "Restate all restrictions at each new sOffset",
+      "deny + restriction none resets"
+    ],
+    "wrong": [
+      "Using deprecated @restriction attribute",
+      "Mixing allow and deny at one sOffset",
+      "Several <access> at the same sOffset"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same picture as 1.7 Figure 72; the <restriction> child element and deprecation of @restriction are 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_D2700AD5_7968_4435_AD3F_B177C0D1C1AD.png",
+    "viewed": true,
+    "figure": "Figure 83",
+    "chapter": "11. Lanes",
+    "section": "11.9 Lane road markings",
+    "caption": "Figure 83. UML class diagram of the RoadMark class",
+    "shows": "UML: roadMark (sOffset, type, weight 0..1, color, material 0..1, width 0..1, laneChange 0..1, height 0..1) with children sway 0..* (ds,a,b,c,d), type 0..1 (name, width; line 1..* with length, space, tOffset, sOffset, rule, width, color) and explicit 0..1 (line 1..* with length, tOffset, sOffset, rule, width).",
+    "lesson": "A lane's roadMark describes its OUTER border line only; centre lane mark is the centre line; marking centre sits on the border, half on the next lane.",
+    "right": [
+      "roadMark only on the outer edge of each lane",
+      "Centre line on lane 0"
+    ],
+    "wrong": [
+      "Drawing a lane's inner marking on that lane",
+      "Using roadMark for stop lines (those are signals/objects)"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 75 equivalent; 1.9 rules only_outer and position_outer_half are new."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_522853C6_A091_462c_9784_E01118BD53AB.png",
+    "viewed": true,
+    "figure": "Figure 84",
+    "chapter": "12. Junctions",
+    "section": "12.1 Introduction to junctions",
+    "caption": "Figure 84. UML class diagram of the Junction class",
+    "shows": "UML: abstract t_junction (name, id) with planView 0..1, surface 0..1, elevationGrid 0..1, boundary 0..1, objects 0..1, controller 0..* (id, type, sequence), priority 0..* (high, low), crossPath 0..* (crossingRoad, id, roadAtEnd, roadAtStart; startLaneLink 1 and endLaneLink 1 with s, from, to). Subtypes: t_junction_virtual (type=virtual, mainRoad, sStart, sEnd, orientation; connections XOR deprecated virtual connection with predecessor/successor or virtual_default), t_junction_common (type default; connection_common with connectingRoad), t_junction_direct (connection_direct 1..* with linkedRoad), t_junction_crossing (roadSection 1..* with id, roadId, sStart, sEnd). t_junction_connection: id, incomingRoad 0..1, contactPoint 0..1, laneLink 0..* (from, to, overlapZone 0..1, fromLayer, toLayer default permanent).",
+    "lesson": "Four junction types (default/common, direct, virtual, crossing) share id/name and geometric extras (reference line, boundary, elevation grid, surface); only common uses connectingRoad, only direct uses linkedRoad.",
+    "right": [
+      "Pick type per Table 54 use case",
+      "Keep laneLink in every connection (omission deprecated)"
+    ],
+    "wrong": [
+      "connectingRoad in direct",
+      "linkedRoad in default/virtual",
+      "Overlapping junctions"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 78 had only default/direct/virtual and no planView/boundary/elevationGrid/surface/crossPath/crossing/overlapZone/layers - all 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_1.png",
+    "viewed": true,
+    "figure": "Figure 85",
+    "chapter": "12. Junctions",
+    "section": "12.2 Common junctions",
+    "caption": "Figure 85. Types of roads in a junction (right-hand traffic)",
+    "shows": "Five-arm junction, red pentagon outline = junction area. NW arm: two-way (-1 west / 1 east), reference line points into the junction (ends there) - 'incoming road'. NE arm: one-way, lanes -2,-1 right of a reference line pointing into the junction - 'incoming road (one-way street)'. W arm: two-way, reference line starts at the junction and points away (west), -1 north / 1 south - still 'incoming road'. S arm: two-way, reference line points north into junction - 'incoming road'. E arm: one-way, lanes -1,-2 right of a reference line pointing east away from the junction - 'not an incoming road (one-way street)'. Red curves = connecting roads from NW, NE, W, S contact points; none start on the E arm.",
+    "lesson": "A road is incoming if it has at least one lane flowing INTO the junction, regardless of whether its reference line starts or ends there; outgoing roads are implicit (targets of connecting roads).",
+    "right": [
+      "Reference all two-way arms as incomingRoad",
+      "A one-way exit-only arm appears only as successor of connecting roads"
+    ],
+    "wrong": [
+      "Defining incoming by reference-line direction",
+      "Connecting roads that start on an exit-only one-way arm"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 77 drew the E arm with left lanes 1,2 (which in RHT would flow INTO the junction, contradicting its label); 1.9 redrew it as right lanes -1,-2, now consistent. Junction area now a red outline."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_2.png",
+    "viewed": true,
+    "figure": "Figure 86",
+    "chapter": "12. Junctions",
+    "section": "12.4 Connecting roads",
+    "caption": "Figure 86. Connecting roads of junction with id 1 (left hand traffic)",
+    "shows": "Signalised 4-arm X in LHT, 3 lanes per direction. Road 4 (south arm) reference line points south away from junction (starts there); lanes -3,-2,-1 on west side drive north into junction (turn arrows left/straight/right). Road 3 (north) points south into junction (ends there); road 1 (east) and road 2 (west) start at junction. Connecting roads from road 4 (tan): 28 = left turn, one lane 1 from road 4 lane -3 to road 2 lane 3; 61 = straight, lanes 1 and 2 (from -2 and -3) to road 3 lanes -2 and -3 (contact end); 64 = right turn crossing opposite traffic, lane 1 from -1 to road 1 lane 1. Connecting roads use POSITIVE (left) lanes because in LHT left lanes run along s. Faint coloured arrows show the other movements. Tables: connections 9/10/11 all incomingRoad 4, contactPoint start; roads 1,2,4 predecessor = junction 1, road 3 successor = junction 1; incoming road lanes have 'no lane link'.",
+    "lesson": "One connecting road per movement (or one multi-lane road for parallel movements); incoming lanes get no <link> into the junction; contactPoint is the connecting road's end touching the incoming road; in LHT connecting roads carry left (positive) lanes.",
+    "right": [
+      "Connecting road reference line along traffic, contactPoint=start",
+      "Lane-sign flips at road ends that are 'end' contacts",
+      "One <connection> per incomingRoad+connectingRoad pair"
+    ],
+    "wrong": [
+      "Putting lane links from the incoming road into the junction",
+      "Assuming connecting roads always use right lanes (true only for RHT)"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same picture as 1.7 Figure 79; tables now have lane-layer columns, and the text cross-references (Tables 59-61) are off by one vs. actual table numbers 58-60."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/cross_path_common.png",
+    "viewed": true,
+    "figure": "Figure 87",
+    "chapter": "12. Junctions",
+    "section": "12.5 Cross paths",
+    "caption": "Figure 87. Example of a cross path with a pedestrian crossing in a common junction",
+    "shows": "Road 4 (RHT, lanes 3 walking, 2 curb, 1 driving | -1 driving, -2 curb, -3 walking; dark red = walking) enters junction 10. Connecting road 46 continues straight (lanes 3,2,1 | -1) and connecting road 45 turns right (lanes 1 | -1,-2,-3, sidewalk on the inner curve). Road 75 (dark red rectangle, one walking lane 1, reference line pointing from 46 side to 45 side) is a cross path. Brackets show startLaneLink @s on road 46 and endLaneLink @s on road 45. Red dashed/solid lines mark junction boundary edges. XML: crossPath id=6 crossingRoad=75 roadAtStart=46 roadAtEnd=45; startLaneLink s=0.5 from=3 to=1; endLaneLink s=0.248 from=-3 to=1. Connecting roads carry curb and walking lanes and their laneLinks (from -2 to -2, -3 to -3).",
+    "lesson": "Pedestrian crossings inside a common junction are separate roads (junction=id) declared as <crossPath>, attached at an s on the walking/biking lane of the connecting roads at each end; their own elevation is ignored.",
+    "right": [
+      "Connecting roads carry sidewalks/curbs through the junction and link them",
+      "crossPath only between walking/biking lanes",
+      "Crossing road ends fully inside the linked lanes"
+    ],
+    "wrong": [
+      "Modelling a crosswalk as a connecting road in <connection>",
+      "Giving the cross path its own elevation"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8 (crossPath). No 1.7 counterpart."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/direct_junction_1.png",
+    "viewed": true,
+    "figure": "Figure 88",
+    "chapter": "12. Junctions",
+    "section": "12.6.1 Simple direct junction",
+    "caption": "Figure 88. Direct junction",
+    "shows": "Road 1 (lanes 1 | -1..-4, ref line right) ends at a red vertical junction line. Road 2 continues straight with 1 | -1..-3; road 3 (single lane -1) bends away to the lower right continuing road 1 lane -4; road 3's reference line starts at the outer edge of road 2 lane -3. No overlap. XML: junction 111 type=direct; connection 0 incomingRoad=1 linkedRoad=3 contactPoint=start laneLink -4->-1; connection 1 incomingRoad=1 linkedRoad=2 laneLinks 1->1, -1->-1, -2->-2, -3->-3. Roads 1,2,3 reference junction 111 in their links.",
+    "lesson": "Clean split without overlap: direct junction, no connecting roads, outer roads linked via linkedRoad + laneLink, placed where headings are equal.",
+    "right": [
+      "Use direct for motorway exits/entries without crossing traffic",
+      "Link also the opposing lane 1->1"
+    ],
+    "wrong": [
+      "Adding connecting roads for a simple split",
+      "Placing the cut where ramp heading already differs"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 80."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/direct_junction_2.png",
+    "viewed": true,
+    "figure": "Figure 89",
+    "chapter": "12. Junctions",
+    "section": "12.6.2 Direct junction with overlapping lanes",
+    "caption": "Figure 89. Direct junction with overlapping lanes",
+    "shows": "Road 1 (1 | -1..-4) splits at red line into road 2 (1 | -1,-2,-3) and road 3 (lanes -1,-2) whose reference line starts at the -2/-3 boundary of road 2. Road 3 lane -1 lies on top of road 2 lane -3 (shaded 'overlapping lanes') until road 3 diverges; a brace '@overlapZone' marks the length. XML: connection 0 (linkedRoad 3) laneLink -3->-1 overlapZone=41, -4->-2; connection 1 (linkedRoad 2) ... -3->-3 overlapZone=40.",
+    "lesson": "From 1.8, a direct junction may contain ONE pair of overlapping lanes; both laneLinks of that pair carry @overlapZone (>= overlap length). Exits: same @from in two links = overlap; entries: same @to.",
+    "right": [
+      "Exactly one overlapping pair, both with overlapZone",
+      "overlapZone >= physical overlap length (default 100)",
+      "Flat only"
+    ],
+    "wrong": [
+      "overlapZone on non-direct junctions",
+      "More than one overlapping pair"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 81 showed this same geometry crossed out as forbidden; 1.8 made it legal via overlapZone. Key change for OSM motorway_link splits with a shared lane."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/direct_junction_3.png",
+    "viewed": true,
+    "figure": "Figure 90",
+    "chapter": "12. Junctions",
+    "section": "12.6.3 Unsolvable cases for direct junctions",
+    "caption": "Figure 90. Junction with multiple overlapping lanes on two roads",
+    "shows": "Road 1 (1 | -1..-4) to road 2 (1 | -1..-4) straight and road 3 (-1,-2) whose reference line starts at road 2's -2/-3 boundary; road 3 -1 overlaps road 2 -3 and -4, road 3 -2 overlaps road 2 -4 (three arrows 'overlapping lanes', shaded).",
+    "lesson": "More than one overlapping lane pair cannot be a direct junction -> use a common junction.",
+    "right": [
+      "Fall back to default junction with connecting roads"
+    ],
+    "wrong": [
+      "Emitting direct with two overlap pairs"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Split out of 1.7 Figure 81's 'cannot be modeled' case; now a dedicated figure."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/direct_junction_4.png",
+    "viewed": true,
+    "figure": "Figure 91",
+    "chapter": "12. Junctions",
+    "section": "12.6.3 Unsolvable cases for direct junctions",
+    "caption": "Figure 91. Junction with multiple overlapping lanes on multiple roads",
+    "shows": "Road 1 (1 | -1..-3) ends at red line; three following roads: road 2 (lane -1) diverges up-left from the reference line, road 3 straight (-1..-3), road 4 (lane -1) diverges downward. Overlaps: road 2 -1 over road 3 -1, road 4 -1 over road 3 -3. Lane 1 of road 1 has no continuation drawn.",
+    "lesson": "Two overlap pairs on a three-way split -> common junction.",
+    "right": [
+      "Common junction for 3-way splits with overlaps"
+    ],
+    "wrong": [
+      "Direct junction with overlaps on both sides"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New figure in 1.8/1.9."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/direct_junction_5.png",
+    "viewed": true,
+    "figure": "Figure 92",
+    "chapter": "12. Junctions",
+    "section": "12.6.3 Unsolvable cases for direct junctions",
+    "caption": "Figure 92. Junction with crossing traffic and multiple overlapping lanes on multiple roads",
+    "shows": "Roads 1 (1 | -1..-3) and 3 (-1,-2, bending up from lower left) meet roads 2 (1 | -1..-3) and 4 (-1,-2, bending down) at one red line; road 3/4 lanes overlap road 1/2 lanes -3. Red arrows: 1/-3 -> 4/-1 crosses 3/-1 -> 2/-3 ('crossing traffic').",
+    "lesson": "Crossing traffic or more than one road on both sides forbids direct junctions.",
+    "right": [
+      "Weaving/crossing -> common junction"
+    ],
+    "wrong": [
+      "Direct junction with two roads on each side"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New figure in 1.8/1.9."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_3.png",
+    "viewed": true,
+    "figure": "Figure 93",
+    "chapter": "12. Junctions",
+    "section": "12.7 Virtual junctions",
+    "caption": "Figure 93. Example of a virtual junction showing a parking lot entry and exit",
+    "shows": "Main road 1 (2,1 | 0 | -1,-2,-3, ref line right) is not cut; red dashed lines at s=50 m and s=70 m bound 'length of the virtual junction'. Side road 99 (2,1 | -1,-2, ref line pointing up, ends at junction) below. Connecting road 2 (lane -1) leaves road 1 lane -2 at s=50 and curves down into road 99 lane 1. Connecting roads 4 and 5 (each lane -1) start at road 99 lane -1, overlap each other, and join road 1 lanes -1 and -2 at s=70. XML: junction 555 type=virtual mainRoad=1 sStart=50 sEnd=70 orientation=+; road 2 predecessor elementType=road elementId=1 elementS=50 elementDir=+; roads 4/5 successor elementId=1 elementS=70.",
+    "lesson": "Driveways / parking access: keep the main road whole and attach connecting roads mid-road via elementS/elementDir; all connecting roads start or end exactly at sStart or sEnd with equal heading.",
+    "right": [
+      "Virtual junction for driveways/parking/farm tracks (OSM service=driveway, parking_aisle)",
+      "No controllers in virtual junctions",
+      "Flat only"
+    ],
+    "wrong": [
+      "Cutting the main road for every driveway",
+      "Virtual junction for a real multi-street crossroads",
+      "Connecting roads attaching between sStart and sEnd"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 82. 1.9 adds rules: main-road-only branches, no controllers, one sStart/sEnd, equal heading."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/cross_path.png",
+    "viewed": true,
+    "figure": "Figure 94",
+    "chapter": "12. Junctions",
+    "section": "12.7.1 Cross paths with virtual junctions",
+    "caption": "Figure 94. Example of a cross path with a pedestrian crossing",
+    "shows": "Vertical road 1 (ref line up): 3 walking (dark red), 2, 1 | -1, -2 walking. Between two red dashed lines (junction sStart/sEnd) lane 1 becomes a restricted island (orange with green refuge). Road 2 (dark red bar, one walking lane -1, reference line pointing left) crosses the full road from lane -2 to lane 3. XML: road 1 lane sections at 0, 50 (lane 1 restricted), 60; virtual junction 555 mainRoad=1 sStart=52 sEnd=58 with priority high=1 low=2 and crossPath crossingRoad=2 roadAtStart=1 roadAtEnd=1, startLaneLink s=54 from -2 to -1, endLaneLink s=54 from 3 to -1.",
+    "lesson": "Mid-block pedestrian crossings: virtual junction on the main road plus a crossPath road; roadAtStart and roadAtEnd may be the same road.",
+    "right": [
+      "Crosswalk mid-block = virtual junction + crossPath",
+      "Crossing road within main road s/t limits",
+      "Priority element for who yields"
+    ],
+    "wrong": [
+      "Splitting the main road at a zebra crossing",
+      "Giving the cross path elevation"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_4.png",
+    "viewed": true,
+    "figure": "Figure 95",
+    "chapter": "12. Junctions",
+    "section": "12.7.2 Virtual connections (deprecated)",
+    "caption": "Figure 95. Virtual junction with virtual connections",
+    "shows": "Same layout as Figure 93 (s=50 to s=70). In addition three dashed blue 'virtual connection' curves: from road 99 lane -1 to road 1 lanes 2 and 1 arriving at the s=50 line (left turns across the main road), and from road 1 lane 1 at s=70 down to road 99 lane 1. XML uses <connection type=virtual> with predecessor/successor and elementS=60 / 70, elementDir=-.",
+    "lesson": "Virtual connections give topology only, no geometry; deprecated since 1.8.",
+    "right": [
+      "Do not emit virtual connections; model real connecting roads"
+    ],
+    "wrong": [
+      "Using type=virtual connections in new files"
+    ],
+    "formula": null,
+    "new_vs_1_7": "1.7 Figure 83 drew the junction from s=60 to 70, matching the XML elementS=60; 1.9 redrew it with s=50 but kept elementS=60 in the XML, so picture and XML now disagree. Feature deprecated in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/crossing_rail.png",
+    "viewed": true,
+    "figure": "Figure 96",
+    "chapter": "12. Junctions",
+    "section": "12.8 Crossings",
+    "caption": "Figure 96. Example of a crossing with a railroad track",
+    "shows": "Road 1 (two-way, lanes 1 | -1, ref line up) crossed obliquely by road 2 (dark blue, single lane -1 labelled upside down, a railway). Grey stop lines and St Andrew's crosses with barriers on both approaches. sStart/sEnd labels on both roads mark the overlap range for each road. XML: junction type=crossing with priority high=2 low=1 and roadSection id=0 roadId=1 sStart=50 sEnd=60, id=1 roadId=2 sStart=150 sEnd=160; road 2 lane type 'rail'.",
+    "lesson": "Level crossings where traffic cannot turn: junction type=crossing with one roadSection per road, no connections, roads are not cut.",
+    "right": [
+      "Railway/tram level crossings and at-grade path crossings as type=crossing",
+      "roadSection covers at least the overlap",
+      "Exactly one road high priority"
+    ],
+    "wrong": [
+      "Common junction with connecting roads for a rail crossing",
+      "Cutting either road"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8. Note: the XML uses <priority> although the rule says crossings shall only have <roadSection> elements, and lane type 'rail' is not in the lane-type list of 11.8.1."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_reference_line.png",
+    "viewed": true,
+    "figure": "Figure 97",
+    "chapter": "12. Junctions",
+    "section": "12.9 Junction reference line",
+    "caption": "Figure 97. Junction reference line ~red arrow~",
+    "shows": "Same five-arm junction as Figure 99 (brown sidewalk lanes, blue connecting-road reference lines, red boundary: solid along lane edges, dashed across road ends). A single straight dark-red arrow 'junction reference line' crosses the whole junction from lower left to upper right, extending beyond the boundary.",
+    "lesson": "A junction may own a straight reference line (one <geometry><line/>) that carries the elevation grid, CRG and junction objects (islands, potholes); it has no lanes or elevation.",
+    "right": [
+      "One straight line, every junction point reachable perpendicularly",
+      "Must cross or touch the boundary",
+      "Use it for junction <objects>"
+    ],
+    "wrong": [
+      "Arcs/spirals in the junction planView",
+      "A line that misses the boundary"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_4F7CBFCD_44AA_49be_9D85_6625376F773A.png",
+    "viewed": true,
+    "figure": "Figure 98",
+    "chapter": "12. Junctions",
+    "section": "12.10 Junction boundary",
+    "caption": "Figure 98. UML class diagram of the JunctionBoundary class",
+    "shows": "UML: t_junction_boundary with segment 1..* (abstract, roadId). Subtypes: segment_lane (type=lane, boundaryLane int, sStart, sEnd: t_grEqZeroOrContactPoint) and segment_joint (type=joint, contactPoint, jointLaneStart 0..1, jointLaneEnd 0..1, transitionLength 0..1).",
+    "lesson": "Boundary = ordered list of lane-edge segments and joint (cut) segments; sStart/sEnd accept numbers or begin/end.",
+    "right": [
+      "sStart may be 'end' and sEnd 'begin' to run against s"
+    ],
+    "wrong": [
+      "Free polygon coordinates - not supported, boundary must be built from roads"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_boundary_segments.png",
+    "viewed": true,
+    "figure": "Figure 99",
+    "chapter": "12. Junctions",
+    "section": "12.10 Junction boundary",
+    "caption": "Figure 99. Junction boundary formed by segments",
+    "shows": "Five-arm junction: roads 1 (W, starts at junction), 2 (S, ends at junction), 3 and 60 (E, two separate one-way roads with a gap, both start at junction), 4 (NE, ends), 5 (NW, ends). Connecting roads with brown sidewalks: 8 (SW curve, lane segment), 41 (W-NW curve, lane segment), 32 (top curve, segment along lane -2 then lane -1 after the sidewalk lane -2 ends - grey dashed), 52 (NE-E curve, lane segment, sStart=end sEnd=begin), 17 (S-E), 97 (tan, left lanes). Dashed red joint segments across ends of roads 2, 1, 5, 4, 60, 3. Road 100 is a tiny loop road between roads 60 and 3 whose reference line closes the gap. XML order: 8, joint 2, 17, joint 3, 100 (boundaryLane 0), joint 60 (lanes 0..2), 52, joint 4, 32 (-2 to 42 m, -1 after), joint 5, 41, joint 1 - counter-clockwise.",
+    "lesson": "The junction boundary is the outermost lane edges (incl. sidewalks) of connecting roads plus perpendicular joints at road ends, listed counter-clockwise; gaps must be closed by extra junction roads without lanes.",
+    "right": [
+      "Include sidewalks in the boundary",
+      "Switch boundaryLane at the s where an outer lane ends",
+      "Add a lane-less filler road (junction=id) for gaps between separate roads"
+    ],
+    "wrong": [
+      "Clockwise order",
+      "Boundary that doesn't reach every connected road end",
+      "Boundary on direct/virtual junctions"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_minimal_points.png",
+    "viewed": true,
+    "figure": "Figure 100",
+    "chapter": "12. Junctions",
+    "section": "12.11 Junction elevation grid",
+    "caption": "Figure 100. Example of a minimal elevation grid attached to a junction reference line",
+    "shows": "Same junction (PNG has a transparent background, renders black in viewers without a white backdrop; label text is black and invisible there). Junction reference line (dark red arrow) runs along the TOP edge of the junction. Four grey grid points: two on the reference line (C0,0 and C1,0) and two far to the right (R0,0, R1,0), forming one large square (grey dashed) enclosing the whole boundary.",
+    "lesson": "Minimal grid: 4 points forming one square around the whole boundary; equal z gives a flat plane.",
+    "right": [
+      "Grid squares must extend fully outside the boundary",
+      "For a flat junction 4 equal values suffice"
+    ],
+    "wrong": [
+      "Grid that ends inside the boundary"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_points.png",
+    "viewed": true,
+    "figure": "Figure 101",
+    "chapter": "12. Junctions",
+    "section": "12.11 Junction elevation grid",
+    "caption": "Figure 101. Example of an elevation grid with more points",
+    "shows": "Same junction (black-rendering transparent PNG). Junction reference line now passes through the middle; grid points every @gridSpacing perpendicular to it: C i,0 on the line, L i,j to the left and R i,j to the right (j=0 nearest). Rows have different numbers of left/right points (ragged), only as many as needed to cover the boundary plus one square (labels visible: L2,1, L6,0, L7,0, C0,0, R0,0, R2,1, R2,2, R3,2, R7,1, R8,0, R8,1).",
+    "lesson": "Each <elevation> row = one s step (sStart + i*gridSpacing) with center value and left/right lists from inside outward; lists may differ in length per row.",
+    "right": [
+      "Row i at s = sStart + i*gridSpacing on the junction reference line",
+      "left/right lists inside->outside",
+      "Lane height adds on top of the grid"
+    ],
+    "wrong": [
+      "Rows of fixed width padded with fake values far outside"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_B37C31C9_20D3_450d_9BA3_A32B2F47FA82.png",
+    "viewed": true,
+    "figure": "Figure 102",
+    "chapter": "12. Junctions",
+    "section": "12.11 Junction elevation grid",
+    "caption": "Figure 102. UML class diagram of the ElevationGrid class",
+    "shows": "UML: t_junction_elevationGrid (sStart, gridSpacing) with elevation 0..* (left 0..1, center, right 0..1, each t_junction_grid_position_list = list of doubles).",
+    "lesson": "Grid stores z-lists only; geometry comes from the junction reference line.",
+    "right": [
+      "Exactly one grid per junction"
+    ],
+    "wrong": [
+      "Grid without a junction planView"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_interpolation_point.png",
+    "viewed": true,
+    "figure": "Figure 103",
+    "chapter": "12. Junctions",
+    "section": "12.11.1 Interpolation in the elevation grid",
+    "caption": "Figure 103. Point P in the elevation grid",
+    "shows": "Same grid as Figure 101 (black background rendering) with an orange query point P between the reference line and the first right row, near columns 3 and 4. Body text refers to it as 'Figure 101' (wrong cross-reference).",
+    "lesson": "Interpolation is local: find the grid square containing P.",
+    "right": [],
+    "wrong": [],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_interpolation_points.png",
+    "viewed": true,
+    "figure": "Figure 104",
+    "chapter": "12. Junctions",
+    "section": "12.11.1 Interpolation in the elevation grid",
+    "caption": "Figure 104. Points around P relevant for interpolations",
+    "shows": "White-background view. P (orange) inside square C3,0-C4,0-R4,0-R3,0 (black). 12 neighbours: L2,0..L5,0 (left row), C2,0 and C5,0 (yellow), R2,0 and R5,0 (blue), R2,1..R5,1 (second right row). 4x4 stencil spans rows L,C,R0,R1 and columns 2..5. Some neighbours (L4,0, L5,0, R2,1, R5,1) lie on/outside the boundary.",
+    "lesson": "Bicubic interpolation uses the 4x4 neighbourhood of the square containing P.",
+    "right": [
+      "Use neighbours to estimate tangents; set c=d=0 where missing"
+    ],
+    "wrong": [],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_interpolation_curves.png",
+    "viewed": true,
+    "figure": "Figure 105",
+    "chapter": "12. Junctions",
+    "section": "12.11.1 Interpolation in the elevation grid",
+    "caption": "Figure 105. Tangents and cubic splines relevant for interpolation",
+    "shows": "Same stencil with colour-coded cubic curves: along s through each row (L row light blue, C row yellow, R0 blue, R1 light green/blue) and along t through each column (yellow at column 2 and 5, light blue col 3, green col 4).",
+    "lesson": "Fit cubics along both grid directions to get s, t and mixed st derivatives at the 4 corners, then bicubic patch.",
+    "right": [
+      "Normalise square to unit coordinates before evaluating"
+    ],
+    "wrong": [
+      "Bilinear interpolation (not conforming)"
+    ],
+    "formula": "alpha = A * [[Z, Tt],[Ts, Tst]] * A^T, A = [[1,0,0,0],[0,0,1,0],[-3,3,-2,-1],[2,-2,1,1]]; z(s,t) = [1 s s^2 s^3] * alpha * [1 t t^2 t^3]^T with s,t in [0,1]",
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_transitionLength_points.png",
+    "viewed": true,
+    "figure": "Figure 106",
+    "chapter": "12. Junctions",
+    "section": "12.11.2 Interpolation between incoming road and elevation grid",
+    "caption": "Figure 106. Three segments of a junction boundary and the corner points P0, P1, P2, and P3 of the polygon at an incoming road",
+    "shows": "Close-up of the south arm: dashed red joint segment across the road end (sidewalk brown at left, lanes tan/blue, blue reference line arrow pointing into junction). P0 and P1 are the joint's endpoints on the boundary; P3 and P2 lie @transitionLength further along the adjacent lane segments (into the junction). Point P inside the quadrilateral; grid points and grid lines in grey.",
+    "lesson": "Smooth road-to-grid transition: a quadrilateral P0-P1-P2-P3 built from the joint and transitionLength along the neighbouring lane segments.",
+    "right": [
+      "Set transitionLength on joints of incoming roads (default 0 = hard step)"
+    ],
+    "wrong": [
+      "transitionLength 0 with non-matching grid z (creates a step)"
+    ],
+    "formula": null,
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/elevation_grid_transitionLength_polygon.png",
+    "viewed": true,
+    "figure": "Figure 107",
+    "chapter": "12. Junctions",
+    "section": "12.11.2 Interpolation between incoming road and elevation grid",
+    "caption": "Figure 107. Polygon and the lines AB and CD through the point P",
+    "shows": "Quadrilateral P0 (bottom left), P1 (bottom right), P2 (top right), P3 (top left). Red lines through P: A on P0P1 to B on P3P2, and C on P0P3 to D on P1P2. Only AB is used by the formulas; CD is drawn but unused.",
+    "lesson": "Find bilinear parameters k (along joint) and l (from road towards grid) of P, take z and slope from the road at A and from the grid at B, then cubic Hermite in l.",
+    "right": [
+      "Solve the 2x2 bilinear system for k,l"
+    ],
+    "wrong": [
+      "Text typo: gradient at B is also called m_A; it is m_B"
+    ],
+    "formula": "A = P0 + k(P1-P0); B = P3 + k(P2-P3); P = A + l(B-A) -> m*k*l + n*k + o*l + p = 0 and q*k*l + r*k + s*l + t = 0 (m=x2-x3-x1+x0, n=x1-x0, o=x3-x0, p=x0-xP; same with y); z_P(l) = a + b*l + c*l^2 + d*l^3 with a=zA, b=mA, c=-3zA+3zB-2mA-mB, d=2zA-2zB+mA+mB, gradients normalised by |AB|",
+    "new_vs_1_7": "New in 1.8."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/12_junctions/junction_5.png",
+    "viewed": true,
+    "figure": "Figure 108",
+    "chapter": "12. Junctions",
+    "section": "12.13 Junction groups",
+    "caption": "Figure 108. Junction group with three junctions",
+    "shows": "Roundabout: blue circular reference line; three arms (W, E, S, grey). At each arm a dashed orange box = junction 1 (W), 2 (E), 3 (S), each containing two connecting roads (entry and exit curves). Ring segments between junctions are ordinary roads. Large dashed red box = junctionGroup id A enclosing everything.",
+    "lesson": "A roundabout = one junction per arm (ring segments as normal roads) bundled by <junctionGroup type=roundabout> with <junctionReference> entries.",
+    "right": [
+      "One small junction per roundabout arm",
+      "Group them with type roundabout"
+    ],
+    "wrong": [
+      "One giant junction for the whole roundabout",
+      "Ring roads as connecting roads"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Same picture as 1.7 Figure 84."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_C4CFB1D1_8463_420e_BB7B_BBC1449CFAB7.png",
+    "viewed": true,
+    "figure": "Figure 109",
+    "chapter": "12. Junctions",
+    "section": "12.13 Junction groups",
+    "caption": "Figure 109. UML class diagram of the JunctionGroup class",
+    "shows": "UML: t_junctionGroup (name 0..1, id, type e_junctionGroup_type) with junctionReference 1..* (junction: string).",
+    "lesson": "Junction group is pure bookkeeping for routing.",
+    "right": [
+      "type required"
+    ],
+    "wrong": [],
+    "formula": null,
+    "new_vs_1_7": "Same as 1.7 Figure 85."
+  },
+  {
+    "source": "1.9.0 spec",
+    "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/00_images_reused/fig_junction.drawio.svg",
+    "viewed": true,
+    "figure": "Figure 110",
+    "chapter": "12. Junctions",
+    "section": "12.14 Signal synchronization groups in junctions",
+    "caption": "Figure 110. Example of a junction with 20 traffic lights mapped into six signal groups (IDs 42-47)",
+    "shows": "drawio SVG without text nodes (labels are drawn as paths); viewed by rendering it with headless Chrome. Four-arm X with a tram line (two double black tracks) running N-S in a central median. Labels 'controller / signal id': 42 (17251-17253, tram signal north), 43 (17261-17263, tram signal south), 44 (17270, 17200: N-S vehicle lights), 45 (17271, 17300, 17361, 17360: pedestrian lights at the north crosswalk incl. median island), 46 (16970, 16980, 17070, 17060: E-W vehicle lights), 47 (17080, 16971, 17061, 16990: pedestrian lights on E-W crosswalks). 3+3+2+4+4+4 = 20 signals.",
+    "lesson": "Junction <controller> elements list the signal controllers that form one synchronisation group; setting one group (e.g. 46 go) lets tools derive the others (44 stop).",
+    "right": [
+      "One controller per signal group, all listed in the junction",
+      "Pedestrian and tram signals get their own groups"
+    ],
+    "wrong": [
+      "Junction controllers on virtual junctions"
+    ],
+    "formula": null,
+    "new_vs_1_7": "Replaces 1.7 Figure 86 (X junction with four lights and two controllers); now 20 signals in six groups including tram and pedestrian signals."
+  }
+]
