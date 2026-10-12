@@ -4,6 +4,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+- **Sidewalks continue round junction corners** (ASAM Junction Guideline §6, OpenDRIVE 1.9 §12.4).
+  Between neighbouring arms whose facing sides end in a sidewalk, a junction road runs along the
+  curb line carrying the sidewalk (raised by the curb height, written as walking in 1.8), linked to
+  both arms' sidewalks, with the arms' sideways slope at its ends. Where the curb line bends
+  tighter than the sidewalk is wide the sidewalk narrows towards the middle of the corner; a corner
+  whose arm cuts leave no room for the sidewalk to turn at all is counted, not built
+  ("corner sidewalks: N continued, M too tight" in the report). Corners continued: LA 126, Munich 267,
+  London 33, Frankfurter Kreuz 78, Stelvio 19, Tokyo 1219; too tight: 133 in all.
+- The invariant and lane-flow checkers treat pedestrian-only roads and pedestrian lane links as
+  usable without a direction of travel; the unit-test runner prints unbuffered.
+
 ### Changed
 - **One junction per intersection** (ASAM Junction Guideline §6, OpenDRIVE 1.9 Annex F
   junctions.no_overlap). Where the arm cuts of two junctions leave less than 3 m of a road no longer

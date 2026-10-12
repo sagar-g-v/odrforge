@@ -133,6 +133,9 @@ int main(int argc, char **argv) {
                   "%d parking-lot aisles connect streets\n",
                   rep.snappedEnds, rep.joinedCrossings, rep.parkingAisles);
     if (rep.gores) std::printf("  gores: %d freeway splits / merges modelled at lane level\n", rep.gores);
+    if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
+      std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk\n", rep.cornerSidewalks,
+                  rep.cornerSidewalksTooTight);
     std::printf("  validation: %d errors, %d warnings\n", vr.errors, vr.warnings);
     for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
     if (std::getenv("ODRFORGE_VERBOSE"))

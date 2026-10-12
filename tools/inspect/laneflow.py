@@ -1168,6 +1168,8 @@ class LaneFlow:
                         if lf_ is not None and (1 if at_end else -1) in net.dirs(R.id, k, lf_):
                             ok_from = True
                     lt = C.sections[kc].lane(to)
+                    if lt is not None and lt.type in EDGE_TYPES:
+                        continue  # a pedestrian link (sidewalk round a corner): no direction of travel
                     ok_to = lt is not None and dc in net.dirs(C.id, kc, lt)
                     if lt is None or not any(R.sections[len(R.sections) - 1 if ae else 0].lane(f) is not None
                                              for ae in ends):

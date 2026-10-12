@@ -69,6 +69,12 @@ Result build(const OsmBuilder &b, const std::string &country = "US", const std::
   return r;
 }
 
+// a junction road for pedestrians only: the sidewalk round a corner
+bool cornerSidewalk(const odr::Road &r) {
+  const auto &sec = r.lanes.front();
+  return r.junction != "-1" && sec.left.empty() && sec.right.size() == 1 && sec.right.front().type == "sidewalk";
+}
+
 int count(const odr::OpenDrive &od, bool junctionRoads) {
   return static_cast<int>(std::count_if(od.roads.begin(), od.roads.end(),
                                         [&](const odr::Road &r) { return (r.junction != "-1") == junctionRoads; }));
@@ -98,8 +104,9 @@ TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
   CHECK(r.val.errors == 0);
   CHECK(r.od.junctions.size() == 1);
   CHECK(count(r.od, false) == 4);
-  // 4 approaches x (left, straight, right), one lane each
-  CHECK(count(r.od, true) == 12);
+  // 4 approaches x (left, straight, right), one lane each, and the sidewalk round each of the 4 corners
+  CHECK(count(r.od, true) == 16);
+  CHECK(std::count_if(r.od.roads.begin(), r.od.roads.end(), cornerSidewalk) == 4);
   // spec 7.2: one controller per pair of opposite approaches, referenced by the junction
   CHECK(r.od.controllers.size() == 2);
   CHECK(r.od.junctions[0].controllers.size() == 2);
@@ -190,7 +197,7 @@ TEST_CASE("network: left-hand traffic (GB) - rule LHT, +s lanes on the left") {
   CHECK(r.val.errors == 0);
   for (const auto &road : r.od.roads) {
     CHECK(road.rule == "LHT");
-    if (road.junction == "-1") continue;
+    if (road.junction == "-1" || cornerSidewalk(road)) continue;
     // connecting lanes travel along +s: on the left side in LHT
     CHECK(!road.lanes.front().left.empty() && road.lanes.front().right.empty());
   }

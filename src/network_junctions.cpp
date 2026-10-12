@@ -336,6 +336,126 @@ OsmId Builder::attachNode(const RoadEnd &e) const {
   return e.atEnd ? ch.n1 : ch.n0;
 }
 
+namespace {
+
+// The outermost lane on the right of someone travelling along (alongS) or against s at a road end,
+// if it is a sidewalk.
+std::optional<int> sidewalkOnRight(const odr::Road &r, bool atEnd, bool alongS) {
+  const odr::LaneSection &sec = atEnd ? r.lanes.back() : r.lanes.front();
+  const std::vector<odr::Lane> &side = alongS ? sec.right : sec.left;
+  if (side.empty() || side.back().type != "sidewalk") return std::nullopt;
+  return side.back().id;
+}
+
+// OpenDRIVE 1.9 §11.7 lane width; ASAM Junction Guideline §6 (no negative radius on the inner
+// sidewalk edge): round a corner the sidewalk lies on the inside of the curb line, so where the curb
+// line bends tighter than the sidewalk is wide the sidewalk narrows towards the middle of the
+// corner, keeping its building-side edge short of the centre of curvature (kappa t <= 0.8). At its
+// ends it keeps the arms' widths; a corner too tight for that, or narrower than kMinWalk in the
+// middle, gets no corner sidewalk (empty): its arm cuts leave no room for a curb return.
+std::vector<odr::Poly3> cornerSidewalkWidths(const ReferenceLine &curb, double w0, double w1, double slope0,
+                                             double slope1) {
+  constexpr double kMaxBend = 0.8, kMinWalk = 1.0;
+  const double L = curb.length(), q = 0.25 * L;
+  auto tightestOn = [&](double from, double to) {  // largest curvature towards the sidewalk (right bends)
+    double k = 0.0;
+    for (double s = from; s <= to + 1e-9; s += std::min(0.25, 0.1 * L)) k = std::max(k, -curb.eval(s).kappa);
+    return k;
+  };
+  const bool endsFit = tightestOn(0.0, q) * w0 <= kMaxBend && tightestOn(L - q, L) * w1 <= kMaxBend;
+  if (!endsFit) return {};
+  const double tightest = tightestOn(0.0, L), widest = tightest > 0.0 ? kMaxBend / tightest : 1e9;
+  if (std::max(w0, w1) <= widest) return {odr::Poly3::hermite(0.0, L, w0, slope0, w1, slope1)};
+  const double wm = std::min({w0, w1, widest});
+  if (wm < kMinWalk) return {};
+  return {odr::Poly3::hermite(0.0, q, w0, slope0, wm, 0.0), odr::Poly3::hermite(q, L - 2.0 * q, wm, 0.0, wm, 0.0),
+          odr::Poly3::hermite(L - q, q, wm, 0.0, w1, slope1)};
+}
+
+}  // namespace
+
+// ASAM Junction Guideline §6, OpenDRIVE 1.9 §12.4: sidewalks continue round every corner of a
+// junction. Going round the arms by direction, each pair of neighbours whose facing sides both end
+// in a sidewalk is joined by a connecting road along the curb line (reference line at the
+// sidewalk's curb-side edge, parallel to both arms where it meets them) carrying the sidewalk,
+// raised by the curb, lane-linked to the arms' sidewalks.
+void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out,
+                                   int &nextRoadId) {
+  struct Arm {
+    const RoadEnd *end;
+    double outward;  ///< heading leaving the junction along the arm
+  };
+  std::vector<Arm> arms;
+  for (const RoadEnd &e : cl.ends) {
+    const odr::Road &r = od.roads[metas[e.road].roadIndex];
+    arms.push_back({&e, travelPose(r, e.atEnd, false).hdg});
+  }
+  if (arms.size() < 2) return;
+  std::sort(arms.begin(), arms.end(), [](const Arm &a, const Arm &b) { return a.outward < b.outward; });
+  for (size_t i = 0; i < arms.size(); ++i) {
+    // arriving along P and leaving along its anticlockwise neighbour Q, the corner lies on the right
+    const RoadEnd &p = *arms[i].end, &q = *arms[(i + 1) % arms.size()].end;
+    if (p.road == q.road && p.atEnd == q.atEnd) continue;
+    const odr::Road &rp = od.roads[metas[p.road].roadIndex], &rq = od.roads[metas[q.road].roadIndex];
+    const auto walkP = sidewalkOnRight(rp, p.atEnd, p.atEnd), walkQ = sidewalkOnRight(rq, q.atEnd, !q.atEnd);
+    if (!walkP || !walkQ) continue;
+    const TravelSpan spanP = travelSpan(rp, p.atEnd, p.atEnd, *walkP), spanQ = travelSpan(rq, q.atEnd, !q.atEnd, *walkQ);
+    Pose a = travelPose(rp, p.atEnd, true), b = travelPose(rq, q.atEnd, false);
+    const Vec2 curbP = a.offset(spanP.inner), curbQ = b.offset(spanQ.inner);
+    a.x = curbP.x, a.y = curbP.y, b.x = curbQ.x, b.y = curbQ.y;
+    const ReferenceLine curb = drivablePath(a, b);
+    if (curb.elements.empty() || curb.length() < 0.05) continue;
+    // the sidewalk leaves and meets the arms drifting sideways as they do (Annex D: lane edges
+    // heading-continuous): laneOffset carries the curb-side edge, the width the other edge
+    const TravelSpan slopeP = travelSpanSlope(rp, p.atEnd, p.atEnd, true, *walkP);
+    const TravelSpan slopeQ = travelSpanSlope(rq, q.atEnd, !q.atEnd, false, *walkQ);
+    std::vector<odr::Poly3> widths = cornerSidewalkWidths(curb, spanP.width(), spanQ.width(),
+                                                          slopeP.inner - slopeP.outer, slopeQ.inner - slopeQ.outer);
+    if (widths.empty()) {
+      ++rep.cornerSidewalksTooTight;
+      continue;
+    }
+
+    odr::Road c;
+    c.id = std::to_string(nextRoadId++);
+    c.junction = junction.id;
+    if (!rp.rule.empty()) c.rule = rp.rule;
+    c.planView = curb;
+    c.predecessor = odr::LinkTarget{"road", rp.id, p.atEnd ? "end" : "start"};
+    c.successor = odr::LinkTarget{"road", rq.id, q.atEnd ? "end" : "start"};
+    if (slopeP.inner != 0.0 || slopeQ.inner != 0.0)
+      c.laneOffset.push_back(odr::Poly3::hermite(0.0, curb.length(), 0.0, slopeP.inner, 0.0, slopeQ.inner));
+    c.types.push_back({0.0, rp.types.empty() ? "town" : rp.types.back().type,
+                       rp.types.empty() ? "" : rp.types.back().country, std::nullopt, "km/h"});
+    odr::LaneSection sec;
+    sec.center.id = 0;
+    sec.center.type = "none";
+    const odr::RoadMark none;
+    sec.center.roadMarks.push_back(none);
+    odr::Lane walk;
+    walk.id = -1;
+    walk.type = "sidewalk";
+    walk.widths = std::move(widths);
+    walk.heightInner = opt.country.curbHeight;
+    walk.heightOuter = opt.country.curbHeight;
+    walk.link.predecessor = *walkP;
+    walk.link.successor = *walkQ;
+    walk.roadMarks.push_back(none);
+    sec.right.push_back(walk);
+    c.lanes.push_back(sec);
+    connectingRoadHeight(c, ConnectionEnds{&rp, p.atEnd, &rq, q.atEnd}, spanP.inner, spanQ.inner, cl);
+    odr::Connection cn;
+    cn.id = std::to_string(junction.connections.size());
+    cn.incomingRoad = rp.id;
+    cn.connectingRoad = c.id;
+    cn.contactPoint = "start";
+    cn.laneLinks.push_back({*walkP, walk.id});
+    junction.connections.push_back(cn);
+    out.push_back(std::move(c));
+    ++rep.cornerSidewalks;
+  }
+}
+
 // OSM turn restriction (from, via node, to) inside a junction: does it name the movement into
 // `exit`? Its "to" way is either an arm of the junction, or - where nearby intersections were built
 // as one junction - a way absorbed into it. Entering an absorbed way leads to the arms at its far
@@ -682,6 +802,7 @@ void Builder::buildJunctions() {
         connectLanes(ends, pairs, cl, J, connecting, nextConnId);
       }
     }
+    buildCornerSidewalks(cl, J, connecting, nextConnId);
     // spec 5 (road.linkage.both_sides_consistency): a road links to the junction only if the
     // junction connects it (as incoming road or as the target of a connecting road)
     std::set<std::string> used;

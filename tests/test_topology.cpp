@@ -242,7 +242,8 @@ TEST_CASE("junction: connecting-road reference lines continue the arm reference 
   };
   int connecting = 0, continuing = 0, laneCentred = 0, multiLane = 0;
   for (const auto &r : od.roads) {
-    if (r.junction == "-1") continue;
+    const bool sidewalkOnly = !r.lanes.front().right.empty() && r.lanes.front().right.front().type == "sidewalk";
+    if (r.junction == "-1" || sidewalkOnly) continue;  // vehicle connecting roads (corner sidewalks follow the curb)
     ++connecting;
     multiLane += r.lanes.front().right.size() + r.lanes.front().left.size() > 1;
     const odr::Road *from = roadById(r.predecessor->elementId), *to = roadById(r.successor->elementId);

@@ -179,6 +179,7 @@ struct Builder {
                          const std::vector<std::pair<int, int>> &lanes, Frame frame, const Cluster &cl,
                          odr::Junction &junction,
                          std::vector<odr::Road> &out, int &nextRoadId);
+  void buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId);
   void connectingRoadHeight(odr::Road &c, const ConnectionEnds &ends, double tRefIn, double tRefOut,
                             const Cluster &cl) const;
   void buildSignals();

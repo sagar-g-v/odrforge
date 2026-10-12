@@ -2174,7 +2174,11 @@ def check_flow(net, oi, res, links, rule, clip_xy):
                     res.add("flow_narrow", inst(r.id, lid, s, *_xy(r, min(s, r.length)), wmax, W_P, type=ln.type,
                                                 length=span, junction=r.junction))
     for r in net.roads.values():
-        if not any(l.drivable for sec in r.sections for l in sec.lanes.values()):
+        # a pedestrian road (a sidewalk round a junction corner, a crossing) is usable without
+        # a drivable lane (ASAM Junction Guideline 6 / 10)
+        pedestrian = all(l.type in ("sidewalk", "walking", "curb", "border")
+                         for sec in r.sections for lid, l in sec.lanes.items() if lid != 0)
+        if not pedestrian and not any(l.drivable for sec in r.sections for l in sec.lanes.values()):
             hw = {oi.tags(w).get("highway") for w in r.osm_ways} if oi else set()
             if not r.plain or hw & MOTOR_HIGHWAYS:
                 res.add("flow_no_drivable", inst(r.id, 0, r.length / 2, *_xy(r, r.length / 2), 1, 0,
