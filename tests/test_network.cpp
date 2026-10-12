@@ -400,3 +400,19 @@ TEST_CASE("laneOffset: the C2 shift is level at both ends and continuous in valu
     CHECK_NEAR(second(p[3], 10.0), 0.0, 1e-12);
   }
 }
+
+TEST_CASE("reference line: stays within maxLegDeviation of a long straight leg next to a short one") {
+  // a 300 m straight leg after a 13 m leg that turns 6 degrees: the 3-point tangent at the shared vertex
+  // tilts the long leg's spiral, which bowed several metres off the leg before the bounded refit
+  const double a = 6.0 * kPi / 180.0;
+  const std::vector<Vec2> pts{{-13.0 * std::cos(a), 13.0 * std::sin(a)}, {0, 0}, {300, 0}, {310, 4}};
+  PolylineFitOptions o;
+  const ReferenceLine line = fitPolyline(pts, o);
+  double worst = 0.0;
+  for (double x = 75; x <= 225; x += 5) {
+    double s, t;
+    line.project({x, 0}, s, t);
+    worst = std::max(worst, std::abs(t));
+  }
+  CHECK(worst <= o.maxLegDeviation + 1e-6);
+}
