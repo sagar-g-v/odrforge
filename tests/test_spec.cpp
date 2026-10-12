@@ -398,10 +398,10 @@ TEST_CASE("validator catches spec violations (negative tests)") {
   od.roads[0].lanes[0].left[0].type = "flyingCarLane";     // invalid enum
   const ValidationReport v = validate(od);
   CHECK(v.count("spec7.1.validity_order") == 1);
-  CHECK(v.count("spec10.lane_id_contiguity") >= 1);
+  CHECK(v.count("road.lane.lane_order_no_gaps") >= 1);
   CHECK(v.count("road.lane.width.lane_width_validity") >= 1);
   CHECK(v.count("road.geometry.refline_no_gaps") == 1);
-  CHECK(v.count("spec7.2.control_signal") == 1);
+  CHECK(v.count("ids.only_ref_defined_ids") == 1);
   CHECK(v.count("spec4.3.lane_type_enum") == 1);
   // and a clean model passes
   CHECK(validate(sampleNetwork()).errors == 0);
