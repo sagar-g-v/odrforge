@@ -15,8 +15,8 @@ Reference areas (chosen to cover different road cultures, not to tune for one ci
   stelvio         Stelvio pass: mountain hairpins
   tokyo           Shibuya, Tokyo: left-hand traffic, Japanese tagging, elevated Shuto expressway over streets
 
-Gating kinds: the exact checkers (exact:inv:* from invariants.py, exact:lf:* from laneflow.py) and
-osm_fidelity:*; the other heuristic detector counts are reported as informative deltas only.
+Gating kinds: the exact checkers (exact:inv:* from invariants.py, exact:lf:* from laneflow.py,
+exact:annexF:<rule path> from annex_f.py, the ASAM OpenDRIVE 1.9 Annex F rules) and osm_fidelity:*; the other heuristic detector counts are reported as informative deltas only.
 A regression is any gating (area, kind) whose count grows by more than --tolerance, any new
 validation error rule count, a failing unit test, a conversion crash, new CARLA sideways
 discontinuities or esmini load errors.
@@ -28,6 +28,9 @@ import os
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import annex_f  # noqa: E402
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -131,6 +134,9 @@ def exact(area):
             for k, v in d.items():
                 if isinstance(v, dict) and v.get("severity") not in ("ok", "info") and "count" in v:
                     kinds[f"exact:lf:{k}"] = v["count"]
+    for rule_path, violations in annex_f.check_file(a["xodr"]).items():
+        if violations:
+            kinds[f"exact:annexF:{rule_path}"] = len(violations)
     return area, kinds
 
 
