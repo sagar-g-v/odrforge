@@ -41,6 +41,9 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 ## Known open items
 
 - Folds on loop streets kept as roads (Munich 6), lane-edge breaks LA +6 since phase 1.1.
+- Separate sidewalks: the lane-edge position breaks (London 11) do not come from the verge appearing
+  / disappearing between segments (keeping a 5 cm verge everywhere changed nothing); next suspect is
+  the sidewalk distance changing between segments at plain road-to-road links without a blend.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.
