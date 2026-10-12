@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <ctime>
+#include <chrono>
 #include <functional>
 #include <limits>
 #include <numeric>
@@ -949,11 +950,16 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   b.rep.joinedCrossings = crossings;
   b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());
   const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
+  // ODRFORGE_VERBOSE: each stage with its run time (where a conversion spends its time)
   auto stage = [&](const char *name, void (detail::Builder::*fn)()) {
-    if (verbose) std::fprintf(stderr, "[odrforge] %s...\n", name);
+    const auto start = std::chrono::steady_clock::now();
     (b.*fn)();
+    if (verbose)
+      std::fprintf(stderr, "[odrforge] %-28s %8.0f ms\n", name,
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
   };
   stage("collect segments", &detail::Builder::collectSegments);
+  if (o.separateSidewalks) stage("separate sidewalks", &detail::Builder::attachSeparateSidewalks);
   stage("junction nodes", &detail::Builder::findJunctionNodes);
   stage("chains", &detail::Builder::buildChains);
   // junction layout; a second pass joins junctions that squeezed the road between them out

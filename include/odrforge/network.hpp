@@ -66,6 +66,11 @@ struct BuildOptions {
   /// parking aisles (excluded service kinds) become roads where their lot connects two or more
   /// road attachment points: driving through the lot is a real connection, not two dead ends
   bool connectParkingLots = true;
+  /// a sidewalk mapped as its own way (footway=sidewalk) along a road: the road's cross-section
+  /// reaches out to it (border verge + sidewalk at the measured distance). Off by default until verge
+  /// widths blend across way segments and wide verges stay fold-safe in tight bends (they raise folds
+  /// and lane-edge breaks on the test areas today).
+  bool separateSidewalks = false;
   /// freeway splits / merges at a shallow angle: the trunk carries the branch lanes up to where the
   /// carriageways separate and the junction sits there (no overlapping road surfaces at gores)
   bool laneLevelGores = true;
@@ -84,6 +89,7 @@ struct BuildReport {
   int elevSamples = 0;
   int snappedEnds = 0;
   int parkingAisles = 0;
+  int separateSidewalks = 0;  ///< road sides extended to a separately mapped sidewalk
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added
   int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int overlapShifts = 0;

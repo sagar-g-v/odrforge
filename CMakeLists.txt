@@ -52,6 +52,7 @@ add_library(odrforge
   src/overlap.cpp
   src/snap.cpp
   src/gore.cpp
+  src/sidewalk.cpp
   src/viz.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp
 )

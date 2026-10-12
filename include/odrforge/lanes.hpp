@@ -12,7 +12,8 @@
 
 namespace odrforge {
 
-enum class LaneKind { Driving, Bidirectional, Bus, Biking, Parking, Shoulder, Sidewalk };
+/// Border: the verge between the carriageway and a sidewalk mapped as its own way
+enum class LaneKind { Driving, Bidirectional, Bus, Biking, Parking, Shoulder, Border, Sidewalk };
 
 struct LaneSpec {
   LaneKind kind = LaneKind::Driving;
@@ -57,6 +58,16 @@ std::optional<double> lengthTag(const std::string &v);
 std::optional<double> parseSpeed(const std::string &v, const CountryProfile &c);
 
 CrossSection crossSectionFromTags(const Tags &t, const CountryProfile &c, const LaneOptions &o = {});
+
+/// What the way's own tags say about a sidewalk on one geometric side ("left"/"right"): "yes"
+/// (attached), "no", "separate" (mapped as its own way) or "" (untagged).
+std::string sidewalkTag(const Tags &t, const std::string &side);
+
+/// Extend one side to a sidewalk mapped as its own way whose centre line lies `distance` from the OSM
+/// way: a border (verge) fills the gap from the outermost lane, then the sidewalk of `width`. An
+/// assumed sidewalk on that side is replaced. False (unchanged) when the sidewalk would lie more than
+/// `maxOverlap` inside the lanes already there.
+bool attachSeparateSidewalk(CrossSection &x, bool leftSide, double distance, double width, double maxOverlap = 1.0);
 
 /// Reverse the direction of a cross section (for reversed / joined ways).
 CrossSection reversedCrossSection(const CrossSection &x);

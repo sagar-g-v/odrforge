@@ -43,8 +43,10 @@ struct Result {
   ValidationReport val;
 };
 
-Result build(const OsmBuilder &b, const std::string &country = "US", const std::string &target = "asam") {
+Result build(const OsmBuilder &b, const std::string &country = "US", const std::string &target = "asam",
+             bool separateSidewalks = false) {
   BuildOptions o;
+  o.separateSidewalks = separateSidewalks;
   o.country = CountryProfile::load(country);
   o.target = TargetProfile::byName(target);
   o.streetFurniture = false;
@@ -432,4 +434,31 @@ TEST_CASE("reference line: stays within maxLegDeviation of a long straight leg n
     worst = std::max(worst, std::abs(t));
   }
   CHECK(worst <= o.maxLegDeviation + 1e-6);
+}
+
+TEST_CASE("cross-section: a road reaches out to its separately mapped sidewalks (verge + curb + sidewalk)") {
+  for (const char *country : {"US", "GB"}) {
+    OsmBuilder b;
+    b.way({b.node(-100, 0), b.node(100, 0)}, {{"highway", "secondary"}, {"lanes", "2"}, {"sidewalk", "separate"}});
+    b.way({b.node(-100, 8.5), b.node(100, 8.5)}, {{"highway", "footway"}, {"footway", "sidewalk"}});
+    b.way({b.node(-100, -8.5), b.node(100, -8.5)}, {{"highway", "footway"}, {"footway", "sidewalk"}, {"width", "3"}});
+    const Result r = build(b, country, "asam", true);
+    CHECK(r.val.errors == 0);
+    CHECK(r.od.roads.size() == 1);
+    if (r.od.roads.size() != 1) continue;
+    const auto &road = r.od.roads[0];
+    const double s = 0.5 * road.length();
+    for (const auto *side : {&road.lanes[0].left, &road.lanes[0].right}) {
+      CHECK(side->size() >= 3);
+      if (side->size() < 3) continue;
+      const odr::Lane &walk = side->back(), &verge = (*side)[side->size() - 2];
+      CHECK(walk.type == "sidewalk");
+      CHECK(verge.type == "border");
+      CHECK(verge.roadMarks.front().type == "curb");
+      double a, c;
+      CHECK(odr::laneBorders(road, s, walk.id, a, c));
+      CHECK_NEAR(std::abs(0.5 * (a + c)), 8.5, 1e-6);                     // centred on the mapped sidewalk
+      CHECK_NEAR(std::abs(c - a), walk.id > 0 ? 2.0 : 3.0, 1e-6);        // its width (tag or country default)
+    }
+  }
 }

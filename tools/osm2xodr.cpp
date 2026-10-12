@@ -23,6 +23,7 @@ static void usage() {
       "  --origin LAT,LON    projection origin (default: centre of the data)\n"
       "  --name NAME         header name\n"
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
+      "  --separate-sidewalks  extend roads to sidewalks mapped as their own ways (experimental)\n"
       "  --no-furniture      no street lamps / trees\n"
       "  --viz OUT.html      also write an interactive HTML view of the result\n"
       "  --basemap DIR       offline HD map / imagery backgrounds for the view (tools/make_basemap.py)\n"
@@ -59,6 +60,7 @@ int main(int argc, char **argv) {
       const std::string v = next();
       std::sscanf(v.c_str(), "%lf,%lf", &lat0, &lon0);
     } else if (a == "--no-sidewalks") opt.lanes.assumeSidewalks = false;
+    else if (a == "--separate-sidewalks") opt.separateSidewalks = true;
     else if (a == "--no-furniture") opt.streetFurniture = false;
     else if (a == "--viz") vizPath = next();
     else if (a == "--basemap") basemapDir = next();
@@ -133,6 +135,8 @@ int main(int argc, char **argv) {
                   "%d parking-lot aisles connect streets\n",
                   rep.snappedEnds, rep.joinedCrossings, rep.parkingAisles);
     if (rep.gores) std::printf("  gores: %d freeway splits / merges modelled at lane level\n", rep.gores);
+    if (rep.separateSidewalks)
+      std::printf("  cross-section: %d road sides extended to their separately mapped sidewalk\n", rep.separateSidewalks);
     if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
       std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk, %d acute (nose)\n",
                   rep.cornerSidewalks, rep.cornerSidewalksTooTight, rep.cornerNoses);

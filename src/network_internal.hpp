@@ -144,6 +144,7 @@ struct Builder {
 
   // stages (network.cpp)
   void collectSegments();
+  void attachSeparateSidewalks();  // sidewalk.cpp
   void findJunctionNodes();
   void buildChains();
   void clusterJunctions();

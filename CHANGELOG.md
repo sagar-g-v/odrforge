@@ -5,6 +5,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Separate sidewalks (experimental, `--separate-sidewalks`)**: a sidewalk mapped as its own way
+  next to a road is measured and the road's cross-section reaches out to it (a border verge with a
+  curb mark, then the sidewalk at its mapped position). It extends 2131 road sides in LA, 1114 in
+  London and lets corner sidewalks continue round 958 / 517 corners there, but verge widths do not
+  yet blend across way segments and wide verges fold in tight bends (folds LA 69 -> 100), so it is
+  off by default.
+- `ODRFORGE_VERBOSE` prints every build stage with its run time (LA: arm trimming 2 x 9.4 s and
+  overlap resolution 2 x 5 s are the hot spots).
 - **Curb returns** (ASAM Junction Guideline §6): every arm is cut where its curb return starts. At
   a corner whose facing sides end in sidewalks the curb lines meet at a corner point; a return of
   radius max(corner radius, 2.5 sidewalk widths) starts R tan(turn / 2) before it, and the arm cut

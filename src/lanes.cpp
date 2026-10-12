@@ -102,6 +102,25 @@ void addOuterLanes(SideSpec &s, const Tags &t, const std::string &side, const st
 
 }  // namespace
 
+std::string sidewalkTag(const Tags &t, const std::string &side) { return sideValue(t, "sidewalk", side); }
+
+bool attachSeparateSidewalk(CrossSection &x, bool leftSide, double distance, double width, double maxOverlap) {
+  SideSpec &s = leftSide ? x.left : x.right;
+  SideSpec kept = s;
+  kept.lanes.erase(std::remove_if(kept.lanes.begin(), kept.lanes.end(),
+                                  [](const LaneSpec &l) { return l.kind == LaneKind::Sidewalk; }),
+                   kept.lanes.end());
+  // outer edge of the side's remaining lanes, as a distance from the OSM way (the divider lies at
+  // laneOffset, left +)
+  const double edge = leftSide ? x.laneOffset + kept.totalWidth() : kept.totalWidth() - x.laneOffset;
+  const double gap = distance - 0.5 * width - edge;
+  if (gap < -maxOverlap) return false;
+  if (gap > 0.05) kept.lanes.push_back({LaneKind::Border, gap, {}});
+  kept.lanes.push_back({LaneKind::Sidewalk, gap < 0.0 ? width + gap : width, {}});
+  s = kept;
+  return true;
+}
+
 int SideSpec::drivingCount() const {
   return static_cast<int>(std::count_if(lanes.begin(), lanes.end(), [](const LaneSpec &l) {
     return l.kind == LaneKind::Driving || l.kind == LaneKind::Bus;
@@ -324,6 +343,7 @@ void setTypeAndAccess(odr::Lane &l, LaneKind kind, const CountryProfile &c) {
     case LaneKind::Biking: l.type = "biking"; break;
     case LaneKind::Parking: l.type = "parking"; break;
     case LaneKind::Shoulder: l.type = "shoulder"; break;
+    case LaneKind::Border: l.type = "border"; break;  // OpenDRIVE 1.9 §11.8: the verge before the sidewalk
     case LaneKind::Sidewalk:
       l.type = "sidewalk";
       l.heightInner = c.curbHeight;
@@ -344,6 +364,12 @@ struct EdgeContext {
 // bike or parking lane and on motorway-like roads; a two-way turn lane is bordered solid-broken.
 odr::RoadMark outerEdgeMark(LaneKind kind, const EdgeContext &e, const CountryProfile &c) {
   odr::RoadMark m;
+  if (kind == LaneKind::Border && e.next == LaneKind::Sidewalk && !e.isOutermost) {
+    m.type = "curb";  // the kerb between the verge and the raised sidewalk
+    m.color = "standard";
+    m.laneChange = "none";
+    return m;
+  }
   if (isDrivingOrBus(kind) && e.hasMoreDrivingLanesOutside) {
     m.type = "broken";
     m.color = c.edgeLineColor;
