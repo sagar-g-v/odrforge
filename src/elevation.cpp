@@ -796,6 +796,23 @@ void Builder::sampleElevation() {
                                    (layerHi[mi][i] < layerHi[mj][j] || layerLo[mi][i] < layerLo[mj][j]) &&
                                    !(layerHi[mi][i] > layerHi[mj][j] || layerLo[mi][i] > layerLo[mj][j]));
               if (!aLower) continue;
+              // a street on its measured ground under a structure that has a measured surface clearing it
+              // stays there: the structure keeps to that surface (its levels within the clearance of the
+              // street are banned). Ground that is the deck itself (lidar ground through an underpass:
+              // no surface of the structure clears it) gives way as before.
+              bool onGround = a.layer[i] == 0 && b.layer[j] > 0;
+              if (onGround) {
+                bool measured = false, clears = false;
+                for (const Cand &c : a.cand[i]) measured |= c.cost == 0.0 && std::abs(c.z - a.chosen[i]) < 1e-9;
+                for (const Cand &c : b.cand[j]) clears |= c.z >= a.chosen[i] + minClearance;
+                onGround = measured && clears;
+                for (const auto &[lo, hi] : a.excl[i]) onGround &= !(a.chosen[i] > lo && a.chosen[i] < hi);
+              }
+              if (onGround) {
+                P[mj].excl[j].push_back({a.chosen[i] - minClearance, a.chosen[i] + minClearance});
+                dirty.insert(mj);
+                continue;
+              }
               a.excl[i].push_back({zf[mj][j] - minClearance, zf[mj][j] + minClearance});
               dirty.insert(mi);
             }

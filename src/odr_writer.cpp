@@ -8,6 +8,14 @@
 
 namespace odrforge::odr {
 
+std::vector<Poly3> Poly3::shiftC2(double s, double L, double v0, double v1) {
+  if (L <= 1e-9) return {Poly3{s, v1, 0, 0, 0}};
+  // quarters q: t'' = A u/q, A (1 - u/q), -A u/q, -A (1 - u/q); the shift totals 2 A q^2
+  const double q = 0.25 * L, A = (v1 - v0) / (2.0 * q * q), d = A / (6.0 * q);
+  return {Poly3{s, v0, 0.0, 0.0, d}, Poly3{s + q, v0 + A * q * q / 6.0, 0.5 * A * q, 0.5 * A, -d},
+          Poly3{s + 2 * q, v0 + A * q * q, A * q, 0.0, -d}, Poly3{s + 3 * q, v0 + 11.0 * A * q * q / 6.0, 0.5 * A * q, -0.5 * A, d}};
+}
+
 Poly3 Poly3::hermite(double s, double L, double v0, double m0, double v1, double m1) {
   Poly3 p;
   p.s = s;
@@ -154,7 +162,9 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   }
   attr(n, "id", r.id);
   attr(n, "junction", r.junction);
-  if (!r.rule.empty() && c.revMinor >= 5) attr(n, "rule", r.rule);
+  // road@rule is 1.5+; RHT is the default there. A left-hand-traffic road states it in every
+  // revision: without it a reader runs every lane against its traffic (1.4 parsers ignore the attribute)
+  if (r.rule == "LHT" || (!r.rule.empty() && c.revMinor >= 5)) attr(n, "rule", r.rule);
   if (r.predecessor || r.successor) {
     auto l = n.append_child("link");
     auto w = [&](const char *nm, const LinkTarget &t) {

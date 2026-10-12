@@ -18,6 +18,10 @@ struct Poly3 {
   double deriv(double ds) const { return b + ds * (2.0 * c + ds * 3.0 * d); }
   /// cubic Hermite from (v0, slope0) to (v1, slope1) over length L
   static Poly3 hermite(double s, double L, double v0, double m0, double v1, double m1);
+  /// C2 lateral shift from v0 to v1 over length L, level (slope and curvature 0) at both ends: four
+  /// cubics whose second derivative ramps 0 -> +A -> 0 -> -A -> 0, A = 8 (v1 - v0) / L^2. A single
+  /// cubic cannot be level in slope and curvature at both ends: its curvature steps there.
+  static std::vector<Poly3> shiftC2(double s, double L, double v0, double v1);
 };
 
 struct RoadMark {

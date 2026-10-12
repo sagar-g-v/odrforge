@@ -262,28 +262,36 @@ CrossSection crossSectionFromTags(const Tags &t, const CountryProfile &c, const 
   // ---- placement: where the OSM way lies across the carriageway (default: its middle)
   const double Wr = x.right.carriagewayWidth(), Wl = x.left.carriagewayWidth();
   x.laneOffset = 0.5 * (Wr - Wl);
-  const std::string plKey = x.oneway ? "placement" : "placement:forward";
-  if (auto pl = tag(t, plKey); pl && pl->find(':') != std::string::npos) {
+  // placement=<mode>:<n> (oneway) or placement:forward / placement:backward (two-way) names the lane,
+  // counted from the left in that direction's driving direction, the way runs along
+  // onRight: the side of the way the lanes are on; withWay: their traffic runs in the way's direction
+  auto place = [&](const std::string &key, bool onRight, bool withWay) {
+    auto pl = tag(t, key);
+    if (!pl || pl->find(':') == std::string::npos) return false;
     const std::string mode = pl->substr(0, pl->find(':'));
     const int N = std::atoi(pl->substr(pl->find(':') + 1).c_str());
-    SideSpec &fs2 = fwdOnRight ? x.right : x.left;
-    // driving lanes counted from the left in the driving direction
-    std::vector<double> w;
-    for (const auto &l : fs2.lanes)
+    const SideSpec &side = onRight ? x.right : x.left;
+    std::vector<double> w;  // stored inner (divider) first
+    for (const auto &l : side.lanes)
       if (isCarriageway(l.kind)) w.push_back(l.width);
-    if (!fwdOnRight) std::reverse(w.begin(), w.end());  // left side: outer lane is leftmost
-    if (N >= 1 && N <= static_cast<int>(w.size())) {
-      double before = 0.0;
-      for (int i = 0; i < N - 1; ++i) before += w[i];
-      double along = before;  // distance from the left edge of the forward carriageway
-      if (mode == "middle_of") along += 0.5 * w[N - 1];
-      else if (mode == "right_of") along += w[N - 1];
-      // left edge of the forward carriageway relative to the divider
-      const double leftEdge = fwdOnRight ? 0.0 : x.left.carriagewayWidth();
-      const double tWay = leftEdge - along;  // t of the way relative to the divider (left +)
-      x.laneOffset = -tWay;
-    }
-  }
+    // the driving-left edge is the divider for traffic with the way on its right and against the way
+    // on its left, the outer edge otherwise
+    if (onRight != withWay) std::reverse(w.begin(), w.end());
+    if (N < 1 || N > static_cast<int>(w.size())) return false;
+    double along = 0.0;  // from the driving-left edge towards the driving-right
+    for (int i = 0; i < N - 1; ++i) along += w[i];
+    if (mode == "middle_of") along += 0.5 * w[N - 1];
+    else if (mode == "right_of") along += w[N - 1];
+    else if (mode != "left_of") return false;
+    // t of the way relative to the divider (left +): driving-right points to -t when the traffic runs
+    // with the way, to +t against it
+    const double leftEdge = withWay ? (onRight ? 0.0 : x.left.carriagewayWidth()) : (onRight ? -x.right.carriagewayWidth() : 0.0);
+    const double tWay = withWay ? leftEdge - along : leftEdge + along;
+    x.laneOffset = -tWay;
+    return true;
+  };
+  if (x.oneway) place("placement", fwdOnRight, !reverse);
+  else if (!place("placement:forward", fwdOnRight, !reverse)) place("placement:backward", !fwdOnRight, reverse);
   return x;
 }
 

@@ -526,7 +526,7 @@ void Builder::buildRoads() {
     }
     // lane sections, tapers and links
     for (size_t k = 0; k < secs.size(); ++k) r.lanes.push_back(makeLaneSection(secs[k].xs, secs[k].s, C));
-    std::map<std::vector<odr::Lane> *, std::map<size_t, bool>> added, dropped, innerDropped;
+    std::map<std::vector<odr::Lane> *, std::map<size_t, bool>> added, dropped;
     for (size_t k = 1; k < secs.size(); ++k) {
       odr::LaneSection &prev = r.lanes[k - 1], &cur = r.lanes[k];
       auto linkSide = [&](std::vector<odr::Lane> &a, std::vector<odr::Lane> &b, const SideSpec &sa,
@@ -562,7 +562,6 @@ void Builder::buildRoads() {
             const long jb = static_cast<long>(j) + off;
             if (jb < 0 || jb >= static_cast<long>(vb.size())) {
               dropped[&a][va[j]] = true;  // ends at the section boundary: taper to zero
-              if (jb < 0) innerDropped[&a][va[j]] = true;
               continue;
             }
             a[va[j]].link.successor = b[vb[jb]].id;
@@ -583,9 +582,9 @@ void Builder::buildRoads() {
     // the same window below): a step is a sideways jump of the lane border, and a blend after the
     // boundary would keep the old width a whole taper into the next way
     std::vector<double> blendB(r.lanes.size(), 0.0), blendA(r.lanes.size(), 0.0);  // window before / after boundary k
-    // lanes ending at the inner side before boundary k: the shift of lane 0 that keeps the other lanes
-    // running straight, and the taper it follows
-    std::vector<double> innerDrop(r.lanes.size() + 1, 0.0), innerDropTaper(r.lanes.size() + 1, 0.0);
+    // the taper of lanes ending before boundary k / starting after it: the lane offset moves in the
+    // same window, so the lanes that flow on stay continuous
+    std::vector<double> dropTaper(r.lanes.size() + 1, 0.0), addTaper(r.lanes.size() + 1, 0.0);
     for (size_t k = 1; k < r.lanes.size(); ++k) {
       blendB[k] = std::min(0.5 * opt.taperLength, 0.4 * (r.lanes[k].s - r.lanes[k - 1].s));
       blendA[k] = std::min(0.5 * opt.taperLength, 0.4 * ((k + 1 < r.lanes.size() ? r.lanes[k + 1].s : len) - r.lanes[k].s));
@@ -627,21 +626,19 @@ void Builder::buildRoads() {
           const double T = std::min(opt.taperLength, (d ? (g ? 0.5 : ta > 0.0 ? 0.6 : 0.8) : 0.8) * secLen);
           l.widths.clear();
           double s0 = 0.0;  // start of the full-width stretch
-          if (g) l.widths.push_back(odr::Poly3::hermite(0.0, T, 0.0, 0.0, w, 0.0)), s0 = T;
+          if (g) l.widths.push_back(odr::Poly3::hermite(0.0, T, 0.0, 0.0, w, 0.0)), s0 = T, addTaper[k] = std::max(addTaper[k], T);
+          if (d) dropTaper[k + 1] = std::max(dropTaper[k + 1], T);
           else if (ta > 0.0) l.widths.push_back(odr::Poly3::hermite(0.0, ta, wm, mm, w, 0.0)), s0 = ta;
           const double hold = secLen - s0 - (d ? T : 0.0);
           if (hold > 1e-6) l.widths.push_back({s0, w, 0, 0, 0});
           if (d) l.widths.push_back(odr::Poly3::hermite(secLen - T, T, w, 0.0, 0.0, 0.0));
-          if (d && !g && innerDropped[side][i])
-            innerDrop[k + 1] += side == &r.lanes[k].right ? -w : w, innerDropTaper[k + 1] = std::max(innerDropTaper[k + 1], T);
         }
     }
-    // lane offset: lanes added / dropped on one side widen the road outward and the existing lanes
-    // keep running straight (mappers do not move the way for a turn pocket); a lane ending at the
-    // inner side of a oneway narrows the road from there, lane 0 following its taper (on a two-way
-    // road lane 0 is the edge of both directions and stays). The offset is only
-    // re-centred when the carriageway really changes (oneway <-> two-way, both sides change), over the
-    // full taper length, or when only the widths change: in the window of the width blend.
+    // lane offset: every section carries its own cross-section's offset, which places the OSM way where
+    // OSM says it is (the middle of the carriageway, or the placement=* lane). It moves in the window of
+    // the lanes that cause the change, so the lanes flowing on stay continuous: before the boundary
+    // over the taper of a lane ending there, after it over the taper of a lane starting there, and in
+    // the window of the width blend when only the widths change.
     std::vector<double> offs(secs.size());
     std::vector<bool> widthOnly(secs.size(), false), follow(secs.size(), false);
     offs[0] = secs[0].xs.laneOffset;
@@ -649,16 +646,21 @@ void Builder::buildRoads() {
       const CrossSection &a = secs[k - 1].xs, &b = secs[k].xs;
       const bool leftChanged = a.left.drivingCount() != b.left.drivingCount();
       const bool rightChanged = a.right.drivingCount() != b.right.drivingCount();
-      const double room = (k + 1 < secs.size() ? secs[k + 1].s : len) - secs[k].s;
-      const bool recentre = a.holdOffset || b.holdOffset ||
-                            (room >= 10.0 && (a.oneway != b.oneway || (leftChanged && rightChanged) || (!leftChanged && !rightChanged)));
-      follow[k] = !recentre && a.oneway && b.oneway && std::abs(innerDrop[k]) > 1e-6;
-      offs[k] = recentre ? b.laneOffset : offs[k - 1] + (follow[k] ? innerDrop[k] : 0.0);
-      // only the widths change (a previous section that kept an older offset is re-centred as before)
-      widthOnly[k] = recentre && !a.holdOffset && !b.holdOffset && a.oneway == b.oneway && !leftChanged && !rightChanged &&
-                     std::abs(offs[k - 1] - a.laneOffset) < 1e-3;
+      offs[k] = b.laneOffset;
+      // lanes only end here: the offset follows their taper before the boundary
+      follow[k] = !a.holdOffset && !b.holdOffset && dropTaper[k] > 1e-6 && addTaper[k] <= 1e-6;
+      // only the widths change
+      widthOnly[k] = !a.holdOffset && !b.holdOffset && a.oneway == b.oneway && !leftChanged && !rightChanged &&
+                     dropTaper[k] <= 1e-6 && addTaper[k] <= 1e-6;
     }
     r.laneOffset.push_back({0.0, offs[0], 0, 0, 0});
+    // a transition from a level offset is a C2 shift (no curvature step on the lanes at its ends); one
+    // that starts inside a running transition continues it with a Hermite blend from its slope
+    auto shiftTo = [&](double s0, double L, double v, double m, double target) {
+      if (std::abs(m) < 1e-9)
+        for (const odr::Poly3 &p : odr::Poly3::shiftC2(s0, L, v, target)) r.laneOffset.push_back(p);
+      else r.laneOffset.push_back(odr::Poly3::hermite(s0, L, v, m, target, 0.0));
+    };
     for (size_t k = 1; k < secs.size(); ++k) {
       const double sb = secs[k].s, target = offs[k];
       // leaving a gore stretch (merge: main + branch lanes -> the trunk's own lanes): the lanes move
@@ -670,7 +672,7 @@ void Builder::buildRoads() {
         const double v = cur.eval(s0 - cur.s), m = cur.deriv(s0 - cur.s);
         if (std::abs(v - target) < 1e-3) continue;
         if (cur.s >= s0 - 1e-6) r.laneOffset.pop_back();
-        r.laneOffset.push_back(odr::Poly3::hermite(s0, sb - s0, v, m, target, 0.0));
+        shiftTo(s0, sb - s0, v, m, target);
         if (sb < len - 1e-6) r.laneOffset.push_back({sb, target, 0, 0, 0});
         continue;
       }
@@ -690,12 +692,12 @@ void Builder::buildRoads() {
       }
       // a lane ending at the inner side: lane 0 follows its taper before the boundary
       if (follow[k]) {
-        const double s0 = sb - innerDropTaper[k];
+        const double s0 = sb - dropTaper[k];
         while (r.laneOffset.size() > 1 && r.laneOffset.back().s > s0 + 1e-6) r.laneOffset.pop_back();
         const odr::Poly3 cur = r.laneOffset.back();
         const double v = cur.eval(s0 - cur.s), m = cur.deriv(s0 - cur.s);
         if (cur.s >= s0 - 1e-6) r.laneOffset.pop_back();
-        r.laneOffset.push_back(odr::Poly3::hermite(s0, sb - s0, v, m, target, 0.0));
+        shiftTo(s0, sb - s0, v, m, target);
         if (sb < len - 1e-6) r.laneOffset.push_back({sb, target, 0, 0, 0});
         continue;
       }
@@ -708,8 +710,9 @@ void Builder::buildRoads() {
       // entering a gore stretch (diverge): over the whole stretch up to the gore
       const double room = (k + 1 < secs.size() ? secs[k + 1].s : len) - sb;
       const double T = secs[k].xs.holdOffset && room > 10.0 ? std::max(1.0, room - 1.0)
+                       : addTaper[k] > 1e-6                 ? addTaper[k]
                                                             : std::min(opt.taperLength, std::max(1.0, len - sb - 1.0));
-      r.laneOffset.push_back(odr::Poly3::hermite(sb, T, v, m, target, 0.0));
+      shiftTo(sb, T, v, m, target);
       if (sb + T < len - 1e-6) r.laneOffset.push_back({sb + T, target, 0, 0, 0});
     }
     // road type + speed

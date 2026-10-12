@@ -160,7 +160,8 @@ TEST_CASE("overlap resolution: carriageways drawn too close are pushed apart") {
 
 TEST_CASE("overlap resolution: a realignment does not run through a lane drop") {
   // a three-lane oneway drops to two lanes 40 m before the opposite carriageway, drawn too close,
-  // pushes it aside: the shift ramps in after the drop's taper, the lanes kept run straight there
+  // pushes it aside: the shift ramps in after the drop's taper; through the drop the lanes kept move
+  // only by the re-centring on the way (half the dropped lane), smoothly
   OsmB b;
   const OsmId m = b.node(-40, 3);
   b.way({b.node(-300, 3), m}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "3"}});
@@ -178,13 +179,20 @@ TEST_CASE("overlap resolution: a realignment does not run through a lane drop") 
     if (r.junction != "-1" || r.lanes.size() != 2) continue;
     found = true;
     const double sb = r.lanes[1].s;
-    double lo = 1e9, hi = -1e9;
+    double dropped = 0.0;  // width of the lane that ends
+    for (const auto &l : r.lanes[0].right)
+      if (!l.link.successor && !l.widths.empty()) dropped = std::max(dropped, l.widths.front().a);
+    double lo = 1e9, hi = -1e9, prev = 0.0, worstStep = 0.0;
     for (double s = std::max(0.0, sb - 40.0); s <= std::min(r.length(), sb + 10.0); s += 0.5) {
       double a, c;
       CHECK(odr::laneBorders(r, s, -1, a, c));
-      lo = std::min(lo, 0.5 * (a + c)), hi = std::max(hi, 0.5 * (a + c));
+      const double m = 0.5 * (a + c);
+      if (lo < 1e9) worstStep = std::max(worstStep, std::abs(m - prev));
+      lo = std::min(lo, m), hi = std::max(hi, m), prev = m;
     }
-    CHECK(hi - lo < 0.2);  // the inner lane keeps its line through the drop
+    CHECK(dropped > 2.0);
+    CHECK(hi - lo < 0.5 * dropped + 0.2);  // the re-centring only, no overlap shift through the drop
+    CHECK(worstStep < 0.1);                // and smoothly (0.5 m steps)
   }
   CHECK(found);
 }

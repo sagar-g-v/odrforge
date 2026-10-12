@@ -232,10 +232,11 @@ TEST_CASE("network: curved road keeps G1/G2 continuity and follows the OSM nodes
     CHECK_NEAR(L.elements[i - 1].end().kappa, L.elements[i].k0, 1e-4);  // curvature continuous
 }
 
-TEST_CASE("network: an inner lane that merges away from the divider ends there, the others run straight (RHT and LHT)") {
+TEST_CASE("network: an inner lane that merges away from the divider ends there, the others flow on (RHT and LHT)") {
   // a three-lane oneway whose inner lane merges outward (turn:lanes merge_to_right, in LHT
-  // merge_to_left on the rightmost lane) continues with two lanes: the inner lane tapers out and the
-  // outer two keep their line instead of the outermost lane ending and the others shifting over
+  // merge_to_left on the rightmost lane) continues with two lanes: the inner lane tapers out, the outer
+  // two flow on without a step, and the two-lane carriageway is centred on the way (OSM placement
+  // default) again once the taper is over
   for (const char *country : {"US", "GB"}) {
     const bool lht = std::string(country) == "GB";
     OsmBuilder b;
@@ -258,11 +259,14 @@ TEST_CASE("network: an inner lane that merges away from the divider ends there, 
         if (std::abs(l.id) > std::abs(outer)) outer = l.id;
       }
     CHECK(std::abs(ended) == 1);  // the inner lane ends
-    // the outer edge of the carriageway runs straight through the drop, without a step
+    // both carriageways are centred on the way, before the taper and after it
     double a0, b0, a1, b1, pa = 0, pb = 0, worstStep = 0;
     CHECK(odr::laneBorders(road, 10.0, outer, a0, b0));
     CHECK(odr::laneBorders(road, road.length() - 10.0, outer > 0 ? outer - 1 : outer + 1, a1, b1));
-    CHECK_NEAR(b0, b1, 1e-6);
+    const double off0 = road.laneOffset.front().a, off1 = road.laneOffset.back().a;
+    CHECK_NEAR(0.5 * (b0 + off0), 0.0, 1e-6);  // the 3-lane band [offset, outer edge] has its middle on the way
+    CHECK_NEAR(0.5 * (b1 + off1), 0.0, 1e-6);  // and so has the 2-lane band
+    // the outer edge flows through the drop without a step
     for (double s = 0; s <= road.length(); s += 0.1) {
       const int id = s < road.lanes[1].s ? outer : (outer > 0 ? outer - 1 : outer + 1);
       double a, bb;
@@ -272,6 +276,42 @@ TEST_CASE("network: an inner lane that merges away from the divider ends there, 
     }
     (void)pa;
     CHECK(worstStep < 0.01);
+  }
+}
+
+TEST_CASE("network: placement:forward / placement:backward put the way on the named lane edge (RHT and LHT)") {
+  // a two-way road, 2 lanes forward and 1 backward, the way drawn along the outer edge of the
+  // backward lane (placement:backward=right_of:1): the whole carriageway lies on the forward side
+  for (const char *country : {"US", "GB"}) {
+    const bool lht = std::string(country) == "GB";
+    for (const char *key : {"placement:backward", "placement:forward"}) {
+      const bool bwd = std::string(key) == "placement:backward";
+      OsmBuilder b;
+      b.way({b.node(-100, 0), b.node(100, 0)}, {{"highway", "secondary"}, {"lanes", "3"}, {"lanes:forward", "2"},
+                                                 {"lanes:backward", "1"}, {key, bwd ? "right_of:1" : "left_of:1"}});
+      const Result r = build(b, country);
+      CHECK(r.val.errors == 0);
+      CHECK(r.od.roads.size() == 1);
+      if (r.od.roads.size() != 1) continue;
+      const auto &road = r.od.roads[0];
+      double lo = 1e9, hi = -1e9;  // driving band across the way
+      for (const auto *side : {&road.lanes[0].left, &road.lanes[0].right})
+        for (const auto &l : *side) {
+          double a, c;
+          if (l.type == "driving" && odr::laneBorders(road, 50.0, l.id, a, c))
+            lo = std::min({lo, a, c}), hi = std::max({hi, a, c});
+        }
+      // lanes are counted from the left in their driving direction. RHT: backward=right_of:1 is the
+      // outer edge of the backward lane (left of the way), forward=left_of:1 the divider. LHT: the
+      // backward lane lies right of the way and runs against it, so its right edge is the divider; the
+      // forward lanes lie left of the way and their lane 1 is the outer one.
+      if (bwd != lht) CHECK_NEAR(hi, 0.0, 1e-6);
+      else {
+        CHECK_NEAR(road.laneOffset.front().a, 0.0, 1e-6);
+        CHECK(lo < -1.0);
+        CHECK(hi > 1.0);
+      }
+    }
   }
 }
 
@@ -338,5 +378,25 @@ TEST_CASE("network: a lane width change between ways blends across the boundary 
       CHECK_NEAR(width(sb + 20.0), 3.25, 1e-6);
     }
     CHECK(worstStep < 0.01);  // 0.1 m apart: a step at the boundary would be 0.75 m
+  }
+}
+
+TEST_CASE("laneOffset: the C2 shift is level at both ends and continuous in value, slope and curvature") {
+  for (double D : {3.5, -1.75, 0.3}) {
+    const auto p = odr::Poly3::shiftC2(10.0, 40.0, 1.0, 1.0 + D);
+    CHECK(p.size() == 4);
+    auto second = [](const odr::Poly3 &q, double ds) { return 2.0 * q.c + 6.0 * q.d * ds; };
+    CHECK_NEAR(p[0].a, 1.0, 1e-12);
+    CHECK_NEAR(p[0].b, 0.0, 1e-12);
+    CHECK_NEAR(second(p[0], 0.0), 0.0, 1e-12);
+    for (size_t i = 0; i + 1 < p.size(); ++i) {
+      const double L = p[i + 1].s - p[i].s;
+      CHECK_NEAR(p[i].eval(L), p[i + 1].a, 1e-12);
+      CHECK_NEAR(p[i].deriv(L), p[i + 1].b, 1e-12);
+      CHECK_NEAR(second(p[i], L), second(p[i + 1], 0.0), 1e-12);
+    }
+    CHECK_NEAR(p[3].eval(10.0), 1.0 + D, 1e-12);
+    CHECK_NEAR(p[3].deriv(10.0), 0.0, 1e-12);
+    CHECK_NEAR(second(p[3], 10.0), 0.0, 1e-12);
   }
 }
