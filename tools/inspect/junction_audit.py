@@ -140,7 +140,45 @@ def audit(path):
                     pairs.add((ja, jb))
     for a, b in sorted(pairs):
         out["junctions.no_overlap"].append({"junctions": [a, b]})
+    corner_sidewalks(od, ends, conn_roads, out)
     return {"file": path, "junctions": len(jel), "counts": {k: len(v) for k, v in sorted(out.items())}, "instances": out}
+
+
+def outermost_on_right(r, at_end, along_s):
+    """lane id and type of the outermost lane on the right of someone travelling along / against s"""
+    sec = r.sections[-1] if at_end else r.sections[0]
+    side = [l for l in sec.lanes() if (l.id < 0 if along_s else l.id > 0)]
+    if not side:
+        return None, None
+    lane = max(side, key=lambda l: abs(l.id))
+    return lane.id, lane.type
+
+
+def corner_sidewalks(od, ends, conn_roads, out):
+    """ASAM Junction Guideline 6: going round a junction's arms by direction, wherever both facing sides
+    end in a sidewalk, a junction road carries a sidewalk from one to the other
+    (junctions.corner.sidewalk_gap otherwise)."""
+    for jid, arm_ends in ends.items():
+        arms = []
+        for rid, end in arm_ends:
+            r = od.roads[rid]
+            at_end = end == "end"
+            _, _, h = r.ref([r.length if at_end else 0.0])
+            arms.append((math.atan2(math.sin(h[0] + (math.pi if at_end else 0.0)),
+                                    math.cos(h[0] + (math.pi if at_end else 0.0))), rid, at_end))
+        arms.sort()
+        if len(arms) < 2:
+            continue
+        walkways = {(c.pred.id, c.succ.id) for c in conn_roads[jid] if c.pred is not None and c.succ is not None
+                    and any(l.type in ("sidewalk", "walking") for sec in c.sections for l in sec.lanes())}
+        for i, (_, rp, p_end) in enumerate(arms):
+            _, rq, q_end = arms[(i + 1) % len(arms)]
+            if (rp, p_end) == (rq, q_end):
+                continue
+            _, tp = outermost_on_right(od.roads[rp], p_end, p_end)
+            _, tq = outermost_on_right(od.roads[rq], q_end, not q_end)
+            if tp in ("sidewalk", "walking") and tq in ("sidewalk", "walking") and (rp, rq) not in walkways:
+                out["junctions.corner.sidewalk_gap"].append({"junction": jid, "from": rp, "to": rq})
 
 
 def main():
