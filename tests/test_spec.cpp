@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "odrforge/odr.hpp"
+#include "odrforge/rules.hpp"
 #include "odrforge/validate.hpp"
 #include "test.hpp"
 
@@ -318,6 +319,40 @@ TEST_CASE("writer 1.8: walking / direction=both / access restriction children, d
   CHECK(restrictionChild);
   CHECK(!centerType);  // center lane type is deprecated in 1.8
   CHECK(std::string(d.child("OpenDRIVE").child("header").attribute("revMinor").value()) == "8");
+}
+
+TEST_CASE("writer 1.4 (carla profile): pre-1.8 vocabulary, bare <outline>, center lane typed") {
+  const std::string xml = odr::toString(sampleNetwork(), {4, 12});
+  pugi::xml_document d;
+  CHECK(d.load_string(xml.c_str()));
+  std::set<std::string> types;
+  bool direction = false, centerType = false, restrictionChild = false;
+  for (auto l : d.select_nodes("//lane")) {
+    const auto n = l.node();
+    if (n.attribute("id").as_int() == 0) centerType |= bool(n.attribute("type"));
+    else types.insert(n.attribute("type").value());
+    direction |= bool(n.attribute("direction"));
+    for (auto a : n.children("access")) restrictionChild |= bool(a.child("restriction"));
+  }
+  CHECK(types.count("sidewalk") && types.count("bidirectional") && !types.count("walking"));
+  CHECK(!direction && !restrictionChild && centerType);
+  const auto obj = d.select_node("//object").node();
+  CHECK(obj.child("outline") && !obj.child("outlines"));
+}
+
+TEST_CASE("output profiles: standard is OpenDRIVE 1.8, carla is 1.4, older names mean standard") {
+  CHECK(TargetProfile::byName("standard").revMinor == 8);
+  CHECK(TargetProfile::byName("carla").revMinor == 4);
+  CHECK(TargetProfile::byName("carla").maxIdLength == 32);
+  for (const char *legacy : {"asam", "asam18", "esmini"}) CHECK(TargetProfile::byName(legacy).name == "standard");
+  bool threw = false;
+  try {
+    TargetProfile::byName("opendrive2");
+  } catch (const std::invalid_argument &) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK(TargetProfile{}.spec().hasLaneDirection() && !TargetProfile::byName("carla").spec().hasLaneDirection());
 }
 
 TEST_CASE("writer precision keeps at least 10 significant digits") {

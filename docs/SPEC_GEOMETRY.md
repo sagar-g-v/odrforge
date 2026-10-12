@@ -718,8 +718,7 @@ At a freeway split with a shallow branch (DESIGN, lane-level gores):
 ## 8. Simulator conformance (SIM)
 
 **SIM-1 (MUST): schema.**
-- The `asam18` profile validates against the ASAM OpenDRIVE 1.8.1 XSD with 0 errors.
-- The `asam` profile validates against 1.6.
+- The `standard` profile validates against the ASAM OpenDRIVE 1.8.1 XSD with 0 errors.
 - The `carla` profile validates against 1.4, except for the deviations listed in SIM-3.
 - The built-in validator (`validate.cpp`) reports 0 errors.
 

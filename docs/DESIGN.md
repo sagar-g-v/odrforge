@@ -31,7 +31,7 @@ The research behind this design is in `docs/research/`:
    and numeric.
 7. **Country rules are data.** `rules/countries/<ISO>.json` holds the driving side, lane widths,
    implicit speeds and zones, lane counts, marking colours and styles, curb height, and the sign
-   catalogue. Targets (`asam`, `asam18`, `carla`, `esmini`) add consumer quirks.
+   catalogue. Output profiles (`standard` = OpenDRIVE 1.8, `carla` = 1.4) decide the vocabulary; `SpecRevision` names each versioned feature.
 8. **Validate every build.** Checks cover geometry continuity, lane-level gaps and headings across
    links, references, ids and the lane-section order.
 

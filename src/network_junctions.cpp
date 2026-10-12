@@ -684,7 +684,7 @@ void Builder::buildSignals() {
 }
 
 void Builder::buildObjects() {
-  const int rev = opt.target.revMinor;
+  const SpecRevision spec = opt.target.spec();
   // spatial index of road reference lines (5 m samples)
   struct Sample {
     int road;
@@ -779,8 +779,8 @@ void Builder::buildObjects() {
     o.t = t;
     if (lamp) {
       o.name = "StreetLamp";
-      o.type = rev >= 8 ? "pole" : "streetLamp";
-      o.subtype = rev >= 8 ? "streetLamp" : "";
+      o.type = spec.hasStreetLampAsPoleSubtype() ? "pole" : "streetLamp";
+      o.subtype = spec.hasStreetLampAsPoleSubtype() ? "streetLamp" : "";
       o.height = 9.0;
       o.radius = 0.15;
     } else {

@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "odrforge/odr.hpp"
+#include "odrforge/spec_revision.hpp"
 #include "odrforge/version.hpp"
 
 namespace odrforge::odr {
@@ -32,7 +33,7 @@ namespace {
 
 struct Ctx {
   int prec = 9;
-  int revMinor = 6;
+  SpecRevision spec;
   std::string num(double v) const {
     if (std::abs(v) < 1e-15) v = 0.0;
     char b[40];
@@ -68,18 +69,29 @@ void poly(pugi::xml_node parent, const char *name, const Poly3 &p, const Ctx &c,
   attrN(n, c, "d", p.d);
 }
 
+struct LaneTypeAndDirection {
+  std::string type, direction;
+};
+
+// OpenDRIVE 1.9 §11.8 lane type and direction; 1.8.0 Table 256 replaces sidewalk by walking and
+// bidirectional by driving with lane@direction="both". Before 1.8 the type is written as is.
+LaneTypeAndDirection laneTypeAndDirection(const Lane &l, const SpecRevision &spec) {
+  if (!spec.hasLaneDirection()) return {l.type, ""};
+  if (l.type == "sidewalk") return {"walking", l.direction};
+  if (l.type == "bidirectional") return {"driving", "both"};
+  return {l.type, l.direction};
+}
+
 void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
   auto n = parent.append_child("lane");
   attr(n, "id", std::to_string(l.id));
-  // OpenDRIVE 1.8 deprecates sidewalk (-> walking) and bidirectional (-> driving + direction="both")
-  std::string type = l.type, direction = l.direction;
-  if (c.revMinor >= 8) {
-    if (type == "sidewalk") type = "walking";
-    if (type == "bidirectional") type = "driving", direction = "both";
+  const bool isCenter = l.id == 0;
+  const auto [type, direction] = laneTypeAndDirection(l, c.spec);
+  if (!isCenter || c.spec.centerLaneHasTypeAndLevel()) {
+    attr(n, "type", type);
+    attr(n, "level", l.level ? "true" : "false");
   }
-  if (!(c.revMinor >= 8 && l.id == 0)) attr(n, "type", l.id == 0 && c.revMinor < 8 ? l.type : type);
-  if (!(c.revMinor >= 8 && l.id == 0)) attr(n, "level", l.level ? "true" : "false");
-  if (c.revMinor >= 8 && !direction.empty() && l.id != 0) attr(n, "direction", direction);
+  if (!isCenter && !direction.empty()) attr(n, "direction", direction);
   if (l.link.predecessor || l.link.successor) {
     auto ln = n.append_child("link");
     if (l.link.predecessor) attr(ln.append_child("predecessor"), "id", std::to_string(*l.link.predecessor));
@@ -112,7 +124,7 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     attr(s, "unit", l.speedUnit);
   }
   if (!l.accessDeny.empty()) {
-    if (c.revMinor >= 8) {  // 1.8: one <access rule> with <restriction type> children
+    if (c.spec.hasAccessRestrictionElements()) {
       auto a = n.append_child("access");
       attrN(a, c, "sOffset", 0.0);
       attr(a, "rule", "deny");
@@ -121,7 +133,7 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
       for (const auto &deny : l.accessDeny) {
         auto a = n.append_child("access");
         attrN(a, c, "sOffset", 0.0);
-        if (c.revMinor >= 6) attr(a, "rule", "deny");
+        if (c.spec.hasAccessRule()) attr(a, "rule", "deny");
         attr(a, "restriction", deny);
       }
     }
@@ -162,9 +174,9 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   }
   attr(n, "id", r.id);
   attr(n, "junction", r.junction);
-  // road@rule is 1.5+; RHT is the default there. A left-hand-traffic road states it in every
-  // revision: without it a reader runs every lane against its traffic (1.4 parsers ignore the attribute)
-  if (r.rule == "LHT" || (!r.rule.empty() && c.revMinor >= 5)) attr(n, "rule", r.rule);
+  // A left-hand-traffic road states its rule in every revision, 1.4 included: without it a reader
+  // runs every lane against its traffic (1.4 parsers ignore the attribute).
+  if (r.rule == "LHT" || (!r.rule.empty() && c.spec.hasRoadRule())) attr(n, "rule", r.rule);
   if (r.predecessor || r.successor) {
     auto l = n.append_child("link");
     auto w = [&](const char *nm, const LinkTarget &t) {
@@ -180,7 +192,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     auto e = n.append_child("type");
     attrS(e, "s", t.s);
     attr(e, "type", t.type);
-    if (!t.country.empty() && c.revMinor >= 6) attr(e, "country", t.country);
+    if (!t.country.empty() && c.spec.hasRoadTypeCountry()) attr(e, "country", t.country);
     if (t.speedMax) {
       auto sp = e.append_child("speed");
       attrN(sp, c, "max", *t.speedMax);
@@ -263,15 +275,16 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     }
     attrN(e, c, "height", o.height);
     if (!o.outline.empty()) {
-      auto ol = (c.revMinor >= 5 ? e.append_child("outlines").append_child("outline") : e.append_child("outline"));
-      if (c.revMinor >= 5) {
+      auto ol = (c.spec.hasOutlinesWrapper() ? e.append_child("outlines").append_child("outline")
+                                             : e.append_child("outline"));
+      if (c.spec.hasOutlinesWrapper()) {
         attr(ol, "id", "0");
         attr(ol, "closed", "true");
       }
       int k = 0;
       for (const auto &cr : o.outline) {
         auto cn = ol.append_child("cornerLocal");
-        if (c.revMinor >= 5) attr(cn, "id", std::to_string(k++));
+        if (c.spec.hasOutlinesWrapper()) attr(cn, "id", std::to_string(k++));
         attrN(cn, c, "u", cr.u);
         attrN(cn, c, "v", cr.v);
         attrN(cn, c, "z", cr.z);
@@ -340,7 +353,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
 pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
   Ctx c;
   c.prec = opt.precision;
-  c.revMinor = opt.revMinor;
+  c.spec.minor = opt.revMinor;
   pugi::xml_document doc;
   auto decl = doc.append_child(pugi::node_declaration);
   decl.append_attribute("version") = "1.0";
@@ -359,7 +372,7 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
   attr(h, "vendor", std::string("OdrForge ") + ODRFORGE_VERSION);
   if (!od.header.geoReference.empty())
     h.append_child("geoReference").append_child(pugi::node_cdata).set_value(od.header.geoReference.c_str());
-  if (opt.revMinor >= 6 && (od.header.offX != 0 || od.header.offY != 0 || od.header.offZ != 0)) {
+  if (c.spec.hasHeaderOffset() && (od.header.offX != 0 || od.header.offY != 0 || od.header.offZ != 0)) {
     auto o = h.append_child("offset");
     attrN(o, c, "x", od.header.offX);
     attrN(o, c, "y", od.header.offY);
@@ -388,7 +401,7 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
     auto e = root.append_child("junction");
     attr(e, "id", j.id);
     attr(e, "name", j.name);
-    if (opt.revMinor >= 7 || j.type != "default") attr(e, "type", j.type);
+    if (c.spec.writesDefaultJunctionType() || j.type != "default") attr(e, "type", j.type);
     for (const auto &cn : j.connections) {
       auto x = e.append_child("connection");
       attr(x, "id", cn.id);

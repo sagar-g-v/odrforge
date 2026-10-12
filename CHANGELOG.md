@@ -4,6 +4,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Changed
+- **Two output profiles.** `standard` (OpenDRIVE 1.8, the default) and `carla` (OpenDRIVE 1.4 plus
+  CARLA conventions). `asam`, `asam18` and `esmini` are accepted as `standard`; an unknown name is
+  an error. Writers ask `SpecRevision` named questions (lane direction, access restriction
+  elements, outlines wrapper, ...) that cite the OpenDRIVE 1.9 section and the revision that
+  introduced or deprecated each feature, instead of comparing `revMinor`.
+
 ### Fixed
 - **Grade separations without elevation data.** Without terrain every road lay at z = 0, so bridges,
   tunnels and stacked interchange ramps overlapped the roads they cross (Frankfurter Kreuz: 190

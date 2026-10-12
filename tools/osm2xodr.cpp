@@ -19,7 +19,7 @@ static void usage() {
       "osm2xodr %s - OpenStreetMap to OpenDRIVE\n"
       "usage: osm2xodr <in.osm> <out.xodr> [options]\n"
       "  --country CC        ISO 3166-1 alpha-2 rules (driving side, widths, speeds, signs); default XX\n"
-      "  --target T          asam (1.6, default) | asam18 (1.8) | carla (1.4 + CARLA conventions) | esmini\n"
+      "  --target T          standard (OpenDRIVE 1.8, default) | carla (OpenDRIVE 1.4 + CARLA conventions)\n"
       "  --origin LAT,LON    projection origin (default: centre of the data)\n"
       "  --name NAME         header name\n"
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "asam", name, vizPath, terrainPath, structuresPath, basemapDir;
+  std::string country = "XX", target = "standard", name, vizPath, terrainPath, structuresPath, basemapDir;
   double lat0 = 1e9, lon0 = 1e9, clip[4] = {0, 0, 0, 0};
   bool haveClip = false, flat = false;
   BuildOptions opt;

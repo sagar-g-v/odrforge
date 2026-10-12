@@ -13,8 +13,10 @@ command-line tool.
   limits change, and crosswalks, street lamps and trees are placed as objects.
 - **Any country.** JSON rule files cover driving side, widths, implicit speeds, marking styles and
   sign catalogues. Included: `XX` (generic), `US`, `CA`, `DE`, `FR`, `GB`, `IN`, `JP`, `AU`.
-- **Targets.** `asam` (OpenDRIVE 1.6), `asam18` (1.8: `walking` lanes, `direction`, ISO country
-  codes), `carla` (1.4 plus CARLA conventions), `esmini`.
+- **Output profiles.** `standard` (OpenDRIVE 1.8, validated against the 1.8.1 XSD: `walking`
+  lanes, lane `direction`, access restriction elements) and `carla` (the OpenDRIVE 1.4 vocabulary
+  LibCarla reads, plus CARLA conventions). Each newer feature is written as its documented 1.4
+  substitute in `carla`. The older names `asam`, `asam18` and `esmini` mean `standard`.
 - **Connected network.** OSM near-misses are joined, and parking lots that link streets are
   driven through. Freeway exits and entrances are lane-level splits and merges at the gore, so road
   surfaces never overlap there.
@@ -50,7 +52,7 @@ using namespace odrforge;
 OsmData osm = OsmData::readXml("area.osm");
 BuildOptions opt;
 opt.country = CountryProfile::load("DE");
-opt.target = TargetProfile::byName("asam18");
+opt.target = TargetProfile::byName("standard");
 opt.elevation = [&](double x, double y) { return dem.height(x, y); };  // optional terrain
 BuildReport rep;
 odr::OpenDrive od = buildOpenDrive(osm, Projection(lat0, lon0), opt, &rep);

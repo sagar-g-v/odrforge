@@ -68,21 +68,27 @@ CountryProfile CountryProfile::load(const std::string &code, const std::string &
   return p;
 }
 
-TargetProfile TargetProfile::byName(const std::string &name) {
+namespace {
+
+// CARLA 0.9.x LibCarla reads the OpenDRIVE 1.4 vocabulary, numeric ids of at most 32 digits,
+// signs from its own "OpenDRIVE" catalogue and speed signs in 10 km/h steps.
+TargetProfile carlaProfile() {
   TargetProfile t;
-  t.name = name;
-  if (name == "carla") {
-    t.revMinor = 4;
-    t.openDriveSignCatalog = true;
-    t.speedSignKmhBuckets = true;
-    t.trafficLightZeroOffset = true;
-    t.maxIdLength = 32;
-  } else if (name == "asam18") {
-    t.revMinor = 8;
-  } else if (name == "esmini") {
-    t.revMinor = 6;
-  }
+  t.name = "carla";
+  t.revMinor = 4;
+  t.openDriveSignCatalog = true;
+  t.speedSignKmhBuckets = true;
+  t.trafficLightZeroOffset = true;
+  t.maxIdLength = 32;
   return t;
+}
+
+}  // namespace
+
+TargetProfile TargetProfile::byName(const std::string &name) {
+  if (name == "carla") return carlaProfile();
+  if (name == "standard" || name == "asam" || name == "asam18" || name == "esmini") return TargetProfile{};
+  throw std::invalid_argument("unknown output profile '" + name + "' (expected standard or carla)");
 }
 
 }  // namespace odrforge
