@@ -59,7 +59,8 @@ for _k, _a in AREAS.items():
     if "args" not in _a:
         _a.update(osm=os.path.join(TA, _k + ".osm"), xodr=os.path.join(TOUT, _k + ".xodr"),
                   args=["--country", _a["country"], "--origin", _a["origin"], "--name", _k, "--clip", _a["clip"],
-                        "--viz", os.path.join(TOUT, _k + ".html")])
+                        "--viz", os.path.join(TOUT, _k + ".html")]
+                  + (["--basemap", os.path.join(TOUT, _k + "_basemap")] if os.path.isdir(os.path.join(TOUT, _k + "_basemap")) else []))
 
 
 def run(cmd, **kw):
