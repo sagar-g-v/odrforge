@@ -372,6 +372,43 @@ std::vector<odr::Poly3> cornerSidewalkWidths(const ReferenceLine &curb, double w
           odr::Poly3::hermite(L - q, q, wm, 0.0, w1, slope1)};
 }
 
+// The curb return of a corner (ASAM Junction Guideline §6): straight along the first curb, a
+// circular arc tangent to both curbs, straight along the second - the largest radius up to
+// `wanted` that fits between the two curb ends (OpenDRIVE 1.9 §9.3 line, §9.5 arc). Where the two
+// curbs do not meet ahead of both ends (no corner point), the smoothest drivable path instead.
+ReferenceLine curbReturn(const Pose &a, const Pose &b, double wanted) {
+  const double turn = normalizeAngle(b.hdg - a.hdg);
+  const Vec2 da = a.dir(), db = b.dir(), d = b.pos() - a.pos();
+  const double den = da.cross(db);
+  if (std::abs(turn) < 1e-3 || std::abs(den) < 1e-9) return drivablePath(a, b);
+  const double alongA = d.cross(db) / den, backB = -d.cross(da) / den;  // corner point: a + da alongA = b - db backB
+  if (alongA <= 0.0 || backB <= 0.0) return drivablePath(a, b);
+  // a corner point far beyond a short gap (curbs nearly parallel, offset sideways) is no corner
+  if (alongA + backB > 3.0 * d.norm() + 10.0) return drivablePath(a, b);
+  constexpr double kMinGeometry = 0.01;  // m: no geometry element shorter (validator spec2.min_geometry_length)
+  const double t = std::tan(0.5 * std::abs(turn));
+  double radius = std::min({wanted, alongA / t, backB / t});
+  if (alongA - radius * t < kMinGeometry || backB - radius * t < kMinGeometry) radius = std::min(alongA, backB) / t;
+  const double tangent = radius * t;
+  auto tooShort = [&](double piece) { return piece > 1e-9 && piece < kMinGeometry; };
+  if (tooShort(alongA - tangent) || tooShort(backB - tangent) || radius * std::abs(turn) < kMinGeometry)
+    return drivablePath(a, b);
+  ReferenceLine line;
+  auto add = [&](double length, double curvature) {
+    if (length <= 1e-9) return;
+    GeomElement e;
+    e.length = length;
+    e.k0 = e.k1 = curvature;
+    line.elements.push_back(e);
+  };
+  add(alongA - tangent, 0.0);
+  add(radius * std::abs(turn), turn > 0.0 ? 1.0 / radius : -1.0 / radius);
+  add(backB - tangent, 0.0);
+  line.elements.front().x = a.x, line.elements.front().y = a.y, line.elements.front().hdg = normalizeAngle(a.hdg);
+  line.finalize();
+  return line;
+}
+
 }  // namespace
 
 // ASAM Junction Guideline §6, OpenDRIVE 1.9 §12.4: sidewalks continue round every corner of a
@@ -403,7 +440,14 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
     Pose a = travelPose(rp, p.atEnd, true), b = travelPose(rq, q.atEnd, false);
     const Vec2 curbP = a.offset(spanP.inner), curbQ = b.offset(spanQ.inner);
     a.x = curbP.x, a.y = curbP.y, b.x = curbQ.x, b.y = curbQ.y;
-    const ReferenceLine curb = drivablePath(a, b);
+    // an acute corner (a fork, turning more than 120 degrees) ends in a nose: the sidewalk does not
+    // wrap round it
+    if (normalizeAngle(b.hdg - a.hdg) < -2.0 * kPi / 3.0) {
+      ++rep.cornerNoses;
+      continue;
+    }
+    const double rankFactor = std::max(metas[p.road].rank, metas[q.road].rank) >= 7 ? 1.5 : 1.0;
+    const ReferenceLine curb = curbReturn(a, b, opt.cornerRadius * rankFactor);
     if (curb.elements.empty() || curb.length() < 0.05) continue;
     // the sidewalk leaves and meets the arms drifting sideways as they do (Annex D: lane edges
     // heading-continuous): laneOffset carries the curb-side edge, the width the other edge
@@ -413,6 +457,13 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
                                                           slopeP.inner - slopeP.outer, slopeQ.inner - slopeQ.outer);
     if (widths.empty()) {
       ++rep.cornerSidewalksTooTight;
+      if (std::getenv("ODRFORGE_DEBUG_CORNER")) {
+        double kMax = 0.0;
+        for (double s = 0.0; s <= curb.length(); s += 0.1) kMax = std::max(kMax, -curb.eval(s).kappa);
+        std::fprintf(stderr, "tight corner J%s %s->%s turn %.0f deg chord %.2f curb %.2f kmax %.3f widths %.2f %.2f at (%.0f %.0f)\n",
+                     junction.id.c_str(), rp.id.c_str(), rq.id.c_str(), normalizeAngle(b.hdg - a.hdg) * 180.0 / kPi,
+                     (b.pos() - a.pos()).norm(), curb.length(), kMax, spanP.width(), spanQ.width(), a.x, a.y);
+      }
       continue;
     }
 
@@ -1162,8 +1213,43 @@ void dropJunctionsWithoutConnections(odr::OpenDrive &od) {
 
 }  // namespace
 
+// OpenDRIVE 1.9 §12.13, ASAM Junction Guideline: a roundabout is one junction per arm, the ring
+// built from roads between them, and the junctions grouped as a junctionGroup of type roundabout.
+// Junctions joined by ring roads (OSM junction=roundabout / circular) form one group.
+void Builder::groupRoundabouts() {
+  std::map<std::string, std::string> parent;
+  std::function<std::string(const std::string &)> find = [&](const std::string &x) {
+    auto it = parent.find(x);
+    if (it == parent.end() || it->second == x) return x;
+    return it->second = find(it->second);
+  };
+  for (const RoadMeta &m : metas) {
+    if (m.roadIndex < 0 || m.sections.empty() || !m.sections.front().xs.roundabout) continue;
+    const odr::Road &r = od.roads[m.roadIndex];
+    if (!r.predecessor || !r.successor || r.predecessor->elementType != "junction" ||
+        r.successor->elementType != "junction")
+      continue;
+    const std::string a = find(r.predecessor->elementId), b = find(r.successor->elementId);
+    parent[a] = a;
+    parent[b] = b;
+    parent[a] = b;
+  }
+  std::map<std::string, std::vector<std::string>> rings;
+  for (const auto &j : od.junctions)
+    if (parent.count(j.id)) rings[find(j.id)].push_back(j.id);
+  for (auto &[root, ids] : rings) {
+    if (ids.size() < 2) continue;
+    odr::JunctionGroup g;
+    g.id = std::to_string(od.junctionGroups.size() + 1);
+    g.name = "Roundabout";
+    g.junctionIds = ids;
+    od.junctionGroups.push_back(std::move(g));
+  }
+}
+
 void Builder::finish() {
   dropJunctionsWithoutConnections(od);
+  groupRoundabouts();
   // header: extent, georeference, date
   double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
   for (const auto &r : od.roads)

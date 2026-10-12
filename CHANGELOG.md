@@ -5,6 +5,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Curb returns** (ASAM Junction Guideline §6): every arm is cut where its curb return starts. At
+  a corner whose facing sides end in sidewalks the curb lines meet at a corner point; a return of
+  radius max(corner radius, 2.5 sidewalk widths) starts R tan(turn / 2) before it, and the arm cut
+  moves back that far (at most 40 % of the road per end). The corner sidewalk follows the return as
+  a fillet - straight, circular arc, straight - the largest radius up to the wanted one that fits.
+  Acute corners (forks, turning more than 120 degrees) end in a nose and get no corner sidewalk.
+  Corners too tight for their sidewalk: 133 -> 29 over the six test areas.
+- **Roundabout junction groups** (OpenDRIVE 1.9 §12.13, valid from 1.4): junctions joined by ring
+  roads (OSM junction=roundabout / circular) are listed in one junctionGroup of type roundabout.
 - **Sidewalks continue round junction corners** (ASAM Junction Guideline §6, OpenDRIVE 1.9 §12.4).
   Between neighbouring arms whose facing sides end in a sidewalk, a junction road runs along the
   curb line carrying the sidewalk (raised by the curb height, written as walking in 1.8), linked to
@@ -56,6 +65,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   removed. A new CTest validates every scenario against the OpenDRIVE 1.4H XSD as well as 1.8.1.
   `rule="LHT"` stays on left-hand-traffic roads in 1.4 files (documented deviation: without it
   readers drive every lane against its traffic).
+- **Redundant records, by the curve they describe**: an elevation / superelevation / lane offset
+  record is left out when the kept polynomial reproduces it over its whole span within 0.1 mm /
+  1e-5 rad / 1e-6 m (LA standard output 18 % smaller); headings are written in (-pi, pi].
 - **Redundant records** (Annex F `performance.avoid_redundant_info`): elevation, superelevation,
   lane offset and lane width records that only continue the previous cubic are left out. Files are
   10 - 18 % smaller; every curve is unchanged (largest difference 5e-8 m over the six test areas).

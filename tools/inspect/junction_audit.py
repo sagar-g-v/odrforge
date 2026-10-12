@@ -175,6 +175,10 @@ def corner_sidewalks(od, ends, conn_roads, out):
             _, rq, q_end = arms[(i + 1) % len(arms)]
             if (rp, p_end) == (rq, q_end):
                 continue
+            # arriving along P and leaving along Q: an acute corner (turn beyond 120 degrees) ends in a nose
+            turn = (arms[(i + 1) % len(arms)][0] - arms[i][0] - math.pi + math.pi) % (2 * math.pi) - math.pi
+            if turn < -2 * math.pi / 3:
+                continue
             _, tp = outermost_on_right(od.roads[rp], p_end, p_end)
             _, tq = outermost_on_right(od.roads[rq], q_end, not q_end)
             if tp in ("sidewalk", "walking") and tq in ("sidewalk", "walking") and (rp, rq) not in walkways:

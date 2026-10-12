@@ -350,6 +350,10 @@ TEST_CASE("network: roundabout with three arms") {
   CHECK(r.od.junctions.size() == 3);
   // the ring is oneway: its connecting roads only lead in the ring direction
   CHECK(count(r.od, true) >= 6);
+  // OpenDRIVE 1.9 12.13: the three junctions form one junction group of type roundabout
+  CHECK(r.od.junctionGroups.size() == 1);
+  CHECK(r.od.junctionGroups.size() == 1 && r.od.junctionGroups[0].type == "roundabout" &&
+        r.od.junctionGroups[0].junctionIds.size() == 3);
 }
 
 TEST_CASE("network: a lane width change between ways blends across the boundary (no border step), RHT and LHT") {

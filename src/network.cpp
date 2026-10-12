@@ -463,6 +463,7 @@ void Builder::trimRoads() {
       if (const auto &fixed = e.atEnd ? m.fixedTrimEnd : m.fixedTrimStart) trim = *fixed;
       (e.atEnd ? metas[e.road].trimEnd : metas[e.road].trimStart) = trim;
     }
+    makeRoomForCurbReturns(c, trimCap);
   }
   for (RoadMeta &m : metas) {
     const double L = m.full.length();
@@ -502,6 +503,78 @@ void Builder::forgetJunctionLayout(const std::vector<Chain> &chainsBefore) {
   clusters.clear();
   metas.clear();
   fitDev.clear();
+}
+
+namespace {
+
+// Distance from the reference line (the OSM way) to the curb-side edge of a sidewalk that is the
+// outermost lane on one side, or nullopt when that side does not end in a sidewalk.
+std::optional<double> sidewalkCurbOffset(const CrossSection &x, bool leftSide) {
+  const SideSpec &side = leftSide ? x.left : x.right;
+  if (side.lanes.empty() || side.lanes.back().kind != LaneKind::Sidewalk) return std::nullopt;
+  double t = x.laneOffset;
+  for (size_t k = 0; k + 1 < side.lanes.size(); ++k) t += (leftSide ? 1.0 : -1.0) * side.lanes[k].width;
+  return std::abs(t);
+}
+
+}  // namespace
+
+// ASAM Junction Guideline §6: each arm is cut where its curb return starts. At a corner whose facing
+// sides both end in a sidewalk the two curb lines meet at a corner point C; a curb return of radius
+// R (the street's corner radius, and at least kSidewalkTurn sidewalk widths so the sidewalk turns
+// round it without folding) starts R tan(phi / 2) before C on each curb, phi being the turn between
+// them. The arm cut is moved back that far where it lies closer to the junction (never beyond the
+// arm's trim cap).
+void Builder::makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap) {
+  constexpr double kSidewalkTurn = 2.5;
+  struct Arm {
+    const RoadEnd *end;
+    Pose out;           ///< at the junction node, heading away from it
+    CrossSection xs;    ///< cross section at the junction end
+  };
+  std::vector<Arm> arms;
+  for (const RoadEnd &e : c.ends) {
+    const RoadMeta &m = metas[e.road];
+    const double L = m.full.length();
+    Pose p = m.full.eval(e.atEnd ? L : 0.0);
+    if (e.atEnd) p.hdg += kPi;
+    arms.push_back({&e, p, sectionAtFull(m, e.atEnd ? L : 0.0)});
+  }
+  if (arms.size() < 2) return;
+  std::sort(arms.begin(), arms.end(),
+            [](const Arm &a, const Arm &b) { return normalizeAngle(a.out.hdg) < normalizeAngle(b.out.hdg); });
+  for (size_t i = 0; i < arms.size(); ++i) {
+    // the corner between arm P and its anticlockwise neighbour Q: left of P, right of Q (outward)
+    const Arm &P = arms[i], &Q = arms[(i + 1) % arms.size()];
+    if (P.end == Q.end) continue;
+    const bool pLeftIsRoadLeft = !P.end->atEnd;  // outward along +s at the start of the road
+    const bool qRightIsRoadLeft = Q.end->atEnd;
+    const auto aP = sidewalkCurbOffset(P.xs, pLeftIsRoadLeft), aQ = sidewalkCurbOffset(Q.xs, qRightIsRoadLeft);
+    if (!aP || !aQ) continue;
+    const double turn = normalizeAngle(Q.out.hdg - (P.out.hdg + kPi));  // arriving along P, leaving along Q
+    if (turn >= -1e-3) continue;  // the curb turns away from the sidewalk side: nothing to fold
+    if (turn < -2.0 * kPi / 3.0) continue;  // an acute corner (a fork) ends in a nose, no curb return
+    const Vec2 uP = P.out.dir(), uQ = Q.out.dir();
+    const Vec2 curbP = P.out.offset(*aP), curbQ = Q.out.offset(-*aQ);
+    const double den = uP.cross(uQ);
+    if (std::abs(den) < 1e-6) continue;
+    const Vec2 d = curbQ - curbP;
+    const double sP = d.cross(uQ) / den, sQ = d.cross(uP) / den;  // corner point C along each curb
+    const RoadMeta &mp = metas[P.end->road], &mq = metas[Q.end->road];
+    const double wP = (pLeftIsRoadLeft ? P.xs.left : P.xs.right).lanes.back().width;
+    const double wQ = (qRightIsRoadLeft ? Q.xs.left : Q.xs.right).lanes.back().width;
+    const double rankFactor = std::max(mp.rank, mq.rank) >= 7 ? 1.5 : 1.0;
+    const double R = std::max(opt.cornerRadius * rankFactor, kSidewalkTurn * std::max(wP, wQ));
+    const double tangent = R * std::tan(0.5 * std::abs(turn));
+    for (const auto &[arm, along] : {std::pair<const Arm *, double>{&P, sP}, {&Q, sQ}}) {
+      RoadMeta &m = metas[arm->end->road];
+      if ((arm->end->atEnd ? m.fixedTrimEnd : m.fixedTrimStart) || along < -1.0) continue;
+      double &trim = arm->end->atEnd ? m.trimEnd : m.trimStart;
+      // a curb return never eats the road it belongs to: at most 40 % of it per end
+      const double cap = std::min(0.4 * m.full.length(), trimCap(m));
+      trim = std::max(trim, std::min(cap, along + tangent));
+    }
+  }
 }
 
 void Builder::buildRoads() {

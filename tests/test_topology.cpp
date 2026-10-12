@@ -311,6 +311,7 @@ TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes n
     for (const auto &q : od.roads)
       if (q.id == r.successor->elementId) to = &q;
     for (const auto &lane : r.lanes.front().right) {
+      if (lane.type != "driving") continue;  // the corner sidewalk in the fork is not a connecting lane
       Pose start;
       odr::laneCenter(r, 0.0, lane.id, start);
       if (to && to->planView.eval(to->length()).y > 0) minLeft = std::min(minLeft, start.y);

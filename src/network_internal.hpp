@@ -1,6 +1,7 @@
 // OdrForge - internal state shared by the network builder stages (not installed).
 #pragma once
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <unordered_map>
@@ -150,6 +151,7 @@ struct Builder {
   void buildGores();         // gore.cpp
   void trimRoads();
   bool joinSqueezedJunctions();
+  void makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap);
   void forgetJunctionLayout(const std::vector<Chain> &chainsBefore);
   void buildRoads();
   void resolveOverlaps();    // overlap.cpp
@@ -185,6 +187,7 @@ struct Builder {
   void buildSignals();
   void buildObjects();
   void finish();
+  void groupRoundabouts();
 
   // helpers
   static int classRank(const std::string &hw);

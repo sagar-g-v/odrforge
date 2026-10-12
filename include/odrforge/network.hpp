@@ -89,6 +89,7 @@ struct BuildReport {
   int overlapShifts = 0;
   int cornerSidewalks = 0;          ///< sidewalks continued round junction corners
   int cornerSidewalksTooTight = 0;  ///< corners whose arm cuts leave no room for the sidewalk to turn
+  int cornerNoses = 0;              ///< acute corners (forks): the sidewalk ends in a nose
   int steepSpots = 0;        ///< samples steeper than 20 %
   int steepNotInTerrain = 0; ///< ... of which the measured terrain is > 3 % less steep (artefacts)  ///< roads shifted sideways to remove side-by-side carriageway overlaps
   std::vector<std::string> warnings;

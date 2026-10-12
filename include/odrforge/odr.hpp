@@ -175,11 +175,18 @@ struct Header {
   double offX = 0, offY = 0, offZ = 0, offHdg = 0;
 };
 
+/// OpenDRIVE 1.9 §12.13 junction group (1.4+): junctions that belong together, e.g. a roundabout.
+struct JunctionGroup {
+  std::string id, name, type = "roundabout";  ///< roundabout | unknown
+  std::vector<std::string> junctionIds;
+};
+
 struct OpenDrive {
   Header header;
   std::vector<Road> roads;
   std::vector<Junction> junctions;
   std::vector<Controller> controllers;
+  std::vector<JunctionGroup> junctionGroups;
 };
 
 struct WriteOptions {

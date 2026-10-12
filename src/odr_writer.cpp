@@ -79,6 +79,24 @@ std::vector<Poly3> withoutRedundantRecords(const std::vector<Poly3> &records) {
   return kept;
 }
 
+// The same along a road (records with absolute s, the last valid to roadEnd): a record is left out
+// when the kept polynomial reproduces it over its whole span within `tolerance` (m, or rad for
+// superelevation) - the curve the file describes moves by less than that.
+std::vector<Poly3> withoutRedundantRecords(const std::vector<Poly3> &records, double roadEnd, double tolerance) {
+  std::vector<Poly3> kept;
+  for (size_t i = 0; i < records.size(); ++i) {
+    const Poly3 &r = records[i];
+    const double span = (i + 1 < records.size() ? records[i + 1].s : roadEnd) - r.s;
+    bool reproduced = !kept.empty() && span > 0.0;
+    for (int k = 0; reproduced && k <= 8; ++k) {
+      const double ds = span * k / 8.0;
+      reproduced = std::abs(kept.back().eval(r.s + ds - kept.back().s) - r.eval(ds)) < tolerance;
+    }
+    if (!reproduced) kept.push_back(r);
+  }
+  return kept;
+}
+
 void poly(pugi::xml_node parent, const char *name, const Poly3 &p, const Ctx &c, const char *sName = "s") {
   auto n = parent.append_child(name);
   attrS(n, sName, p.s);
@@ -231,7 +249,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     attrS(e, "s", g.s);
     attrN(e, c, "x", g.x);
     attrN(e, c, "y", g.y);
-    attrN(e, c, "hdg", g.hdg);
+    attrN(e, c, "hdg", normalizeAngle(g.hdg));  // OpenDRIVE 1.9 §9.2: heading in (-pi, pi]
     attrS(e, "length", g.length);
     switch (g.type()) {
       case GeomType::Line: e.append_child("line"); break;
@@ -262,11 +280,15 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     }
   }
   auto ep = n.append_child("elevationProfile");
-  for (const auto &e : withoutRedundantRecords(r.elevation)) poly(ep, "elevation", e, c);
+  // below what any consumer resolves; lane offset shapes the lane borders, whose heading must stay
+  // continuous to 1e-4 rad, so it is kept far tighter than height
+  constexpr double kSameHeight = 1e-4, kSameBank = 1e-5, kSameOffset = 1e-6;  // m, rad, m
+  for (const auto &e : withoutRedundantRecords(r.elevation, r.length(), kSameHeight)) poly(ep, "elevation", e, c);
   auto lp = n.append_child("lateralProfile");
-  for (const auto &e : withoutRedundantRecords(r.superelevation)) poly(lp, "superelevation", e, c);
+  for (const auto &e : withoutRedundantRecords(r.superelevation, r.length(), kSameBank))
+    poly(lp, "superelevation", e, c);
   auto lanes = n.append_child("lanes");
-  for (const auto &o : withoutRedundantRecords(r.laneOffset)) poly(lanes, "laneOffset", o, c);
+  for (const auto &o : withoutRedundantRecords(r.laneOffset, r.length(), kSameOffset)) poly(lanes, "laneOffset", o, c);
   for (const auto &sec : r.lanes) {
     auto sn = lanes.append_child("laneSection");
     attrS(sn, "s", sec.s);
@@ -452,6 +474,14 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
       attr(x, "type", "0");
       attr(x, "sequence", std::to_string(ct.sequence));
     }
+  }
+  // OpenDRIVE 1.9 §12.13 (XSD 1.4 - 1.8.1: after the junctions)
+  for (const auto &g : od.junctionGroups) {
+    auto e = root.append_child("junctionGroup");
+    attr(e, "name", g.name);
+    attr(e, "id", g.id);
+    attr(e, "type", g.type);
+    for (const auto &jid : g.junctionIds) attr(e.append_child("junctionReference"), "junction", jid);
   }
   return doc;
 }

@@ -328,9 +328,10 @@ TEST_CASE("elevation: a road measured at a single point stays level (no extrapol
 namespace {
 
 /// height of the plain road picked by `pick` whose reference line passes within 3 m of (x, y); NaN if none
-double zThrough(const odr::OpenDrive &od, double x, double y, const std::function<bool(const odr::Road &)> &pick) {
+double zThrough(const odr::OpenDrive &od, double x, double y, const std::function<bool(const odr::Road &)> &pick,
+                bool junctionRoadsToo = false) {
   for (const auto &r : od.roads) {
-    if (r.junction != "-1" || !pick(r)) continue;
+    if ((r.junction != "-1" && !junctionRoadsToo) || !pick(r)) continue;
     double s, t;
     r.planView.project({x, y}, s, t);
     if (std::abs(t) < 3.0 && s > 0.5 && s < r.length() - 0.5) return odr::elevationAt(r, s);
@@ -537,7 +538,8 @@ TEST_CASE("grade separation without elevation data: structures closer than any r
     CHECK(grade < 0.122);
     CHECK(zFar < 1e-6);
     CHECK(v.count("quality.max_grade") == 0);
-    CHECK(zThrough(od, 0, 0, isBridge) >= zThrough(od, 0, 0, isStreet) - 1e-6);  // still above the street
+    // still above the street (which may run through the junction's curb return under the bridge)
+    CHECK(zThrough(od, 0, 0, isBridge) >= zThrough(od, 0, 0, isStreet, true) - 1e-6);
     bool reported = false;
     for (const auto &w : rep.warnings) reported |= w.find("storey reduced") != std::string::npos;
     CHECK(reported);
