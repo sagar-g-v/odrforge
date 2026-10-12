@@ -17,6 +17,10 @@ import html
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from annex_f import RULES as ANNEX_F_CHECKS  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MAP_RULES = os.path.join(REPO, "docs", "reference", "asam_opendrive_1.9.0", "16_annexes", "map_rules.html")
@@ -24,6 +28,19 @@ VALIDATOR = os.path.join(REPO, "src", "validate.cpp")
 RULE_MAP = os.path.join(REPO, "docs", "rules", "rule_map.json")
 RULES_JSON = os.path.join(REPO, "docs", "rules", "annex_f_rules.json")
 RULES_MD = os.path.join(REPO, "docs", "RULES.md")
+
+# Rules the official ASAM checker (asam_qc.py, qc-opendrive 8baf0a5) implements.
+ASAM_QC_CHECKS = {
+    "road.geometry.contact_point", "road.geometry.elem_asc_order", "performance.avoid_redundant_info",
+    "road.lane.level_true_one_side", "road.lane.access.no_mix_of_deny_or_allow",
+    "road.lane.link.lanes_across_laneSections", "road.lane.link.new_lane_appear",
+    "road.lane.link.zero_width_at_start", "road.lane.link.zero_width_at_end", "road.linkage.is_junction_needed",
+    "junctions.connection.connect_road_no_incoming_road", "junctions.connection.one_link_to_incoming",
+    "junctions.connection.start_along_linkage", "junctions.connection.end_opposite_linkage",
+    "road.lane.border.overlap_with_inner_lanes", "road.geometry.paramPoly3.length_match",
+    "road.geometry.paramPoly3.arcLength_range", "road.geometry.paramPoly3.normalized_range",
+    "road.geometry.paramPoly3.valid_parameters",
+}
 
 UID = re.compile(r"asam\.net:xodr:([0-9.]+):([A-Za-z0-9_.\-]+)")
 SECTION = re.compile(r"^(F(?:\.\d+)+)\s+(\S.*)$")
@@ -88,8 +105,14 @@ def catalogue():
     hand = json.load(open(RULE_MAP, encoding="utf-8")) if os.path.exists(RULE_MAP) else {}
     for rule in rules:
         entry = hand_entry(hand, rule["path"])
-        if rule["path"] in validator_ids:
-            rule.update(status="checked", check=f"validate.cpp {rule['path']}", note=entry.get("note", ""))
+        checks = [name for name, implemented in (
+            ("validate.cpp", rule["path"] in validator_ids),
+            ("annex_f.py", rule["path"] in ANNEX_F_CHECKS),
+            ("ASAM qc-opendrive", rule["path"] in ASAM_QC_CHECKS)) if implemented]
+        if entry.get("status") == "checked":
+            checks.append(entry["check"])
+        if checks:
+            rule.update(status="checked", check="; ".join(checks), note=entry.get("note", ""))
         else:
             rule.update(status=entry.get("status", "open"), check=entry.get("check", ""), note=entry.get("note", ""))
     own = sorted(validator_ids - {r["path"] for r in rules})

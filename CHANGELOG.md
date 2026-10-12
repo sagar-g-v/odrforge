@@ -4,6 +4,22 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Fixed
+- **OpenDRIVE 1.4 schema conformance of the carla profile** (found by the official ASAM checker):
+  road types `townExpressway` .. `townPlayStreet` are written as `town` before 1.5; tunnels are
+  written before bridges (every schema fixes that order); junctions left without any connection are
+  removed. A new CTest validates every scenario against the OpenDRIVE 1.4H XSD as well as 1.8.1.
+  `rule="LHT"` stays on left-hand-traffic roads in 1.4 files (documented deviation: without it
+  readers drive every lane against its traffic).
+- **Redundant records** (Annex F `performance.avoid_redundant_info`): elevation, superelevation,
+  lane offset and lane width records that only continue the previous cubic are left out. Files are
+  10 - 18 % smaller; every curve is unchanged (largest difference 5e-8 m over the six test areas).
+
+### Added
+- `tools/inspect/annex_f.py` (57 Annex F rules on the written file, with a mutation self-test) and
+  `tools/inspect/asam_qc.py` (the official ASAM qc-opendrive checker). `docs/RULES.md` now lists
+  116 of the 274 Annex F rules as checked, 144 as not applicable, 14 open (phases 1 - 3).
+
 ### Changed
 - **Two output profiles.** `standard` (OpenDRIVE 1.8, the default) and `carla` (OpenDRIVE 1.4 plus
   CARLA conventions). `asam`, `asam18` and `esmini` are accepted as `standard`; an unknown name is

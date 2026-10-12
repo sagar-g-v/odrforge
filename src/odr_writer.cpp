@@ -1,7 +1,9 @@
+#include <cmath>
 #include <cstdio>
 #include <pugixml.hpp>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 #include "odrforge/odr.hpp"
 #include "odrforge/spec_revision.hpp"
@@ -60,6 +62,23 @@ void attr(pugi::xml_node n, const char *k, const std::string &v) { n.append_attr
 void attrN(pugi::xml_node n, const Ctx &c, const char *k, double v) { attr(n, k, c.num(v)); }
 void attrS(pugi::xml_node n, const char *k, double v) { attr(n, k, Ctx::sNum(v)); }
 
+// True when `next` only restates `prev` from its own start: the same cubic rebased to next.s.
+bool continuesUnchanged(const Poly3 &prev, const Poly3 &next) {
+  constexpr double kSame = 1e-9;
+  const double ds = next.s - prev.s;
+  return std::abs(prev.eval(ds) - next.a) < kSame && std::abs(prev.deriv(ds) - next.b) < kSame &&
+         std::abs(prev.c + 3.0 * prev.d * ds - next.c) < kSame && std::abs(prev.d - next.d) < kSame;
+}
+
+// OpenDRIVE 1.9 Annex F performance.avoid_redundant_info (1.7.0): a record that repeats the
+// previous polynomial is left out (elevation, superelevation, laneOffset, lane width).
+std::vector<Poly3> withoutRedundantRecords(const std::vector<Poly3> &records) {
+  std::vector<Poly3> kept;
+  for (const Poly3 &r : records)
+    if (kept.empty() || !continuesUnchanged(kept.back(), r)) kept.push_back(r);
+  return kept;
+}
+
 void poly(pugi::xml_node parent, const char *name, const Poly3 &p, const Ctx &c, const char *sName = "s") {
   auto n = parent.append_child(name);
   attrS(n, sName, p.s);
@@ -67,6 +86,13 @@ void poly(pugi::xml_node parent, const char *name, const Poly3 &p, const Ctx &c,
   attrN(n, c, "b", p.b);
   attrN(n, c, "c", p.c);
   attrN(n, c, "d", p.d);
+}
+
+// OpenDRIVE 1.9 §10.4 road type. The town subtypes (townExpressway .. townPlayStreet) arrived in
+// 1.5; a 1.4 file says town.
+std::string roadTypeFor(const std::string &type, const SpecRevision &spec) {
+  const bool townSubtype = type.rfind("town", 0) == 0 && type != "town";
+  return townSubtype && !spec.hasTownRoadSubtypes() ? "town" : type;
 }
 
 struct LaneTypeAndDirection {
@@ -98,7 +124,7 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     if (l.link.successor) attr(ln.append_child("successor"), "id", std::to_string(*l.link.successor));
   }
   if (l.id != 0)
-    for (const auto &w : l.widths) poly(n, "width", w, c, "sOffset");
+    for (const auto &w : withoutRedundantRecords(l.widths)) poly(n, "width", w, c, "sOffset");
   for (const auto &m : l.roadMarks) {
     auto r = n.append_child("roadMark");
     attrS(r, "sOffset", m.sOffset);
@@ -191,7 +217,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   for (const auto &t : r.types) {
     auto e = n.append_child("type");
     attrS(e, "s", t.s);
-    attr(e, "type", t.type);
+    attr(e, "type", roadTypeFor(t.type, c.spec));
     if (!t.country.empty() && c.spec.hasRoadTypeCountry()) attr(e, "country", t.country);
     if (t.speedMax) {
       auto sp = e.append_child("speed");
@@ -236,11 +262,11 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     }
   }
   auto ep = n.append_child("elevationProfile");
-  for (const auto &e : r.elevation) poly(ep, "elevation", e, c);
+  for (const auto &e : withoutRedundantRecords(r.elevation)) poly(ep, "elevation", e, c);
   auto lp = n.append_child("lateralProfile");
-  for (const auto &e : r.superelevation) poly(lp, "superelevation", e, c);
+  for (const auto &e : withoutRedundantRecords(r.superelevation)) poly(lp, "superelevation", e, c);
   auto lanes = n.append_child("lanes");
-  for (const auto &o : r.laneOffset) poly(lanes, "laneOffset", o, c);
+  for (const auto &o : withoutRedundantRecords(r.laneOffset)) poly(lanes, "laneOffset", o, c);
   for (const auto &sec : r.lanes) {
     auto sn = lanes.append_child("laneSection");
     attrS(sn, "s", sec.s);
@@ -293,14 +319,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     }
     writeValidity(e, o.validity);
   }
-  for (const auto &b : r.bridges) {
-    auto e = objs.append_child("bridge");
-    attrS(e, "s", b.s);
-    attrS(e, "length", b.length);
-    attr(e, "name", b.name);
-    attr(e, "id", b.id);
-    attr(e, "type", b.type.empty() ? "concrete" : b.type);
-  }
+  // OpenDRIVE 1.9 §13.11, §13.12 (XSD 1.4 - 1.8.1 t_road_objects): all tunnels, then all bridges.
   for (const auto &b : r.tunnels) {
     auto e = objs.append_child("tunnel");
     attrS(e, "s", b.s);
@@ -310,6 +329,14 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     attr(e, "type", b.type.empty() ? "standard" : b.type);
     attrN(e, c, "lighting", 0.5);
     attrN(e, c, "daylight", 0.0);
+  }
+  for (const auto &b : r.bridges) {
+    auto e = objs.append_child("bridge");
+    attrS(e, "s", b.s);
+    attrS(e, "length", b.length);
+    attr(e, "name", b.name);
+    attr(e, "id", b.id);
+    attr(e, "type", b.type.empty() ? "concrete" : b.type);
   }
   auto sigs = n.append_child("signals");
   for (const auto &s : r.signals) {

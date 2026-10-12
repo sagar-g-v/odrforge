@@ -94,6 +94,9 @@ if(ODRFORGE_BUILD_TESTS)
       add_test(NAME xsd_conformance COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
                ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${ODRFORGE_TEST_OUT})
       set_tests_properties(xsd_conformance PROPERTIES FIXTURES_REQUIRED scenario_files)
+      add_test(NAME xsd_conformance_1_4 COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py --allow-lht-rule
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_4/OpenDRIVE_1.4H.xsd ${ODRFORGE_TEST_OUT}/rev4)
+      set_tests_properties(xsd_conformance_1_4 PROPERTIES FIXTURES_REQUIRED scenario_files)
       add_test(NAME xsd_rejects_invalid COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
                ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/invalid_roadmark_height.xodr)
       set_tests_properties(xsd_rejects_invalid PROPERTIES WILL_FAIL TRUE)

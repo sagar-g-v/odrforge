@@ -355,6 +355,21 @@ TEST_CASE("output profiles: standard is OpenDRIVE 1.8, carla is 1.4, older names
   CHECK(TargetProfile{}.spec().hasLaneDirection() && !TargetProfile::byName("carla").spec().hasLaneDirection());
 }
 
+TEST_CASE("writer leaves out records that repeat the previous polynomial (performance.avoid_redundant_info)") {
+  odr::OpenDrive od = sampleNetwork();
+  odr::Road &r = od.roads[0];
+  r.elevation = {{0.0, 1.0, 0.02, 0, 0}, {10.0, 1.2, 0.02, 0, 0}, {20.0, 1.4, 0.03, 0, 0}};  // 2nd repeats 1st
+  pugi::xml_document d;
+  CHECK(d.load_string(odr::toString(od, {8, 12}).c_str()));
+  const auto profile = d.select_node("//road/elevationProfile").node();
+  int records = 0;
+  for (auto e : profile.children("elevation")) {
+    ++records;
+    (void)e;
+  }
+  CHECK(records == 2);
+}
+
 TEST_CASE("writer precision keeps at least 10 significant digits") {
   odr::OpenDrive od = sampleNetwork();
   od.roads[0].planView.elements[0].x = 1234.567890123;

@@ -17,8 +17,8 @@
   "path": "header.offset.centered_coords",
   "level": "should",
   "description": "The <offset> element should be such that the x and y coordinates of ASAM OpenDRIVE are approximately centered around (0;0). If the x and y coordinates are too large, applications using float coordinates internally might not be able to process them accurately enough due to the limited precision of IEEE 754 double precision floating point numbers.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -40,7 +40,7 @@
   "level": "shall",
   "description": "IDs shall be unique within a class.",
   "status": "checked",
-  "check": "validate.cpp ids.id_unique_in_class",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -62,7 +62,7 @@
   "level": "info",
   "description": "Only defined IDs may be referenced.",
   "status": "checked",
-  "check": "validate.cpp ids.only_ref_defined_ids",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -83,8 +83,8 @@
   "path": "junctions.type_default_no_linked_road",
   "level": "shall",
   "description": "The <connection> element of a junction of @type=\"default\" or @type=\"virtual\" shall not have the @linkedRoad attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -94,8 +94,8 @@
   "path": "junctions.type_direct_no_conn_road",
   "level": "shall",
   "description": "The <connection> element of a junction of @type=\"direct\" shall not have the @connectingRoad attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -171,8 +171,8 @@
   "path": "junctions.common.junctions_no_pred_succ",
   "level": "info",
   "description": "Unlike roads, junctions do not have a predecessor or successor.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -216,7 +216,7 @@
   "level": "shall",
   "description": "Connecting roads shall not be incoming roads.",
   "status": "checked",
-  "check": "validate.cpp junctions.connection.connect_road_no_incoming_road",
+  "check": "validate.cpp; ASAM qc-opendrive; junction_audit.py; validate.cpp",
   "note": ""
  },
  {
@@ -226,8 +226,8 @@
   "path": "junctions.connection.end_opposite_linkage",
   "level": "shall",
   "description": "The value end shall be used to indicate that the connecting road runs along the opposite direction of the linkage indicated in the <laneLink> element",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -237,9 +237,9 @@
   "path": "junctions.connection.lane_change_one_con_road",
   "level": "info",
   "description": "By one connecting road with multiple <laneLink> elements for the connections between the lanes.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "informative modelling option"
  },
  {
   "section": "F.4.6.4",
@@ -248,8 +248,8 @@
   "path": "junctions.connection.no_connecting_road_direct",
   "level": "shall",
   "description": "The @connectingRoad attribute shall not be used for junctions with @type=\"direct\".",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -259,9 +259,9 @@
   "path": "junctions.connection.no_lane_change_for_mult_con_roads",
   "level": "info",
   "description": "By multiple connecting roads, each with one <laneLink> element for the connection between two specific lanes. Lane changes within this junction are not possible.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "informative modelling option"
  },
  {
   "section": "F.4.6.6",
@@ -271,7 +271,7 @@
   "level": "shall",
   "description": "There shall only be one <connection> for a specific combination of @incomingRoad and @connectingRoad. For each <connection>, its <laneLink> elements shall only be specified for the lanes that lead into the junction.",
   "status": "checked",
-  "check": "validate.cpp junctions.connection.one_link_to_incoming",
+  "check": "validate.cpp; ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -282,7 +282,7 @@
   "level": "shall",
   "description": "The linked lanes shall fit smoothly as described for roads (see Section 10.3, \"Road linkage\").",
   "status": "checked",
-  "check": "validate.cpp junctions.connection.smooth_fit",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -292,8 +292,8 @@
   "path": "junctions.connection.start_along_linkage",
   "level": "shall",
   "description": "The value start shall be used to indicate that the connecting road runs along the linkage indicated in the <laneLink> element.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -402,8 +402,8 @@
   "path": "junctions.direct.connecting_road_attribute_usage",
   "level": "shall",
   "description": "The @connectingRoad attribute shall not be used for junctions with @type=\"direct\".",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -413,8 +413,8 @@
   "path": "junctions.direct.correct_type_linked_road_usage",
   "level": "shall",
   "description": "The @linkedRoad attribute shall only be used for junctions with @type=\"direct\".",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -424,9 +424,9 @@
   "path": "junctions.direct.flat_exits_entries",
   "level": "info",
   "description": "Currently only flat entries and exits can be modeled by overlapping direct junctions.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "informative statement"
  },
  {
   "section": "F.4.9.4",
@@ -589,8 +589,8 @@
   "path": "junctions.priority.high_and_low_attr",
   "level": "shall",
   "description": "<priority> elements shall be defined with a pair of one @high and one @low attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -600,8 +600,8 @@
   "path": "junctions.priority.no_signals",
   "level": "should",
   "description": "<priority> elements should only be used if there are no signals defined.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -699,8 +699,8 @@
   "path": "performance.avoid_redundant_info",
   "level": "should",
   "description": "Redundant elements should be avoided, such as elevation or laneSection nodes for consecutive s-coordinates with identical attributes, or multiple geometry nodes for straight lines.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -710,8 +710,8 @@
   "path": "road.length_sum_geometries",
   "level": "should",
   "description": "The road length should be the sum of the lengths of all <geometry> elements",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -755,7 +755,7 @@
   "level": "shall",
   "description": "There shall be at least two <cornerLocal> elements inside an <outline> element.",
   "status": "checked",
-  "check": "validate.cpp road.corner_local.element_min_amount",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -765,8 +765,8 @@
   "path": "road.corner_local.first_id_zero",
   "level": "should",
   "description": "The @id attribute of the first <cornerLocal> element of an object should be 0.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -776,9 +776,9 @@
   "path": "road.corner_local.mandatory_id_with_markings",
   "level": "shall",
   "description": "The @id attribute of a <cornerLocal> element shall be mandatory when the parent also has a <markings> element.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "no object markings written (corner ids are written anyway)"
  },
  {
   "section": "F.6.5.5",
@@ -787,8 +787,8 @@
   "path": "road.corner_local.sequential_id_values",
   "level": "should",
   "description": "The @id attribute should increase by 1 for each <cornerLocal> element in the order they are listed from top to bottom.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1062,8 +1062,8 @@
   "path": "road.elevation.elem_asc_order",
   "level": "shall",
   "description": "<elevation> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1084,8 +1084,8 @@
   "path": "road.geometry.contact_point",
   "level": "shall",
   "description": "If two roads are connected without a junction, the road reference line of a new road shall always begin at the <contactPoint> element of its successor or predecessor road. The road reference lines may be directed in opposite directions.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1096,7 +1096,7 @@
   "level": "shall",
   "description": "<geometry> elements shall be defined in ascending order along the road reference line according to the s-coordinate.",
   "status": "checked",
-  "check": "validate.cpp road.geometry.elem_asc_order",
+  "check": "validate.cpp; ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1129,7 +1129,7 @@
   "level": "shall",
   "description": "Each road shall have a road reference line.",
   "status": "checked",
-  "check": "validate.cpp road.geometry.refline_exists",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1140,7 +1140,7 @@
   "level": "shall",
   "description": "A road reference line shall have no gaps.",
   "status": "checked",
-  "check": "validate.cpp road.geometry.refline_no_gaps",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1151,7 +1151,7 @@
   "level": "should",
   "description": "A road reference line should have no kinks.",
   "status": "checked",
-  "check": "validate.cpp road.geometry.refline_no_kinks",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1162,7 +1162,7 @@
   "level": "shall",
   "description": "The s-value of each <geometry> shall be the sum of all <geometry> lengths prior",
   "status": "checked",
-  "check": "validate.cpp road.geometry.s-value_sum",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1172,8 +1172,8 @@
   "path": "road.geometry.arc.no_zero_curvature",
   "level": "should",
   "description": "@curvature should not be zero.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1183,8 +1183,8 @@
   "path": "road.geometry.paramPoly3.arcLength_range",
   "level": "shall",
   "description": "If @pRange=\"arcLength\", p shall be chosen in [0, @length from <geometry> ].",
-  "status": "not_applicable",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": "reference lines are lines, arcs and spirals only"
  },
  {
@@ -1194,8 +1194,8 @@
   "path": "road.geometry.paramPoly3.length_match",
   "level": "should",
   "description": "The actual curve length, as determined by numerical integration over the parameter range, should match @length.",
-  "status": "not_applicable",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": "reference lines are lines, arcs and spirals only"
  },
  {
@@ -1205,8 +1205,8 @@
   "path": "road.geometry.paramPoly3.normalized_range",
   "level": "shall",
   "description": "If @pRange=\"normalized\", p shall be chosen in [0, 1].",
-  "status": "not_applicable",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": "reference lines are lines, arcs and spirals only"
  },
  {
@@ -1216,8 +1216,8 @@
   "path": "road.geometry.paramPoly3.valid_parameters",
   "level": "should",
   "description": "The local u/v coordinate system should be aligned with the s/t coordinate system of the start point (meaning that the curve starts in the direction given by @hdg, and at the position given by @x and @y). To achieve this, the polynomial parameter coefficients have to be @aU=@aV=@bV=0, @bU>0.",
-  "status": "not_applicable",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": "reference lines are lines, arcs and spirals only"
  },
  {
@@ -1227,8 +1227,8 @@
   "path": "road.geometry.spiral.curvature_change",
   "level": "should",
   "description": "@curvStart and @curvEnd should not be the same.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1249,8 +1249,8 @@
   "path": "road.lane.center_lane",
   "level": "shall",
   "description": "Each road shall have at least one lane layer with a center lane.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1283,7 +1283,7 @@
   "level": "shall",
   "description": "There shall always be exactly one center lane at each s-position.",
   "status": "checked",
-  "check": "validate.cpp road.lane.center_lane_singular",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1315,8 +1315,8 @@
   "path": "road.lane.lane_listing",
   "level": "should",
   "description": "For better orientation, lanes should be listed from left to right, that is with descending ID.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1338,7 +1338,7 @@
   "level": "shall",
   "description": "Lane numbering shall be consecutive without any gaps.",
   "status": "checked",
-  "check": "validate.cpp road.lane.lane_order_no_gaps",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1348,8 +1348,8 @@
   "path": "road.lane.lane_reverse_left_right",
   "level": "shall",
   "description": "@direction=\"reverse\" shall not be used to change from right-hand traffic to left-hand traffic and vice versa.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1360,7 +1360,7 @@
   "level": "should",
   "description": "In order to be drivable, each lane section should contain at least one <right> or <left> element that is valid for the whole length of that section.",
   "status": "checked",
-  "check": "validate.cpp road.lane.lane_section_drivable",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1371,7 +1371,7 @@
   "level": "shall",
   "description": "The first lane section shall be defined with a value of 0.0 for the @s attribute.",
   "status": "checked",
-  "check": "validate.cpp road.lane.lane_sect_first",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1392,8 +1392,8 @@
   "path": "road.lane.level_true_one_side",
   "level": "shall",
   "description": "If a lane has @level=\"true\", then all further outward lanes shall be lanes with @level=\"true\" until the edge of the road is reached.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py; ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1425,8 +1425,8 @@
   "path": "road.lane.access.elem_asc_order",
   "level": "shall",
   "description": "<access> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1436,8 +1436,8 @@
   "path": "road.lane.access.no_mix_of_deny_or_allow",
   "level": "shall",
   "description": "At a given s-position, either only deny or only allow values shall be given.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py; ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1480,8 +1480,8 @@
   "path": "road.lane.border.overlap_with_inner_lanes",
   "level": "shall",
   "description": "Lane borders shall not intersect inner lanes.",
-  "status": "not_applicable",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": "lanes use width, never border"
  },
  {
@@ -1491,8 +1491,8 @@
   "path": "road.lane.height.center_lane_no_height",
   "level": "shall",
   "description": "The center lane shall not be elevated by lane height.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1502,8 +1502,8 @@
   "path": "road.lane.height.elem_asc_order",
   "level": "shall",
   "description": "<height> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1513,8 +1513,8 @@
   "path": "road.lane.lane_properties.elem_asc_order",
   "level": "shall",
   "description": "Lane geometries of identical types shall be defined in ascending order.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1590,8 +1590,8 @@
   "path": "road.lane.link.lanes_across_laneSections",
   "level": "shall",
   "description": "Lane that continues across the lane sections shall be connected in both directions.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1612,8 +1612,8 @@
   "path": "road.lane.link.new_lane_appear",
   "level": "shall",
   "description": "If a new lane appears besides, only the continuing lane shall be connected to the original lane, not the appearing lane.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1657,7 +1657,7 @@
   "level": "shall",
   "description": "Lanes that have a width of zero at the end of the lane section shall have no <successor> element.",
   "status": "checked",
-  "check": "validate.cpp road.lane.link.zero_width_at_end",
+  "check": "validate.cpp; ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1668,7 +1668,7 @@
   "level": "shall",
   "description": "Lanes that have a width of zero at the beginning of the lane section shall have no <predecessor> element.",
   "status": "checked",
-  "check": "validate.cpp road.lane.link.zero_width_at_start",
+  "check": "validate.cpp; ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1678,8 +1678,8 @@
   "path": "road.lane.material.center_lane_no_material",
   "level": "shall",
   "description": "The center lane shall have no material elements.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1689,8 +1689,8 @@
   "path": "road.lane.material.elem_asc_order",
   "level": "shall",
   "description": "<material> elements shall be defined in ascending order according to the s-coordinate",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1700,8 +1700,8 @@
   "path": "road.lane.road_mark.elem_asc_order",
   "level": "shall",
   "description": "<roadMark> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1711,8 +1711,8 @@
   "path": "road.lane.road_mark.only_outer",
   "level": "shall",
   "description": "<roadMark> elements shall only be used to describe the outer lane marking.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1733,8 +1733,8 @@
   "path": "road.lane.rule.elem_asc_order",
   "level": "shall",
   "description": "<rule> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1755,8 +1755,8 @@
   "path": "road.lane.speed.elem_asc_order",
   "level": "shall",
   "description": "<speed> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1767,7 +1767,7 @@
   "level": "shall",
   "description": "<width> elements shall be defined in ascending order according to the s-coordinate.",
   "status": "checked",
-  "check": "validate.cpp road.lane.width.elem_asc_order",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1778,7 +1778,7 @@
   "level": "shall",
   "description": "Width (ds) shall be greater than or equal to zero.",
   "status": "checked",
-  "check": "validate.cpp road.lane.width.lane_width_validity",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1799,8 +1799,8 @@
   "path": "road.lane.width.width_defined_whole_section",
   "level": "shall",
   "description": "The width of the lane shall be defined for the full length of the lane section. This means that there must be a <width> element for @s=\"0\".",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1810,8 +1810,8 @@
   "path": "road.lanes.lane_offset.elem_asc_order",
   "level": "shall",
   "description": "<laneOffset> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1832,8 +1832,8 @@
   "path": "road.lane_section.elem_asc_order",
   "level": "shall",
   "description": "<laneSection> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1877,7 +1877,7 @@
   "level": "shall",
   "description": "Each road shall have at least one lane section.",
   "status": "checked",
-  "check": "validate.cpp road.lane_section.lane_sect_req",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1899,7 +1899,7 @@
   "level": "shall",
   "description": "The length of lane sections shall be greater than zero.",
   "status": "checked",
-  "check": "validate.cpp road.lane_section.valid_length",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1910,7 +1910,7 @@
   "level": "shall",
   "description": "<predecessor> and/or <successor> shall be defined at both sides of the road linkage and shall be consistent.",
   "status": "checked",
-  "check": "validate.cpp road.linkage.both_sides_consistency",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1920,8 +1920,8 @@
   "path": "road.linkage.is_junction_needed",
   "level": "shall",
   "description": "Two roads shall only be linked directly if the linkage is clear. If the relationship to successor or predecessor is ambiguous, junctions shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "ASAM qc-opendrive",
   "note": ""
  },
  {
@@ -1942,8 +1942,8 @@
   "path": "road.linkage.road_link_attribute_usage",
   "level": "shall",
   "description": "For a road as successor or predecessor the @elementType, @elementId and @contactPoint attributes shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1965,7 +1965,7 @@
   "level": "info",
   "description": "Objects may be of circular or angular shape. The possibilities are mutually exclusive. The shape is defined by the used attributes.",
   "status": "checked",
-  "check": "validate.cpp road.object.circular_vs_angular",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -1975,8 +1975,8 @@
   "path": "road.object.orientation",
   "level": "shall",
   "description": "The direction for which objects are valid shall be specified.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -1986,8 +1986,8 @@
   "path": "road.object.s_t_coords",
   "level": "shall",
   "description": "The origin position of the object shall be described with s- and t-coordinates along the road surface.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2030,9 +2030,9 @@
   "path": "road.object.bridges.define_type",
   "level": "info",
   "description": "Bridges may be restricted to certain lanes, using the <laneValidity> element.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "informative statement, nothing to check"
  },
  {
   "section": "F.6.16.6",
@@ -2041,8 +2041,8 @@
   "path": "road.object.bridges.from_lower_equal_to",
   "level": "shall",
   "description": "The value of the @fromLane attribute shall be lower than or equal to the value of the @toLane attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2052,8 +2052,8 @@
   "path": "road.object.bridges.type_definition",
   "level": "shall",
   "description": "The @type of the bridges shall be specified.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2206,8 +2206,8 @@
   "path": "road.object.outline.exactly_one_outer",
   "level": "shall",
   "description": "<outlines> elements shall have exactly one <outline> element with @outer=true.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2217,9 +2217,9 @@
   "path": "road.object.outline.inner_outline_touches_outer",
   "level": "shall",
   "description": "If an inner outline touches the outer outline, the reference point shall be identical in both outlines.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "one outer outline per object, no inner outlines"
  },
  {
   "section": "F.6.16.10",
@@ -2228,8 +2228,8 @@
   "path": "road.object.outline.outline_followed_by_corner",
   "level": "shall",
   "description": "An <outline> element shall be followed by two or more <cornerRoad> elements, by two or more <cornerLocal> elements, or by one or more <curveLocal> elements.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2239,9 +2239,9 @@
   "path": "road.object.outline.points_inside_box",
   "level": "info",
   "description": "All points of the <outline> element must be located inside the bounding volume.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "objects with an outline carry no separate bounding box size"
  },
  {
   "section": "F.6.16.11",
@@ -2250,8 +2250,8 @@
   "path": "road.object.reference.from_lower_equal_to",
   "level": "shall",
   "description": "The value of the @fromLane attribute shall be lower than or equal to the value of the @toLane attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2261,9 +2261,9 @@
   "path": "road.object.repeating.attributes_with_outline_skeleton",
   "level": "shall",
   "description": "@lengthStart, @lengthEnd, @widthStart, @widthEnd, @heightStart, and @heightEnd shall not be applicable for objects with an <outlines>, an <outline>, or a <skeleton> element.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "no <repeat> written"
  },
  {
   "section": "F.6.16.12",
@@ -2272,9 +2272,9 @@
   "path": "road.object.repeating.no_widthstart_end_with_radius",
   "level": "shall",
   "description": "@widthStart and @widthEnd shall not be applicable for objects where @radius is set.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "no <repeat> written"
  },
  {
   "section": "F.6.16.12",
@@ -2283,9 +2283,9 @@
   "path": "road.object.repeating.outline_use_cornerlocal",
   "level": "shall",
   "description": "Repeated objects with an outline shall use <cornerLocal>",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "no <repeat> written"
  },
  {
   "section": "F.6.16.12",
@@ -2294,9 +2294,9 @@
   "path": "road.object.repeating.valid_s_length",
   "level": "shall",
   "description": "Repeated objects shall have valid s-coordinates and lengths.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "no <repeat> written"
  },
  {
   "section": "F.6.16.13",
@@ -2547,8 +2547,8 @@
   "path": "road.object.tunnels.from_lower_equal_to",
   "level": "shall",
   "description": "The value of the @fromLane attribute shall be lower than or equal to the value of the @toLane attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2558,8 +2558,8 @@
   "path": "road.object.tunnels.type_definition",
   "level": "shall",
   "description": "The @type of the tunnel shall be specified.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2580,8 +2580,8 @@
   "path": "road.object.validty.from_lower_equal_to",
   "level": "shall",
   "description": "The value of the @fromLane attribute shall be lower than or equal to the value of the @toLane attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2591,8 +2591,8 @@
   "path": "road.object.validty.left_hand_traffic_lane_ids",
   "level": "shall",
   "description": "For left-hand-traffic, @orientation=\"-\" implies that the <validity> element shall only span negative lane ids, while @orientation=\"+\" implies that the <validity> element shall only span positive lane ids. If the given <validity> elements span both, positive and negative lane ids, @orientation=\"none\" shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2602,8 +2602,8 @@
   "path": "road.object.validty.right_hand_traffic_lane_ids",
   "level": "shall",
   "description": "For right-hand traffic, @orientation=\"+\" implies that the <validity> element shall only span negative lane ids, while @orientation=\"-\" implies that the <validity> element shall only span positive lane ids. If the given <validity> elements span both, positive and negative lane ids, @orientation=\"none\" shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2746,7 +2746,7 @@
   "level": "shall",
   "description": "Signals shall have a specific type and subtype.",
   "status": "checked",
-  "check": "validate.cpp road.signal.signal_type",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -2756,8 +2756,8 @@
   "path": "road.signal.use_country_code",
   "level": "shall",
   "description": "A country code shall be added to refer to country-specific rules using the @country attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2823,7 +2823,7 @@
   "level": "shall",
   "description": "Controllers shall be valid for one or more signals.",
   "status": "checked",
-  "check": "validate.cpp road.signal.controller.valid_for_signals",
+  "check": "validate.cpp",
   "note": ""
  },
  {
@@ -2866,8 +2866,8 @@
   "path": "road.signal.reference.from_lower_equal_to",
   "level": "shall",
   "description": "The value of the @fromLane attribute shall be lower than or equal to the value of the @toLane attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2877,8 +2877,8 @@
   "path": "road.signal.reference.left_hand_traffic_lane_ids",
   "level": "shall",
   "description": "For left-hand-traffic, @orientation=\"-\" implies that the <validity> element shall only span negative lane ids, while @orientation=\"+\" implies that the <validity> element shall only span positive lane ids. If the given <validity> elements span both, positive and negative lane ids, @orientation=\"none\" shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2888,8 +2888,8 @@
   "path": "road.signal.reference.right_hand_traffic_lane_ids",
   "level": "shall",
   "description": "For right-hand traffic, @orientation=\"+\" implies that the <validity> element shall only span negative lane ids, while @orientation=\"-\" implies that the <validity> element shall only span positive lane ids. If the given <validity> elements span both, positive and negative lane ids, @orientation=\"none\" shall be used",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2899,8 +2899,8 @@
   "path": "road.signal.reference.specify_direction",
   "level": "shall",
   "description": "The direction on the road for which the referenced signal is valid shall be specified for every <signalReference> element using the @orientation attribute.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2910,8 +2910,8 @@
   "path": "road.signal.reference.used_for_signals_only",
   "level": "shall",
   "description": "Signal reference shall be used for signals only.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2921,9 +2921,9 @@
   "path": "road.signal.semantics.no_semantics_without_category",
   "level": "shall",
   "description": "Signal semantics shall not be specified for signs if no category for the desired traffic behavior exists.",
-  "status": "open",
+  "status": "not_applicable",
   "check": "",
-  "note": ""
+  "note": "no signal <semantics> written"
  },
  {
   "section": "F.6.19.10",
@@ -2932,8 +2932,8 @@
   "path": "road.signal.validity.left_hand_traffic_lane_ids",
   "level": "shall",
   "description": "For left-hand-traffic, @orientation=\"-\" implies that the <validity> element shall only span negative lane ids, while @orientation=\"+\" implies that the <validity> element shall only span positive lane ids. If the given <validity> elements span both, positive and negative lane ids, @orientation=\"none\" shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2943,8 +2943,8 @@
   "path": "road.signal.validity.right_hand_traffic_lane_ids",
   "level": "shall",
   "description": "For right-hand traffic, @orientation=\"+\" implies that the <validity> element shall only span negative lane ids, while @orientation=\"-\" implies that the <validity> element shall only span positive lane ids. If the given <validity> elements span both, positive and negative lane ids, @orientation=\"none\" shall be used.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2954,8 +2954,8 @@
   "path": "road.superelevation.elem_asc_order",
   "level": "shall",
   "description": "<superelevation> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2965,8 +2965,8 @@
   "path": "road.type.create_new_type_in_parent",
   "level": "shall",
   "description": "When the type of road changes, a new <type> element shall be created within the parent <road> element.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2976,8 +2976,8 @@
   "path": "road.type.elem_asc_order",
   "level": "shall",
   "description": "<type> elements shall be defined in ascending order according to the s-coordinate.",
-  "status": "open",
-  "check": "",
+  "status": "checked",
+  "check": "annex_f.py",
   "note": ""
  },
  {
@@ -2999,7 +2999,7 @@
   "level": "shall",
   "description": "There shall only be ALPHA-2 country codes in use, no ALPHA-3 country codes, because only ALPHA-2 country codes support state identifiers.",
   "status": "checked",
-  "check": "validate.cpp road.type.only_alpha_2_country_codes",
+  "check": "validate.cpp",
   "note": ""
  },
  {

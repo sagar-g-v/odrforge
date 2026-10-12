@@ -794,7 +794,21 @@ void Builder::buildObjects() {
   }
 }
 
+namespace {
+
+// OpenDRIVE 1.9 §12.2: a junction exists to connect roads; one whose movements were all dropped
+// is removed (XSD 1.4 also requires at least one <connection>). Nothing references such a
+// junction: its connecting roads went with its movements.
+void dropJunctionsWithoutConnections(odr::OpenDrive &od) {
+  od.junctions.erase(std::remove_if(od.junctions.begin(), od.junctions.end(),
+                                    [](const odr::Junction &j) { return j.connections.empty(); }),
+                     od.junctions.end());
+}
+
+}  // namespace
+
 void Builder::finish() {
+  dropJunctionsWithoutConnections(od);
   // header: extent, georeference, date
   double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
   for (const auto &r : od.roads)

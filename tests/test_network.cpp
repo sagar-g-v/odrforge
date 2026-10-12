@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <set>
 
 #include "odrforge/network.hpp"
@@ -51,12 +52,17 @@ Result build(const OsmBuilder &b, const std::string &country = "US", const std::
   r.od = buildOpenDrive(b.d, b.proj, o, &r.rep);
   r.od.header.revMinor = o.target.revMinor;
   r.val = validate(r.od, o.target);
-  // for the XSD conformance test: every scenario is also written as OpenDRIVE 1.8
+  // for the XSD conformance tests: every scenario is also written in both output profiles,
+  // OpenDRIVE 1.8 (standard, XSD 1.8.1) and 1.4 (carla, XSD 1.4H)
   if (const char *dir = std::getenv("ODRFORGE_TEST_OUT")) {
     static int n = 0;
+    const std::string name = "scenario_" + std::to_string(++n) + "_" + country + "_" + target + ".xodr";
     odr::OpenDrive copy = r.od;
     copy.header.revMinor = 8;
-    odr::write(copy, std::string(dir) + "/scenario_" + std::to_string(++n) + "_" + country + "_" + target + ".xodr", {8, 12});
+    odr::write(copy, std::string(dir) + "/" + name, {8, 12});
+    std::filesystem::create_directories(std::string(dir) + "/rev4");
+    copy.header.revMinor = 4;
+    odr::write(copy, std::string(dir) + "/rev4/" + name, {4, 12});
   }
   if (r.val.errors)
     for (size_t i = 0; i < r.val.messages.size() && i < 10; ++i) std::printf("    %s\n", r.val.messages[i].c_str());
