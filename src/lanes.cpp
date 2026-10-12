@@ -304,88 +304,126 @@ CrossSection reversedCrossSection(const CrossSection &x) {
   return r;
 }
 
-odr::LaneSection makeLaneSection(const CrossSection &x, double s, const CountryProfile &c) {
-  odr::LaneSection sec;
-  sec.s = s;
-  const bool motorwayLike = x.highway == "motorway" || x.highway == "trunk" || x.highway == "motorway_link" ||
-                            x.highway == "trunk_link";
-  auto build = [&](const SideSpec &side, int sign, std::vector<odr::Lane> &out) {
-    int id = sign;
-    const int nDrive = side.drivingCount();
-    int driveSeen = 0;
-    for (size_t i = 0; i < side.lanes.size(); ++i) {
-      const LaneSpec &ls = side.lanes[i];
-      odr::Lane l;
-      l.id = id;
-      id += sign;
-      l.widths.push_back({0.0, ls.width, 0, 0, 0});
-      switch (ls.kind) {
-        case LaneKind::Driving: l.type = "driving"; break;
-        case LaneKind::Bus: l.type = "driving"; l.accessDeny = {"passengerCar", "truck", "motorcycle"}; break;
-        case LaneKind::Bidirectional: l.type = "bidirectional"; break;
-        case LaneKind::Biking: l.type = "biking"; break;
-        case LaneKind::Parking: l.type = "parking"; break;
-        case LaneKind::Shoulder: l.type = "shoulder"; break;
-        case LaneKind::Sidewalk:
-          l.type = "sidewalk";
-          l.heightInner = c.curbHeight;
-          l.heightOuter = c.curbHeight;
-          break;
-      }
-      if (ls.kind == LaneKind::Driving || ls.kind == LaneKind::Bus || ls.kind == LaneKind::Bidirectional) {
-        l.speedMax = side.speed;
-        l.material = "asphalt";
-      }
-      // outer road mark of this lane
-      odr::RoadMark m;
-      const bool isDrive = ls.kind == LaneKind::Driving || ls.kind == LaneKind::Bus;
-      if (isDrive) ++driveSeen;
-      const LaneKind next = i + 1 < side.lanes.size() ? side.lanes[i + 1].kind : LaneKind::Sidewalk;
-      if (isDrive && driveSeen < nDrive) {
-        m.type = "broken";
-        m.color = c.edgeLineColor;
-      } else if (isDrive && (next == LaneKind::Biking || next == LaneKind::Parking || motorwayLike)) {
-        m.type = "solid";
-        m.color = c.edgeLineColor;
-        m.laneChange = "none";
-      } else if (ls.kind == LaneKind::Bidirectional) {
-        m.type = "solid broken";
-        m.color = c.centerLineColor;
-      } else if (ls.kind == LaneKind::Sidewalk || i + 1 == side.lanes.size()) {
-        m.type = "none";
-      } else if (ls.kind == LaneKind::Biking) {
-        m.type = "solid";
-        m.color = c.edgeLineColor;
-      } else {
-        m.type = "none";
-      }
-      if (ls.kind == LaneKind::Bus) m.weight = "bold";
-      l.roadMarks.push_back(m);
-      out.push_back(l);
+namespace {
+
+bool isMotorwayLike(const std::string &highway) {
+  return highway == "motorway" || highway == "trunk" || highway == "motorway_link" || highway == "trunk_link";
+}
+
+bool carriesVehicles(LaneKind k) { return k == LaneKind::Driving || k == LaneKind::Bus || k == LaneKind::Bidirectional; }
+
+bool isDrivingOrBus(LaneKind k) { return k == LaneKind::Driving || k == LaneKind::Bus; }
+
+// OpenDRIVE 1.9 §11.8 lane type, access, height. A bus lane is a driving lane that denies other
+// vehicles (§11.8 access; 1.4 writes deny as implied). A sidewalk is raised by the curb height.
+void setTypeAndAccess(odr::Lane &l, LaneKind kind, const CountryProfile &c) {
+  switch (kind) {
+    case LaneKind::Driving: l.type = "driving"; break;
+    case LaneKind::Bus: l.type = "driving"; l.accessDeny = {"passengerCar", "truck", "motorcycle"}; break;
+    case LaneKind::Bidirectional: l.type = "bidirectional"; break;
+    case LaneKind::Biking: l.type = "biking"; break;
+    case LaneKind::Parking: l.type = "parking"; break;
+    case LaneKind::Shoulder: l.type = "shoulder"; break;
+    case LaneKind::Sidewalk:
+      l.type = "sidewalk";
+      l.heightInner = c.curbHeight;
+      l.heightOuter = c.curbHeight;
+      break;
+  }
+}
+
+struct EdgeContext {
+  bool hasMoreDrivingLanesOutside;  ///< another driving lane of this direction lies further out
+  LaneKind next;                    ///< kind of the next lane outward (Sidewalk past the last)
+  bool isOutermost;
+  bool motorwayLike;
+};
+
+// OpenDRIVE 1.9 §11.9 lane road marks: a lane carries the line on its outer edge. Lane lines
+// between driving lanes are broken; the edge of the carriageway is solid (laneChange none) next to a
+// bike or parking lane and on motorway-like roads; a two-way turn lane is bordered solid-broken.
+odr::RoadMark outerEdgeMark(LaneKind kind, const EdgeContext &e, const CountryProfile &c) {
+  odr::RoadMark m;
+  if (isDrivingOrBus(kind) && e.hasMoreDrivingLanesOutside) {
+    m.type = "broken";
+    m.color = c.edgeLineColor;
+  } else if (isDrivingOrBus(kind) && (e.next == LaneKind::Biking || e.next == LaneKind::Parking || e.motorwayLike)) {
+    m.type = "solid";
+    m.color = c.edgeLineColor;
+    m.laneChange = "none";
+  } else if (kind == LaneKind::Bidirectional) {
+    m.type = "solid broken";
+    m.color = c.centerLineColor;
+  } else if (kind == LaneKind::Sidewalk || e.isOutermost) {
+    m.type = "none";
+  } else if (kind == LaneKind::Biking) {
+    m.type = "solid";
+    m.color = c.edgeLineColor;
+  } else {
+    m.type = "none";
+  }
+  if (kind == LaneKind::Bus) m.weight = "bold";
+  return m;
+}
+
+// OpenDRIVE 1.9 §11.1 lane numbering: ids count outward from the center lane, +1, +2 .. on the
+// left and -1, -2 .. on the right. §11.7 lane width as a cubic polynomial (here constant).
+std::vector<odr::Lane> sideLanes(const SideSpec &side, int sign, bool motorwayLike, const CountryProfile &c) {
+  std::vector<odr::Lane> out;
+  const int drivingLanes = side.drivingCount();
+  int drivingSeen = 0;
+  for (size_t i = 0; i < side.lanes.size(); ++i) {
+    const LaneSpec &spec = side.lanes[i];
+    odr::Lane l;
+    l.id = sign * static_cast<int>(i + 1);
+    l.widths.push_back({0.0, spec.width, 0, 0, 0});
+    setTypeAndAccess(l, spec.kind, c);
+    if (carriesVehicles(spec.kind)) {
+      l.speedMax = side.speed;
+      l.material = "asphalt";
     }
-  };
-  build(x.left, +1, sec.left);
-  build(x.right, -1, sec.right);
-  // centre line
-  odr::RoadMark cm;
+    if (isDrivingOrBus(spec.kind)) ++drivingSeen;
+    const bool isOutermost = i + 1 == side.lanes.size();
+    const EdgeContext edge{drivingSeen < drivingLanes, isOutermost ? LaneKind::Sidewalk : side.lanes[i + 1].kind,
+                           isOutermost, motorwayLike};
+    l.roadMarks.push_back(outerEdgeMark(spec.kind, edge, c));
+    out.push_back(l);
+  }
+  return out;
+}
+
+// OpenDRIVE 1.9 §11.9: the center lane (id 0, no width) carries the line between the directions,
+// per the country rules; a one-way motorway-like carriageway gets a solid left edge instead.
+odr::RoadMark centerLineMark(const CrossSection &x, bool motorwayLike, const CountryProfile &c) {
+  odr::RoadMark m;
   const int nl = x.left.drivingCount(), nr = x.right.drivingCount();
   if (nl > 0 && nr > 0) {
-    cm.type = (nl >= 2 && nr >= 2) ? c.centerLineMultiLane : c.centerLineTwoWay;
-    cm.color = c.centerLineColor;
-    cm.laneChange = cm.type == "broken" ? "both" : "none";
-    if (!x.left.lanes.empty() && x.left.lanes.front().kind == LaneKind::Bidirectional) {
-      cm.type = "broken solid";
-    }
+    m.type = (nl >= 2 && nr >= 2) ? c.centerLineMultiLane : c.centerLineTwoWay;
+    m.color = c.centerLineColor;
+    m.laneChange = m.type == "broken" ? "both" : "none";
+    if (!x.left.lanes.empty() && x.left.lanes.front().kind == LaneKind::Bidirectional) m.type = "broken solid";
   } else if (motorwayLike) {
-    cm.type = "solid";
-    cm.color = c.centerLineColor == "yellow" ? "yellow" : c.edgeLineColor;  // left edge of a carriageway
-    cm.laneChange = "none";
+    m.type = "solid";
+    m.color = c.centerLineColor == "yellow" ? "yellow" : c.edgeLineColor;
+    m.laneChange = "none";
   } else {
-    cm.type = "none";
+    m.type = "none";
   }
+  return m;
+}
+
+}  // namespace
+
+// OpenDRIVE 1.9 §11.4 lane section: one cross section from s on, left lanes, center lane, right lanes.
+odr::LaneSection makeLaneSection(const CrossSection &x, double s, const CountryProfile &c) {
+  const bool motorwayLike = isMotorwayLike(x.highway);
+  odr::LaneSection sec;
+  sec.s = s;
+  sec.left = sideLanes(x.left, +1, motorwayLike, c);
+  sec.right = sideLanes(x.right, -1, motorwayLike, c);
   sec.center.id = 0;
   sec.center.type = "none";
-  sec.center.roadMarks.push_back(cm);
+  sec.center.roadMarks.push_back(centerLineMark(x, motorwayLike, c));
   return sec;
 }
 
