@@ -163,6 +163,7 @@ void Builder::buildJunctions() {
         const RoadEnd *end;
         Turn turn;
         std::vector<int> lanes;  // left -> right in its driving direction
+        double angle;            // heading change into it, + to the left
       };
       std::vector<Target> targets;
       for (const RoadEnd &out : cl.ends) {
@@ -191,7 +192,7 @@ void Builder::buildJunctions() {
         if (forbidden) continue;
         std::sort(ol.begin(), ol.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
         if (LHT) std::reverse(ol.begin(), ol.end());
-        targets.push_back({&out, t, ol});
+        targets.push_back({&out, t, ol, normalizeAngle(hOut - hIn)});
       }
       if (targets.empty()) continue;
       bool anyStraight = false, anyLeft = false, anyRight = false;
@@ -221,9 +222,11 @@ void Builder::buildJunctions() {
       }
       (void)anyLeft;
       (void)anyRight;
-      for (const Target &tg : targets) {
+      std::vector<std::vector<std::pair<int, int>>> pairsOf(targets.size());  // (incoming, outgoing lane id)
+      for (size_t ti = 0; ti < targets.size(); ++ti) {
+        const Target &tg = targets[ti];
         const int nOut = static_cast<int>(tg.lanes.size());
-        std::vector<std::pair<int, int>> pairs;  // (incoming lane id, outgoing lane id)
+        std::vector<std::pair<int, int>> &pairs = pairsOf[ti];
         if (cl.gore) {
           // lane-level gore: main lanes continue 1:1, the trunk's branch-side lanes are the branch
           const Cluster::Gore &g = *cl.gore;
@@ -349,6 +352,35 @@ void Builder::buildJunctions() {
             pairs.push_back({byLeft[src[k]], tg.lanes[o]});
           }
         }
+      }
+      // OpenDRIVE 1.9 §12.3 incoming roads, Junction Guideline §6: every lane entering a junction
+      // has a path through it. A lane left without one (its tagged turn has no road to take, or a
+      // lane split gave it none) takes the target on its own side of the approach: lanes ordered
+      // from the driver's left meet the targets ordered from the left by turn angle.
+      for (int i = 0; i < nIn; ++i) {
+        const bool hasPath = std::any_of(pairsOf.begin(), pairsOf.end(), [&](const auto &ps) {
+          return std::any_of(ps.begin(), ps.end(), [&](const auto &p) { return p.first == byLeft[i]; });
+        });
+        if (hasPath) continue;
+        std::vector<size_t> candidates;
+        for (size_t ti = 0; ti < targets.size(); ++ti)
+          if (perm[i].count(targets[ti].turn)) candidates.push_back(ti);
+        if (candidates.empty())
+          for (size_t ti = 0; ti < targets.size(); ++ti) candidates.push_back(ti);
+        std::sort(candidates.begin(), candidates.end(),
+                  [&](size_t a, size_t b) { return targets[a].angle > targets[b].angle; });
+        const double side = nIn > 1 ? i / double(nIn - 1) : 0.5;  // 0 = leftmost lane
+        const size_t pick = candidates[static_cast<size_t>(std::lround(side * (candidates.size() - 1)))];
+        const Target &tg = targets[pick];
+        const int nOut = static_cast<int>(tg.lanes.size());
+        const int o = tg.turn == Turn::Left    ? 0
+                      : tg.turn == Turn::Right ? nOut - 1
+                                               : std::min(nOut - 1, static_cast<int>(std::lround(side * (nOut - 1))));
+        pairsOf[pick].push_back({byLeft[i], tg.lanes[o]});
+      }
+      for (size_t ti = 0; ti < targets.size(); ++ti) {
+        const Target &tg = targets[ti];
+        const auto &pairs = pairsOf[ti];
         if (pairs.empty()) continue;
         const RoadMeta &mo = metas[tg.end->road];
         const odr::Road &ro = od.roads[mo.roadIndex];

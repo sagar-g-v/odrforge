@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Every lane entering a junction has a path through it** (OpenDRIVE 1.9 §12.3, Junction Guideline
+  §6). A lane whose tagged turn had no road to take, or that a lane split skipped, ended at the
+  junction. It now takes the target on its own side of the approach. Lanes without a path:
+  73 -> 1 over the six test areas; dead-end lanes LA 55 -> 26, Munich 30 -> 1, Frankfurter Kreuz
+  17 -> 5, Tokyo 8 -> 2.
 - **OpenDRIVE 1.4 schema conformance of the carla profile** (found by the official ASAM checker):
   road types `townExpressway` .. `townPlayStreet` are written as `town` before 1.5; tunnels are
   written before bridges (every schema fixes that order); junctions left without any connection are
