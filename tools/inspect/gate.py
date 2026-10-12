@@ -15,7 +15,9 @@ Reference areas (chosen to cover different road cultures, not to tune for one ci
   stelvio         Stelvio pass: mountain hairpins
   tokyo           Shibuya, Tokyo: left-hand traffic, Japanese tagging, elevated Shuto expressway over streets
 
-A regression is any (area, finding kind) whose count grows by more than --tolerance, any new
+Gating kinds: the exact checkers (exact:inv:* from invariants.py, exact:lf:* from laneflow.py) and
+osm_fidelity:*; the other heuristic detector counts are reported as informative deltas only.
+A regression is any gating (area, kind) whose count grows by more than --tolerance, any new
 validation error rule count, a failing unit test, a conversion crash, new CARLA sideways
 discontinuities or esmini load errors.
 """
@@ -106,6 +108,31 @@ def detect(job):
     return area, name, dict(collections.Counter(kind_of(name, f) for f in items)), None
 
 
+def exact(area):
+    """exact pass/fail checkers (docs/SPEC_GEOMETRY.md): invariants.py summary counts and laneflow.py
+    defect counts (severity other than ok / info)"""
+    kinds = {}
+    a = AREAS[area]
+    for tool in ("invariants", "laneflow"):
+        out = os.path.join(WORK, area, "exact_" + tool)
+        r, _ = run([sys.executable, os.path.join(HERE, tool + ".py"), "--area", area, "--out", out]
+                   + (["--crops", "0"] if tool == "laneflow" else []))
+        f = os.path.join(out, "invariants.json" if tool == "invariants" else "findings.json")
+        if r.returncode not in (0, 1) or not os.path.exists(f):
+            kinds[f"exact:{tool}:CRASHED"] = 1
+            continue
+        d = json.load(open(f, encoding="utf-8"))
+        if tool == "invariants":
+            for k, v in d["summary"].items():
+                if isinstance(v, int):
+                    kinds[f"exact:inv:{k}"] = v
+        else:
+            for k, v in d.items():
+                if isinstance(v, dict) and v.get("severity") not in ("ok", "info") and "count" in v:
+                    kinds[f"exact:lf:{k}"] = v["count"]
+    return area, kinds
+
+
 def loaders(area):
     xodr = AREAS[area]["xodr"]
     out = {}
@@ -155,10 +182,14 @@ def main():
     with ThreadPoolExecutor(max_workers=6) as pool:
         dets = list(pool.map(detect, [(ar, n) for ar in good for n in DETECTORS]))
         lds = dict(pool.map(loaders, good)) if not a.skip_carla else {}
+        exs = dict(pool.map(exact, good))
     state = {}
     for ar in areas:
         state[ar] = {"validation_errors": conv[ar]["validation_errors"], "rules": conv[ar]["rules"],
                      "kinds": {}, "totals": {}, **lds.get(ar, {})}
+    for ar, kinds in exs.items():
+        state[ar]["kinds"].update(kinds)
+        state[ar]["totals"]["exact"] = sum(kinds.values())
     for ar, name, kinds, err in dets:
         if kinds is None:
             res["ok"] = False
@@ -187,7 +218,8 @@ def main():
                 bv, nv = bd.get(k, 0), nd.get(k, 0)
                 if bv != nv:
                     delta[f"{ar}:{k}"] = f"{bv} -> {nv}"
-                if nv > bv + a.tolerance:
+                informative = key == "kind" and not (k.startswith("exact:") or k.startswith("osm_fidelity:"))
+                if nv > bv + a.tolerance and not informative:
                     res["ok"] = False
                     res["problems"].append(f"regression {ar} {key} {k}: {bv} -> {nv}")
         for k in ("carla_sideways", "esmini_errors"):
