@@ -132,17 +132,49 @@ def fetch_naip(x0, y0, x1, y1, res, lat0, lon0, service, workers=4):
     CH = 1000
     jobs = [(px, py, min(CH, SW - px), min(CH, SH - py)) for py in range(0, SH, CH) for px in range(0, SW, CH)]
 
+    def fetch(url):
+        rq = urllib.request.Request(url, headers={"User-Agent": "OdrForge-make_basemap"})
+        with urllib.request.urlopen(rq, timeout=240) as r:
+            return r.read()
+
+    def xyz_block(bx0, by0, bx1, by1, w, h):
+        """mosaic of Web Mercator XYZ tiles at the zoom just finer than the block's pixel size"""
+        R = 20037508.342789244
+        z = max(0, min(20, math.ceil(math.log2(2 * R / 256 / pix))))
+        ts = 2 * R / 2 ** z
+        tx0, tx1 = int((bx0 + R) // ts), int((bx1 + R) // ts)
+        ty0, ty1 = int((R - by1) // ts), int((R - by0) // ts)
+        mos = Image.new("RGB", ((tx1 - tx0 + 1) * 256, (ty1 - ty0 + 1) * 256))
+        n = 0
+        for tx in range(tx0, tx1 + 1):
+            for ty in range(ty0, ty1 + 1):
+                try:
+                    data = fetch(service.format(z=z, x=tx, y=ty))
+                    mos.paste(Image.open(io.BytesIO(data)).convert("RGB"), ((tx - tx0) * 256, (ty - ty0) * 256))
+                    n += len(data)
+                except urllib.error.HTTPError as e:
+                    if e.code != 404:  # 404: no imagery there (left black)
+                        raise
+        s = 256 / ts
+        box = ((bx0 + R - tx0 * ts) * s, (R - by1 - ty0 * ts) * s, (bx1 + R - tx0 * ts) * s, (R - by0 - ty0 * ts) * s)
+        return mos.resize((w, h), Image.BILINEAR, box=box), n
+
     def get(job):
         px, py, w, h = job
         bx0, bx1 = sx0 + px * pix, sx0 + (px + w) * pix
         by1, by0 = sy1 - py * pix, sy1 - (py + h) * pix
-        q = {"bbox": f"{bx0},{by0},{bx1},{by1}", "bboxSR": "3857", "imageSR": "3857", "size": f"{w},{h}",
-             "format": "jpg", "compressionQuality": "92", "interpolation": "RSP_BilinearInterpolation", "f": "image"}
-        url = service + "/exportImage?" + urllib.parse.urlencode(q)
+        if "{bbox}" in service:  # OGC WMS GetMap template in EPSG:3857
+            url = service.format(bbox=f"{bx0},{by0},{bx1},{by1}", w=w, h=h)
+        elif "{z}" not in service:  # ArcGIS ImageServer (NAIP)
+            q = {"bbox": f"{bx0},{by0},{bx1},{by1}", "bboxSR": "3857", "imageSR": "3857", "size": f"{w},{h}",
+                 "format": "jpg", "compressionQuality": "92", "interpolation": "RSP_BilinearInterpolation", "f": "image"}
+            url = service + "/exportImage?" + urllib.parse.urlencode(q)
         for attempt in range(8):
             try:
-                with urllib.request.urlopen(url, timeout=240) as r:
-                    data = r.read()
+                if "{z}" in service:
+                    img, nb = xyz_block(bx0, by0, bx1, by1, w, h)
+                    return job, np.asarray(img), nb
+                data = fetch(url)
                 img = Image.open(io.BytesIO(data)).convert("RGB")
                 if img.size != (w, h):
                     img = img.resize((w, h), Image.LANCZOS)
@@ -339,6 +371,9 @@ def main():
     ap.add_argument("--margin", type=float, default=60.0)
     ap.add_argument("--naip-service", default="https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer",
                     help="image service (USGSNAIPPlus has up to 0.3 m where HRO exists but is often overloaded)")
+    ap.add_argument("--sat-name", help="name of a non-NAIP imagery source given as --naip-service: an ArcGIS ImageServer, "
+                    "a WMS GetMap URL template in EPSG:3857 with {bbox} {w} {h}, or an XYZ tile template with {z} {x} {y}")
+    ap.add_argument("--sat-attribution", help="attribution / licence line shown in the viewer for --sat-name imagery")
     ap.add_argument("--naip-res", type=float, default=0.6, help="metres per pixel of the stored imagery (NAIP is 0.6 m)")
     ap.add_argument("--naip-dir", default="naip", help="folder of the imagery pyramid (written fresh, then listed)")
     a = ap.parse_args()
@@ -367,16 +402,16 @@ def main():
                          "attribution": "Map data © OpenStreetMap contributors (ODbL), rendered by OdrForge"}
     if a.naip:
         plus = "NAIPPlus" in a.naip_service
-        print(f"downloading USGS {'NAIP Plus' if plus else 'NAIP'} at {a.naip_res} m/px ...")
+        src = a.sat_name or ("USGS NAIP Plus" if plus else "USGS NAIP")
+        print(f"downloading {src} at {a.naip_res} m/px ...")
         nres = a.naip_res
         nx1 = x0 + math.ceil((x1 - x0) / nres) * nres
         ny0 = y1 - math.ceil((y1 - y0) / nres) * nres
         img = fetch_naip(x0, ny0, nx1, y1, nres, lat0, lon0, a.naip_service)
         levels = write_pyramid(img, a.out, a.naip_dir, "jpg")
-        src = "USGS NAIP Plus" if plus else "USGS NAIP"
         layers["naip"] = {"id": "naip", "name": f"HD satellite (offline, {src} {nres:g} m)", "dir": a.naip_dir, "ext": "jpg",
                           "x0": x0, "y1": y1, "res": nres, "tile": 512, "levels": levels,
-                          "attribution": f"Imagery: {src} (USDA / USGS), The National Map (public domain)"}
+                          "attribution": a.sat_attribution or f"Imagery: {src} (USDA / USGS), The National Map (public domain)"}
     # merge with what is on disk now (another run may have added a layer meanwhile)
     if os.path.exists(meta_path):
         for l in json.load(open(meta_path))["layers"]:
