@@ -103,6 +103,17 @@ std::set<OsmId> throughParkingAisles(const OsmData &osm, const BuildOptions &opt
 OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped,
                          int *crossings = nullptr);
 
+/// The two road ends a connecting road joins: the incoming arm (traffic arriving at its end or start)
+/// and the outgoing arm (traffic leaving from its start or end).
+struct ConnectionEnds {
+  const odr::Road *in;
+  bool inAtEnd;
+  const odr::Road *out;
+  bool outAtEnd;
+  double sIn() const { return inAtEnd ? in->length() : 0.0; }
+  double sOut() const { return outAtEnd ? out->length() : 0.0; }
+};
+
 struct Builder {
   const OsmData &osm;
   const Projection &proj;
@@ -147,6 +158,16 @@ struct Builder {
   double planeZ(const Cluster &c, const Vec2 &p) const;
   // stages (network_junctions.cpp)
   void buildJunctions();
+  /// connecting roads for lane pairs (incoming lane id, outgoing lane id) of one relation
+  void connectLanes(const ConnectionEnds &ends, const std::vector<std::pair<int, int>> &pairs, const Cluster &cl,
+                    odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId);
+  enum class Frame { RefuseFolding, AlwaysBuild };
+  bool addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, double tRefIn, double tRefOut,
+                         const std::vector<std::pair<int, int>> &lanes, Frame frame, const Cluster &cl,
+                         odr::Junction &junction,
+                         std::vector<odr::Road> &out, int &nextRoadId);
+  void connectingRoadHeight(odr::Road &c, const ConnectionEnds &ends, double tRefIn, double tRefOut,
+                            const Cluster &cl) const;
   void buildSignals();
   void buildObjects();
   void finish();

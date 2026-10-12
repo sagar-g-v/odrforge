@@ -4,6 +4,19 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Changed
+- **Connecting roads continue the arm reference lines** (OpenDRIVE 1.9 §12.4, ASAM Junction
+  Guideline §6). A connecting road's reference line now starts and ends on the incoming and
+  outgoing roads' reference lines, in position and heading, in the direction of travel; the lanes
+  sit beside it through laneOffset and widths that blend from the incoming to the outgoing lanes
+  with the arms' own sideways slope at both ends. Adjacent lanes going to adjacent lanes share one
+  connecting road (§12.4 lane_change_one_con_road). Where that frame would fold (a lane edge past
+  the centre of curvature) the lanes keep their own lane-centred roads. Connecting roads on the arm
+  reference lines: 0 - 28 % -> 94 - 99 % over the six test areas; lane-edge heading breaks at
+  links (Annex D): LA 132 -> 60, Tokyo 140 -> 36, Frankfurter Kreuz 234 -> 153, London 14 -> 5;
+  folds LA 70 -> 62. Reference-line curvature jumps at junction links are now counted (the lines
+  meet); curvature continuity is not required by Annex D and is left for phase 3.
+
 ### Fixed
 - **Every lane entering a junction has a path through it** (OpenDRIVE 1.9 §12.3, Junction Guideline
   §6). A lane whose tagged turn had no road to take, or that a lane split skipped, ended at the

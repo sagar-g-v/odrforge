@@ -89,15 +89,15 @@ TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfa
   // the trunk carries 3 + 1 lanes before the junction; the junction is short
   const odr::Road *trunk = roadNear(od, -300, 0);
   CHECK(trunk && drivingLanes(trunk->lanes.back()) == 4 && drivingLanes(trunk->lanes.front()) == 3);
-  int conn = 0, toRamp = 0;
+  int connectingLanes = 0, toRamp = 0;
   const odr::Road *ramp = roadNear(od, 300, -35);
   for (const auto &r : od.roads) {
     if (r.junction == "-1") continue;
-    ++conn;
+    connectingLanes += drivingLanes(r.lanes.front());
     CHECK(r.length() < 10.0);
-    if (r.successor && ramp && r.successor->elementId == ramp->id) ++toRamp;
+    if (r.successor && ramp && r.successor->elementId == ramp->id) toRamp += drivingLanes(r.lanes.front());
   }
-  CHECK(conn == 4);   // 3 main lanes straight on, 1 branch lane into the ramp
+  CHECK(connectingLanes == 4);  // 3 main lanes straight on, 1 branch lane into the ramp
   CHECK(toRamp == 1);
   // the branch lane is the outermost (right) lane of the trunk
   for (const auto &r : od.roads)
@@ -224,6 +224,40 @@ TEST_CASE("gore: a short branch that splits again right away - both splits at la
   CHECK(v.errors == 0);
 }
 
+TEST_CASE("junction: connecting-road reference lines continue the arm reference lines (Junction Guideline 6)") {
+  OsmB b;
+  const OsmId n = b.node(0, 0);
+  const Tags street{{"highway", "secondary"}, {"lanes", "4"}};
+  for (const auto &[x, y] : {std::pair<double, double>{-200, 0}, {200, 0}, {0, -200}, {0, 200}})
+    b.way({b.node(x, y), n}, street);
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.errors == 0);
+  auto roadById = [&](const std::string &id) -> const odr::Road * {
+    for (const auto &q : od.roads)
+      if (q.id == id) return &q;
+    return nullptr;
+  };
+  int connecting = 0, continuing = 0, multiLane = 0;
+  for (const auto &r : od.roads) {
+    if (r.junction == "-1") continue;
+    ++connecting;
+    multiLane += r.lanes.front().right.size() + r.lanes.front().left.size() > 1;
+    const odr::Road *from = roadById(r.predecessor->elementId), *to = roadById(r.successor->elementId);
+    const Pose a = from->planView.eval(r.predecessor->contactPoint == "end" ? from->length() : 0.0);
+    const Pose b0 = to->planView.eval(r.successor->contactPoint == "end" ? to->length() : 0.0);
+    const Pose s0 = r.planView.eval(0.0), s1 = r.planView.eval(r.length());
+    const bool samePlaces = (s0.pos() - a.pos()).norm() < 1e-6 && (s1.pos() - b0.pos()).norm() < 1e-6;
+    const bool parallel = std::abs(std::sin(s0.hdg - a.hdg)) < 1e-6 && std::abs(std::sin(s1.hdg - b0.hdg)) < 1e-6;
+    continuing += samePlaces && parallel;
+  }
+  CHECK(connecting > 0);
+  CHECK(continuing == connecting);
+  CHECK(multiLane > 0);  // two lanes straight on share one connecting road
+}
+
 TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes never cross") {
   OsmB b;
   const OsmId n = b.node(0, 0);
@@ -243,9 +277,12 @@ TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes n
     const odr::Road *to = nullptr;
     for (const auto &q : od.roads)
       if (q.id == r.successor->elementId) to = &q;
-    const double y0 = r.planView.eval(0).y;
-    if (to && to->planView.eval(to->length()).y > 0) minLeft = std::min(minLeft, y0);
-    else maxRight = std::max(maxRight, y0);
+    for (const auto &lane : r.lanes.front().right) {
+      Pose start;
+      odr::laneCenter(r, 0.0, lane.id, start);
+      if (to && to->planView.eval(to->length()).y > 0) minLeft = std::min(minLeft, start.y);
+      else maxRight = std::max(maxRight, start.y);
+    }
   }
   CHECK(minLeft > maxRight);
 }
