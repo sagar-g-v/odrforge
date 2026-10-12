@@ -2,6 +2,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -130,6 +131,8 @@ struct Builder {
   odr::OpenDrive od;
   int nextSignalId = 1, nextObjectId = 1, nextControllerId = 1;
   std::vector<double> fitDev;  ///< per OSM node: distance to its fitted reference line
+  /// junction node pairs built as one junction because the road between them was squeezed out
+  std::vector<std::pair<OsmId, OsmId>> forcedJoins;
 
   Builder(const OsmData &o, const Projection &p, const BuildOptions &b) : osm(o), proj(p), opt(b) {}
 
@@ -146,6 +149,8 @@ struct Builder {
   void buildRoadGeometry();
   void buildGores();         // gore.cpp
   void trimRoads();
+  bool joinSqueezedJunctions();
+  void forgetJunctionLayout(const std::vector<Chain> &chainsBefore);
   void buildRoads();
   void resolveOverlaps();    // overlap.cpp
   void resolveLevelOverlaps();  // overlap.cpp: second pass once heights are known
@@ -158,11 +163,19 @@ struct Builder {
   double planeZ(const Cluster &c, const Vec2 &p) const;
   // stages (network_junctions.cpp)
   void buildJunctions();
+  OsmId attachNode(const RoadEnd &e) const;
+  std::optional<bool> restrictionLeadsTo(const Cluster &cl, OsmId via, OsmId toWay, const RoadEnd &exit,
+                                         bool onwards) const;
   /// connecting roads for lane pairs (incoming lane id, outgoing lane id) of one relation
   void connectLanes(const ConnectionEnds &ends, const std::vector<std::pair<int, int>> &pairs, const Cluster &cl,
                     odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId);
-  enum class Frame { RefuseFolding, AlwaysBuild };
-  bool addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, double tRefIn, double tRefOut,
+  enum class Frame { RefuseDistortion, RefuseFolding, AlwaysBuild };
+  /// a reference line end beside an arm: its offset t from the arm reference line (travel frame)
+  /// and how fast that offset changes per metre travelled
+  struct LaneCentre {
+    double t = 0.0, slope = 0.0;
+  };
+  bool addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, LaneCentre refIn, LaneCentre refOut,
                          const std::vector<std::pair<int, int>> &lanes, Frame frame, const Cluster &cl,
                          odr::Junction &junction,
                          std::vector<odr::Road> &out, int &nextRoadId);

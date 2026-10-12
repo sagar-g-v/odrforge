@@ -126,7 +126,7 @@ TravelSpan travelSpan(const odr::Road &r, bool atEnd, bool alongS, int laneId) {
 // (arriving: towards the end; leaving: away from it). Matching it keeps lane edges heading-continuous
 // across the link (OpenDRIVE 1.9 Annex D).
 TravelSpan travelSpanSlope(const odr::Road &r, bool atEnd, bool alongS, bool arriving, int laneId) {
-  const double step = std::min(0.05, 0.5 * r.length());
+  const double step = std::min(0.001, 0.5 * r.length());  // m: short enough for the slope at the very end
   const double sEnd = atEnd ? r.length() : 0.0, sInside = atEnd ? sEnd - step : sEnd + step;
   const TravelSpan atJunction = travelSpanAt(r, sEnd, alongS, laneId), inside = travelSpanAt(r, sInside, alongS, laneId);
   const double sign = arriving ? 1.0 : -1.0;
@@ -172,18 +172,20 @@ ReferenceLine drivablePath(const Pose &a, const Pose &b) {
   return chordLine;
 }
 
-// OpenDRIVE 1.9 §8.3 reference line coordinate system: the frame folds where a point at offset t
-// lies beyond the centre of curvature (kappa t >= 1); lanes there would cross themselves.
-bool frameFolds(const ReferenceLine &line, const odr::Poly3 &laneOffset, double blockWidth0, double blockWidth1,
-                bool lanesOnRight) {
-  constexpr double kSafe = 0.9;
+// OpenDRIVE 1.9 §8.3 reference line coordinate system: a lane at offset t from a reference line of
+// curvature kappa runs (1 - kappa t) times as fast as the line - squeezed on the inside of a bend,
+// folded where kappa t >= 1, stretched on the outside. A frame is fit for the lanes only while
+// every lane border stays within half the radius of the line (|kappa t| <= 0.5): the lane path is
+// then the line's own shape, neither folded nor drawn out (LibCarla steps lanes by s).
+bool frameDistortsLanes(const ReferenceLine &line, const odr::Poly3 &laneOffset, double blockWidth0,
+                        double blockWidth1, bool lanesOnRight, double kMaxRelativeOffset) {
   const double L = line.length();
   for (double s = 0.0; s <= L; s += 0.25) {
     const double u = s / std::max(L, 1e-9);
     const double inner = laneOffset.eval(s), width = blockWidth0 + (blockWidth1 - blockWidth0) * u;
     const double outer = lanesOnRight ? inner - width : inner + width;
     const double kappa = line.eval(s).kappa;
-    if (kappa * inner >= kSafe || kappa * outer >= kSafe) return true;
+    if (std::abs(kappa * inner) > kMaxRelativeOffset || std::abs(kappa * outer) > kMaxRelativeOffset) return true;
   }
   return false;
 }
@@ -193,55 +195,69 @@ bool frameFolds(const ReferenceLine &line, const odr::Poly3 &laneOffset, double 
 // OpenDRIVE 1.9 §12.4 connecting roads, ASAM Junction Guideline §6: one connecting road per run of
 // adjacent lanes, its reference line continuing the arm reference lines in position and heading
 // at both ends, in the direction of travel; the lanes sit beside it through laneOffset (§11.5) and
-// widths (§11.7) blending from the incoming to the outgoing lanes. Where that frame would fold or no
-// drivable path joins the two arms, each lane of the run follows its own lane-centred road instead.
+// widths (§11.7) blending from the incoming to the outgoing lanes. Where that frame would distort
+// the lanes (a tight turn far from the arm reference lines; the Guideline then moves the reference
+// line) each lane follows its own lane-centred road; a lane whose own road would fold takes the arm
+// frame if that one does not fold; failing all, its lane-centred road all the same.
 void Builder::connectLanes(const ConnectionEnds &ends, const std::vector<std::pair<int, int>> &pairs,
                            const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId) {
   const ReferenceLine armToArm =
       drivablePath(travelPose(*ends.in, ends.inAtEnd, true), travelPose(*ends.out, ends.outAtEnd, false));
   const bool armPathUsable = !armToArm.elements.empty() && armToArm.length() >= 0.05;
+  auto onArms = [&](const std::vector<std::pair<int, int>> &lanes, Frame frame) {
+    return armPathUsable &&
+           addConnectingRoad(ends, armToArm, {0.0, 0.0}, {0.0, 0.0}, lanes, frame, cl, junction, out, nextRoadId);
+  };
   for (const auto &run : adjacentRuns(pairs)) {
-    const bool onArms = armPathUsable && addConnectingRoad(ends, armToArm, 0.0, 0.0, run, Frame::RefuseFolding, cl,
-                                                           junction, out, nextRoadId);
-    if (onArms) continue;
+    if (onArms(run, Frame::RefuseDistortion)) continue;
     for (const auto &[from, to] : run) {
+      // the reference line starts on the lane centre, parallel to the arm reference line (Annex D:
+      // lane borders meet in position only across parallel cross sections); the lane's sideways
+      // drift is carried by laneOffset
+      const LaneCentre in{travelSpan(*ends.in, ends.inAtEnd, ends.inAtEnd, from).center(), 0.0};
+      const LaneCentre outC{travelSpan(*ends.out, ends.outAtEnd, !ends.outAtEnd, to).center(), 0.0};
       const Pose a = laneTravelPose(*ends.in, ends.inAtEnd, true, from);
       const Pose b = laneTravelPose(*ends.out, ends.outAtEnd, false, to);
       const ReferenceLine laneCentred = drivablePath(a, b);
-      if (laneCentred.elements.empty() || laneCentred.length() < 0.05) continue;
-      const double tIn = travelSpan(*ends.in, ends.inAtEnd, ends.inAtEnd, from).center();
-      const double tOut = travelSpan(*ends.out, ends.outAtEnd, !ends.outAtEnd, to).center();
-      addConnectingRoad(ends, laneCentred, tIn, tOut, {{from, to}}, Frame::AlwaysBuild, cl, junction, out,
-                        nextRoadId);
+      const bool laneCentredUsable = !laneCentred.elements.empty() && laneCentred.length() >= 0.05;
+      auto alongLane = [&](Frame frame) {
+        return laneCentredUsable &&
+               addConnectingRoad(ends, laneCentred, in, outC, {{from, to}}, frame, cl, junction, out, nextRoadId);
+      };
+      if (alongLane(Frame::RefuseFolding) || onArms({{from, to}}, Frame::RefuseFolding)) continue;
+      alongLane(Frame::AlwaysBuild);
     }
   }
 }
 
-// One connecting road along `line`, whose ends lie at travel-frame offsets tRefIn / tRefOut from
-// the incoming / outgoing arm reference lines. With Frame::RefuseFolding nothing is added (false)
-// where the frame would fold; a lane-centred road (Frame::AlwaysBuild) cannot fold for its own lane.
-bool Builder::addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, double tRefIn, double tRefOut,
-                                const std::vector<std::pair<int, int>> &lanes, Frame frame, const Cluster &cl,
+// One connecting road along `line`, whose ends lie at travel-frame offsets refIn / refOut from the
+// incoming / outgoing arm reference lines (drifting sideways at refIn.slope / refOut.slope).
+// Frame::RefuseDistortion / RefuseFolding add nothing (false) where the frame would distort / fold
+// the lanes; Frame::AlwaysBuild adds the road regardless.
+bool Builder::addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, LaneCentre refIn,
+                                LaneCentre refOut, const std::vector<std::pair<int, int>> &lanes, Frame frame,
+                                const Cluster &cl,
                                 odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId) {
   const bool LHT = opt.country.leftHandTraffic;
   const odr::Road &ri = *ends.in, &ro = *ends.out;
   const double L = line.length();
-  // On the arm reference lines the lane borders also leave and meet the arms with the arms' own
-  // sideways slope; a lane-centred road keeps its lane parallel to its reference line at the ends.
-  const bool onArms = frame == Frame::RefuseFolding;
+  // the lane borders leave and meet the arms with the arms' own sideways slope (Annex D: lane
+  // edges heading-continuous), measured from this road's reference line
   std::vector<TravelSpan> spanIn, spanOut, slopeIn, slopeOut;
   for (const auto &[from, to] : lanes) {
     spanIn.push_back(travelSpan(ri, ends.inAtEnd, ends.inAtEnd, from));
     spanOut.push_back(travelSpan(ro, ends.outAtEnd, !ends.outAtEnd, to));
-    slopeIn.push_back(onArms ? travelSpanSlope(ri, ends.inAtEnd, ends.inAtEnd, true, from) : TravelSpan{0.0, 0.0});
-    slopeOut.push_back(onArms ? travelSpanSlope(ro, ends.outAtEnd, !ends.outAtEnd, false, to) : TravelSpan{0.0, 0.0});
+    slopeIn.push_back(travelSpanSlope(ri, ends.inAtEnd, ends.inAtEnd, true, from));
+    slopeOut.push_back(travelSpanSlope(ro, ends.outAtEnd, !ends.outAtEnd, false, to));
   }
-  const odr::Poly3 laneOffset = odr::Poly3::hermite(0.0, L, spanIn.front().inner - tRefIn, slopeIn.front().inner,
-                                                    spanOut.front().inner - tRefOut, slopeOut.front().inner);
-  if (onArms) {
+  const odr::Poly3 laneOffset =
+      odr::Poly3::hermite(0.0, L, spanIn.front().inner - refIn.t, slopeIn.front().inner - refIn.slope,
+                          spanOut.front().inner - refOut.t, slopeOut.front().inner - refOut.slope);
+  if (frame != Frame::AlwaysBuild) {
     const double block0 = std::abs(spanIn.back().outer - spanIn.front().inner);
     const double block1 = std::abs(spanOut.back().outer - spanOut.front().inner);
-    if (frameFolds(line, laneOffset, block0, block1, !LHT)) return false;
+    const double limit = frame == Frame::RefuseDistortion ? 0.5 : 0.9;  // |kappa t|: distorted / about to fold
+    if (frameDistortsLanes(line, laneOffset, block0, block1, !LHT, limit)) return false;
   }
 
   odr::Road c;
@@ -284,7 +300,7 @@ bool Builder::addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine 
     cn.laneLinks.push_back({lanes[k].first, l.id});
   }
   c.lanes.push_back(sec);
-  connectingRoadHeight(c, ends, tRefIn, tRefOut, cl);
+  connectingRoadHeight(c, ends, refIn.t, refOut.t, cl);
   junction.connections.push_back(cn);
   out.push_back(std::move(c));
   ++rep.connectingRoads;
@@ -312,6 +328,44 @@ void Builder::connectingRoadHeight(odr::Road &c, const ConnectionEnds &ends, dou
   const double bank0 = odr::superelevationAt(ri, sIn) * (ends.inAtEnd ? 1.0 : -1.0);
   const double bank1 = odr::superelevationAt(ro, sOut) * (ends.outAtEnd ? -1.0 : 1.0);
   if (bank0 != 0.0 || bank1 != 0.0) c.superelevation.push_back(odr::Poly3::hermite(0.0, L, bank0, 0.0, bank1, 0.0));
+}
+
+// The OSM node where a road end meets its junction.
+OsmId Builder::attachNode(const RoadEnd &e) const {
+  const Chain &ch = chains[metas[e.road].chain];
+  return e.atEnd ? ch.n1 : ch.n0;
+}
+
+// OSM turn restriction (from, via node, to) inside a junction: does it name the movement into
+// `exit`? Its "to" way is either an arm of the junction, or - where nearby intersections were built
+// as one junction - a way absorbed into it. Entering an absorbed way leads to the arms at its far
+// node and, with `onwards` (an only_* restriction, which binds just that first step), to every arm
+// reached on through further absorbed ways. A restriction whose "to" way is neither an arm nor an
+// absorbed way does not apply here (nullopt).
+std::optional<bool> Builder::restrictionLeadsTo(const Cluster &cl, OsmId via, OsmId toWay, const RoadEnd &exit,
+                                                bool onwards) const {
+  const RoadMeta &m = metas[exit.road];
+  if ((exit.atEnd ? m.wayEnd : m.wayStart) == toWay) return true;
+  bool armWay = false;
+  for (const RoadEnd &e : cl.ends) {
+    const RoadMeta &n = metas[e.road];
+    armWay |= (e.atEnd ? n.wayEnd : n.wayStart) == toWay;
+  }
+  if (armWay) return false;
+  auto inJunction = [&](const Chain &ch) { return ch.internal && std::count(cl.nodes.begin(), cl.nodes.end(), ch.n0); };
+  std::vector<OsmId> reached;  // nodes reached after entering the "to" way at the via node
+  for (const Chain &ch : chains) {
+    const bool onWay = std::any_of(ch.parts.begin(), ch.parts.end(), [&](const Part &p) { return segs[p.seg].way == toWay; });
+    if (inJunction(ch) && onWay && (ch.n0 == via || ch.n1 == via)) reached.push_back(ch.n0 == via ? ch.n1 : ch.n0);
+  }
+  if (reached.empty()) return std::nullopt;
+  for (size_t k = 0; onwards && k < reached.size(); ++k)
+    for (const Chain &ch : chains) {
+      if (!inJunction(ch) || (ch.n0 != reached[k] && ch.n1 != reached[k])) continue;
+      const OsmId next = ch.n0 == reached[k] ? ch.n1 : ch.n0;
+      if (next != via && !std::count(reached.begin(), reached.end(), next)) reached.push_back(next);
+    }
+  return std::count(reached.begin(), reached.end(), attachNode(exit)) > 0;
 }
 
 void Builder::buildJunctions() {
@@ -408,16 +462,28 @@ void Builder::buildJunctions() {
         const double hOut = out.atEnd ? po.hdg + kPi : po.hdg;
         Turn t = classify(normalizeAngle(hOut - hIn));
         if (t == Turn::UTurn) {
-          if (out.road == in.road || (regularPartner(in, true) && regularPartner(out, false))) continue;
-          t = normalizeAngle(hOut - hIn) > 0 ? Turn::Left : Turn::Right;  // the only connection: a tight turn
+          // a U-turn between arms at different OSM nodes of the junction is made of the turns OSM
+          // allows along the ways absorbed into it (a median opening) - where the two carriageways
+          // lie far enough apart to turn between them; at one node it is built only when it is the
+          // only way on
+          constexpr double kMinUTurnWidth = 8.0;  // m: a passenger car's turning circle
+          const double armGap = (pin.pos() - po.pos()).norm();
+          const bool alongAbsorbedWays = attachNode(in) != attachNode(out) && armGap >= kMinUTurnWidth;
+          const bool onlyWayOn = !regularPartner(in, true) || !regularPartner(out, false);
+          if (out.road == in.road || !(alongAbsorbedWays || onlyWayOn)) continue;
+          t = normalizeAngle(hOut - hIn) > 0 ? Turn::Left : Turn::Right;  // built as a tight turn
         }
         // turn restrictions on the OSM ways adjacent to the junction
         const OsmId fromWay = in.atEnd ? mi.wayEnd : mi.wayStart;
-        const OsmId toWay = out.atEnd ? mo.wayEnd : mo.wayStart;
         bool forbidden = false;
         for (const auto &x : restr) {
           if (x.from != fromWay || !std::count(cl.nodes.begin(), cl.nodes.end(), x.via)) continue;
-          if (x.only ? x.to != toWay : x.to == toWay) forbidden = true;
+          // in a junction of several OSM nodes a restriction binds only the movements that pass its
+          // via node: those arriving there, or leaving their own node for another one
+          const OsmId inNode = attachNode(in), outNode = attachNode(out);
+          if (inNode != x.via && outNode == inNode) continue;
+          const std::optional<bool> leads = restrictionLeadsTo(cl, x.via, x.to, out, x.only);
+          if (leads && (x.only ? !*leads : *leads)) forbidden = true;
         }
         if (forbidden) continue;
         std::sort(ol.begin(), ol.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });

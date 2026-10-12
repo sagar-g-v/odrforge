@@ -240,7 +240,7 @@ TEST_CASE("junction: connecting-road reference lines continue the arm reference 
       if (q.id == id) return &q;
     return nullptr;
   };
-  int connecting = 0, continuing = 0, multiLane = 0;
+  int connecting = 0, continuing = 0, laneCentred = 0, multiLane = 0;
   for (const auto &r : od.roads) {
     if (r.junction == "-1") continue;
     ++connecting;
@@ -252,10 +252,42 @@ TEST_CASE("junction: connecting-road reference lines continue the arm reference 
     const bool samePlaces = (s0.pos() - a.pos()).norm() < 1e-6 && (s1.pos() - b0.pos()).norm() < 1e-6;
     const bool parallel = std::abs(std::sin(s0.hdg - a.hdg)) < 1e-6 && std::abs(std::sin(s1.hdg - b0.hdg)) < 1e-6;
     continuing += samePlaces && parallel;
+    // otherwise (a tight turn far from the arm reference lines) the road is centred on its one lane
+    const auto &lanes = r.lanes.front();
+    const double halfWidth = 0.5 * (lanes.right.empty() ? lanes.left : lanes.right).front().widths.front().a;
+    laneCentred += !(samePlaces && parallel) && lanes.right.size() + lanes.left.size() == 1 &&
+                   std::abs(std::abs(r.laneOffset.front().a) - halfWidth) < 1e-6;
   }
   CHECK(connecting > 0);
-  CHECK(continuing == connecting);
+  CHECK(continuing > 0);
+  CHECK(continuing + laneCentred == connecting);
   CHECK(multiLane > 0);  // two lanes straight on share one connecting road
+}
+
+TEST_CASE("junction: a dual carriageway crossing is one junction, no stub road between its halves (Guideline 6)") {
+  // two one-way carriageways 14.8 m apart (a wide median), crossed by a two-way street: OSM has two
+  // intersection nodes too far apart to be one node cluster, but the arm cuts squeeze the road
+  // between them out
+  OsmB b;
+  const OsmId north = b.node(0, 7.4), south = b.node(0, -7.4);
+  const Tags carriageway{{"highway", "primary"}, {"lanes", "3"}, {"oneway", "yes"}};
+  b.way({b.node(-300, 7.4), north, b.node(300, 7.4)}, carriageway);
+  b.way({b.node(300, -7.4), south, b.node(-300, -7.4)}, carriageway);
+  const Tags street{{"highway", "secondary"}, {"lanes", "2"}};
+  b.way({b.node(0, 300), north}, street);
+  b.way({north, south}, street);
+  b.way({south, b.node(0, -300)}, street);
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.errors == 0);
+  CHECK(od.junctions.size() == 1);
+  for (const auto &r : od.roads) CHECK(r.junction != "-1" || r.length() > 50.0);  // only the arms remain roads
+  // the street crosses the median in both directions and the carriageways connect to it
+  int connecting = 0;
+  for (const auto &r : od.roads) connecting += r.junction != "-1";
+  CHECK(connecting >= 6);
 }
 
 TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes never cross") {

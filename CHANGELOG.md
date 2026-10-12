@@ -5,6 +5,21 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Changed
+- **One junction per intersection** (ASAM Junction Guideline §6, OpenDRIVE 1.9 Annex F
+  junctions.no_overlap). Where the arm cuts of two junctions leave less than 3 m of a road no longer
+  than 15 m between them (the two halves of a dual-carriageway crossing, a station square of short
+  links), the two are built as one junction: junctions LA 973 -> 936, London 358 -> 326, Frankfurter
+  Kreuz 280 -> 242, Tokyo 630 -> 594; no overlapping junctions left in LA, London and Frankfurter
+  Kreuz. Longer roads between two nodes of one junction stay roads. Inside such junctions OSM turn
+  restrictions bind only the movements that pass their via node, a restriction into an absorbed way
+  leads on to the arms beyond it, and U-turns across a median of at least 8 m are kept. Lane flow:
+  Frankfurter Kreuz edge pairs OSM drives and the lanes miss 129 -> 1, lost OSM flows 43 -> 1, traps
+  and dead ends 0 in Frankfurter Kreuz and Tokyo.
+- **Connecting-road frames that would distort their lanes are not used.** The arm-to-arm reference
+  line is taken only while every lane border stays within half the turning radius of it
+  (|kappa t| <= 0.5); otherwise the lane gets a lane-centred road, or the arm frame if the
+  lane-centred one would fold. Lane borders follow the arms' sideways slope in both cases. This
+  restores 0 sideways discontinuities in CARLA for LA (26 with the previous release).
 - **Connecting roads continue the arm reference lines** (OpenDRIVE 1.9 §12.4, ASAM Junction
   Guideline §6). A connecting road's reference line now starts and ends on the incoming and
   outgoing roads' reference lines, in position and heading, in the direction of travel; the lanes

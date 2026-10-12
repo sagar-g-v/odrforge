@@ -223,6 +223,10 @@ void Builder::buildChains() {
   }
 }
 
+namespace {
+constexpr double kMaxAbsorbedRoad = 15.0;  // m: a wide median; longer roads between junction nodes stay roads
+}  // namespace
+
 void Builder::clusterJunctions() {
   // union-find over junction nodes
   std::unordered_map<OsmId, OsmId> parent;
@@ -289,6 +293,10 @@ void Builder::clusterJunctions() {
       if ((pos(jn[i]) - pos(jn[j])).norm() < 2.0 && nodeLayer(jn[i]) == nodeLayer(jn[j]) && sameLevel(jn[i], jn[j], 2.0))
         unite(jn[i], jn[j]);
 
+  // junctions that squeezed the road between them out (joinSqueezedJunctions), on one level only
+  for (const auto &[a, b] : forcedJoins)
+    if (nodeLayer(a) == nodeLayer(b) && sameLevel(a, b, (pos(a) - pos(b)).norm())) unite(a, b);
+
   std::map<OsmId, int> rootIdx;
   for (OsmId n : jn) {
     const OsmId r = find(n);
@@ -314,8 +322,10 @@ void Builder::clusterJunctions() {
   for (Chain &c : chains) {
     if (auto it = clusterOf.find(c.n0); it != clusterOf.end()) c.c0 = it->second;
     if (auto it = clusterOf.find(c.n1); it != clusterOf.end()) c.c1 = it->second;
-    // a short chain with both ends in the same cluster lies inside the junction
-    if (c.c0 >= 0 && c.c0 == c.c1 && c.n0 != c.n1) c.internal = true;
+    // a short chain with both ends in the same cluster lies inside the junction; a longer one (a
+    // loop street between two nodes of one junction) stays a road starting and ending there
+    const bool shortEnough = c.approxLength <= std::max(kMaxAbsorbedRoad, radius[c.n0] + radius[c.n1] + opt.junctionJoinSlack);
+    if (c.c0 >= 0 && c.c0 == c.c1 && c.n0 != c.n1 && shortEnough) c.internal = true;
   }
 }
 
@@ -465,6 +475,33 @@ void Builder::trimRoads() {
                              std::to_string(keep) + " m by its junctions");
     }
   }
+}
+
+// ASAM Junction Guideline §6 (one junction per intersection, as small as possible but as big as
+// necessary) and OpenDRIVE 1.9 Annex F junctions.no_overlap: when the arm cuts of two junctions
+// leave less than a short road between them, and that road is no longer than a median crossing
+// (the two halves of a dual-carriageway intersection), the two are one intersection.
+bool Builder::joinSqueezedJunctions() {
+  constexpr double kMinRoadBetweenJunctions = 3.0;  // m
+  bool joined = false;
+  for (const RoadMeta &m : metas) {
+    const Chain &ch = chains[m.chain];
+    if (ch.c0 < 0 || ch.c1 < 0 || ch.c0 == ch.c1) continue;
+    if (m.full.length() - m.trimStart - m.trimEnd >= kMinRoadBetweenJunctions) continue;
+    if (m.full.length() > kMaxAbsorbedRoad) continue;
+    forcedJoins.push_back({ch.n0, ch.n1});
+    joined = true;
+  }
+  return joined;
+}
+
+// Undo clustering, reference lines, gores and trims so the junction stages can run again.
+void Builder::forgetJunctionLayout(const std::vector<Chain> &chainsBefore) {
+  chains = chainsBefore;
+  clusterOf.clear();
+  clusters.clear();
+  metas.clear();
+  fitDev.clear();
 }
 
 void Builder::buildRoads() {
@@ -846,10 +883,20 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("collect segments", &detail::Builder::collectSegments);
   stage("junction nodes", &detail::Builder::findJunctionNodes);
   stage("chains", &detail::Builder::buildChains);
-  stage("cluster junctions", &detail::Builder::clusterJunctions);
-  stage("reference lines", &detail::Builder::buildRoadGeometry);
-  stage("lane-level gores", &detail::Builder::buildGores);
-  stage("trim roads", &detail::Builder::trimRoads);
+  // junction layout; a second pass joins junctions that squeezed the road between them out
+  const std::vector<detail::Chain> chainsBefore = b.chains;
+  const BuildReport repBefore = b.rep;
+  for (int pass = 0; pass < 2; ++pass) {
+    if (pass > 0) {
+      b.forgetJunctionLayout(chainsBefore);
+      b.rep = repBefore;
+    }
+    stage("cluster junctions", &detail::Builder::clusterJunctions);
+    stage("reference lines", &detail::Builder::buildRoadGeometry);
+    stage("lane-level gores", &detail::Builder::buildGores);
+    stage("trim roads", &detail::Builder::trimRoads);
+    if (pass > 0 || !b.joinSqueezedJunctions()) break;
+  }
   stage("roads", &detail::Builder::buildRoads);
   stage("resolve overlaps", &detail::Builder::resolveOverlaps);
   stage("elevation samples", &detail::Builder::sampleElevation);
