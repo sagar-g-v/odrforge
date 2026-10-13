@@ -12,6 +12,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   sidewalk centre to sidewalk centre, its footprint checked inside the linked sidewalk lanes, sStart..sEnd
   spanning the footprint; a crosswalk where that cannot hold keeps only its object (London 2). New
   `tools/inspect/crosspath_audit.py` measures the rules: 0 failures in all six areas. Jev 0.88.
+- **`tools/inspect/junction_rules_audit.py`** measures rules no other checker covered (OpenDRIVE 1.9
+  §12.2, §12.6, §12.7, §11.7): junctions.direct.road_connectivity / split_or_merge / road_ramp_heading,
+  overlapZone and virtual-junction attributes only on their junction types, junctions.virtual.
+  no_controllers, sStart..sEnd inside the main road, road.lane.height.elem_asc_order. All six areas: 0
+  failures (direct junction headings equal to 1e-8 rad); each rule verified to flag a planted violation.
 
 ### Added
 - **Junction approach crosswalks as cross paths** (standard profile, OpenDRIVE 1.9 §12.5 / §12.7): the
