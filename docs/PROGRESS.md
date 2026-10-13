@@ -79,6 +79,12 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   than the loader's 25 % step test. Spreading the drop needs the garage aisles beyond the portal.
 - Objects on banked roads need no z correction: 1.9 §8.3/8.4 rotate the t-axis by superelevation and
   objects sit in that frame (Jev 0.91).
+- Slip lanes (Junction Guideline §8): 149 OSM slip lanes in the six areas (`build/tmp/slip_find.py`);
+  103 are their own roads between small junctions, 46 short ones are absorbed into a joined junction.
+  Dropping the slip's turn from the central junction (triangle test, slip bending >= 20 deg) removes
+  11 repeated relations but some matches are doubtful (a -5 deg service-road "turn", a street onto
+  itself); Jev 0.70 - parked (`build/tmp/slip_relation_parked.diff`). slipLane lane type, entry/exit
+  lanes and direct junctions with overlapZone are 1.8-only (medium priority), not started.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.
