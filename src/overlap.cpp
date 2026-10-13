@@ -16,6 +16,14 @@ namespace detail {
 
 namespace {
 
+/// d laneOffset / ds at s (OpenDRIVE 1.9 §11.3 laneOffset: a cubic per record, s absolute)
+double laneOffsetSlope(const odr::Road &r, double s) {
+  const odr::Poly3 *rec = nullptr;
+  for (const odr::Poly3 &p : r.laneOffset)
+    if (p.s <= s + 1e-9) rec = &p;
+  return rec ? rec->deriv(s - rec->s) : 0.0;
+}
+
 /// lateral extent of the travelled way at s: driving, bus, bike and bidirectional lanes. Shoulders,
 /// parking and borders of adjacent carriageways may touch (they do on real roads); moving a whole
 /// carriageway for them would bend it for nothing
@@ -252,6 +260,11 @@ void Builder::resolveOverlaps() {
         const int p = std::max(0, i - 1), q = std::min(n - 1, i + 1);
         d[i] = (off[q] - off[p]) / std::max(1e-9, ss[q] - ss[p]);
       }
+      // OpenDRIVE 1.9 Annex D.1.3 no kinks where lanes meet: the shift is level at the road's ends, so
+      // the offset keeps its own slope there (a sloped offset on a curve turns each lane edge by a
+      // different angle, which the connecting road beyond cannot follow)
+      d[0] = laneOffsetSlope(base, ss[0]);
+      d[n - 1] = laneOffsetSlope(base, ss[n - 1]);
       std::vector<odr::Poly3> lo;
       int k0 = 0;
       while (k0 < n - 1) {

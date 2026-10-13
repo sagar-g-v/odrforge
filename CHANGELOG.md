@@ -74,6 +74,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Lane-edge kinks at junctions** (OpenDRIVE 1.9 Annex D.1.3): overlap resolution rebuilt an arm's
+  laneOffset with a one-sided slope at its ends, so a push still ramping there left a sloped offset;
+  on a curve each lane edge then turned by a different angle the connecting road could not follow.
+  The push is now level at the road ends. Lane-edge heading breaks 263 -> 0 over the six areas (FK
+  127, LA 66, Tokyo 36, Munich 29, London 5). Kept with Jev 0.88.
 - **Bus lanes in the carla (1.4) profile**: the access restrictions passengerCar / truck / motorcycle
   are not in the 1.4 vocabulary (simulator, autonomous traffic, pedestrian, none) and were schema
   errors; vehicle classes are written from 1.6 on with access@rule, a 1.4 bus lane is a plain driving

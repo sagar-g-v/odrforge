@@ -17,6 +17,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.3 | Sidewalks continue round junction corners; curb-return arm cuts; fillet curbs; noses at acute corners | 1,661 corners continued, 29 too tight, 170 noses |
 | 1.4 | Crosswalk objects at OSM crossings and on signalised arms, outside the curb return (already existed) | - |
 | 1.7 | Roundabout junction groups | - |
+| 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
 | 2.3 | Road mark laneChange from the final mark type (double lines crossable from the broken side) | LA trapped flows 1 -> 0, missing-link islands 17 -> 2 |
 | 6 | Stage timing; arm trimming in parallel | LA trimming 9.4 s -> 0.9 s per pass |
 | tools | `jev_judge.py` (Jev reviews whole junctions, calibrated against planted defects) | Jev trusted on spec validity only |
