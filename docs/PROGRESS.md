@@ -49,6 +49,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Separate sidewalks: the lane-edge position breaks (London 11) do not come from the verge appearing
   / disappearing between segments (keeping a 5 cm verge everywhere changed nothing); next suspect is
   the sidewalk distance changing between segments at plain road-to-road links without a blend.
+- Kerb lines: within a lane section the verge width is constant while the kerb distance varies
+  (median p10-p90 spread 0.60 m, London). Width records varying along the section would follow it;
+  Jev 0.52 (not decided), parked at medium priority.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

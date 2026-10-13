@@ -116,6 +116,34 @@ struct ConnectionEnds {
   double sOut() const { return outAtEnd ? out->length() : 0.0; }
 };
 
+/// Separately mapped sidewalks (footway=sidewalk) and kerb lines (barrier=kerb), indexed for the
+/// sideways look-up that measures where a road's sidewalk lies: sidewalk.cpp
+class SidewalkIndex {
+ public:
+  struct Leg {
+    Vec2 a, b;
+    double width;
+    int level;  ///< OSM layer, bridges / tunnels one level apart from the ground when untagged
+    bool kerb;  ///< a kerb line: the sidewalk's curb-side edge
+  };
+  /// a point on the road and its unit direction of travel
+  struct Sample {
+    Vec2 p, dir;
+    int level;
+  };
+  struct Measured {
+    double centre, width;  ///< sidewalk centre distance from the line sampled, and its width
+  };
+  void add(const Leg &g);
+  bool empty() const { return legs_.empty(); }
+  /// median sidewalk on one side of the samples; none when fewer than half the samples (or < 2) see one
+  std::optional<Measured> measure(const std::vector<Sample> &samples, bool left) const;
+
+ private:
+  std::vector<Leg> legs_;
+  std::map<std::pair<long, long>, std::vector<size_t>> grid_;
+};
+
 /// A verge + sidewalk side (attached separate sidewalk) on the inside of a bend tighter than its
 /// reach narrows so it cannot fold: sidewalk.cpp
 void keepVergeFoldSafe(CrossSection &x, const ReferenceLine &line, double s0, double s1);
@@ -138,6 +166,7 @@ struct Builder {
   std::vector<double> fitDev;  ///< per OSM node: distance to its fitted reference line
   /// junction node pairs built as one junction because the road between them was squeezed out
   std::vector<std::pair<OsmId, OsmId>> forcedJoins;
+  SidewalkIndex sidewalks;  ///< filled by attachSeparateSidewalks
 
   Builder(const OsmData &o, const Projection &p, const BuildOptions &b) : osm(o), proj(p), opt(b) {}
 
@@ -149,6 +178,8 @@ struct Builder {
   // stages (network.cpp)
   void collectSegments();
   void attachSeparateSidewalks();  // sidewalk.cpp
+  /// re-measures attached sidewalks from the fitted, trimmed reference line (sidewalk.cpp)
+  void remeasureSidewalks(const RoadMeta &m, const ReferenceLine &line, std::vector<SectionInfo> &secs) const;
   void findJunctionNodes();
   void buildChains();
   void clusterJunctions();

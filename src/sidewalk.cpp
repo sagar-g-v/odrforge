@@ -11,6 +11,9 @@
 // on that side and on the same level (layer / bridge / tunnel); the side's distance is the median,
 // used when at least half the samples found one. Motorways get none; trunk roads only where tagged.
 // Segments too short to measure take the value of the segment continuing them, so the curb runs on.
+// Once the road's reference line is fitted (it lies up to a few metres off the raw way, 0.3 m on
+// average), every attached side is measured again from that line, so the lanes reach the sidewalk
+// and the kerb where they are mapped.
 
 #include <algorithm>
 #include <array>
@@ -24,12 +27,6 @@ namespace odrforge {
 namespace detail {
 
 namespace {
-struct Leg {
-  Vec2 a, b;
-  double width;
-  int level;  // OSM layer, bridges / tunnels one level apart from the ground when untagged
-  bool kerb;  // a kerb line (barrier=kerb): the sidewalk's curb-side edge, the sidewalk beyond it
-};
 // the level a way lies on: layer=*, else +1 for a bridge and -1 for a tunnel
 int levelOf(const Tags &t) {
   if (auto l = tag(t, "layer")) try {
@@ -44,13 +41,76 @@ constexpr double kCell = 20.0;
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kMaxDistance = 30.0;  // farther: the sidewalk of something else (a service road, a plaza)
 constexpr double kMaxVerge = 8.0;      // a wider gap than this between the lanes and the sidewalk is not a verge
+constexpr double kStep = 4.0;          // sample spacing along the road
+
+long cellOf(double v) { return static_cast<long>(std::floor(v / kCell)); }
+
+bool hasVergeTooWide(const CrossSection &x, bool leftSide) {
+  const auto &lanes = (leftSide ? x.left : x.right).lanes;
+  return std::any_of(lanes.begin(), lanes.end(),
+                     [](const LaneSpec &l) { return l.kind == LaneKind::Border && l.width > kMaxVerge; });
+}
+
+bool hasVerge(const CrossSection &x, bool leftSide) {
+  const auto &lanes = (leftSide ? x.left : x.right).lanes;
+  return std::any_of(lanes.begin(), lanes.end(), [](const LaneSpec &l) { return l.kind == LaneKind::Border; });
+}
 }  // namespace
+
+void SidewalkIndex::add(const Leg &g) {
+  const size_t k = legs_.size();
+  legs_.push_back(g);
+  const double L = (g.b - g.a).norm();
+  for (double u = 0; u <= L + kCell; u += 0.5 * kCell) {
+    const Vec2 p = g.a + (g.b - g.a) * std::min(1.0, u / L);
+    auto &cell = grid_[{cellOf(p.x), cellOf(p.y)}];
+    if (cell.empty() || cell.back() != k) cell.push_back(k);
+  }
+}
+
+std::optional<SidewalkIndex::Measured> SidewalkIndex::measure(const std::vector<Sample> &samples, bool left) const {
+  std::vector<double> dist, width;
+  for (const Sample &q : samples) {
+    double walkAt = kMaxDistance, walkWidth = 0.0, kerbAt = kMaxDistance;  // nearest footway / kerb
+    const Vec2 nrm{-q.dir.y, q.dir.x};  // left normal
+    for (long dx = -2; dx <= 2; ++dx)
+      for (long dy = -2; dy <= 2; ++dy) {
+        auto it = grid_.find({cellOf(q.p.x) + dx, cellOf(q.p.y) + dy});
+        if (it == grid_.end()) continue;
+        for (size_t k : it->second) {
+          const Leg &g = legs_[k];
+          if (g.level != q.level) continue;  // a footway above or below this road is not its sidewalk
+          const Vec2 gd = g.b - g.a;
+          if (std::abs(gd.dot(q.dir)) < std::cos(25.0 * kPi / 180.0) * gd.norm()) continue;  // not parallel
+          // where the normal through the sample meets the leg: p + nrm t = g.a + gd v
+          const Vec2 r = g.a - q.p;
+          const double v = -(q.dir.dot(r)) / q.dir.dot(gd);
+          if (v < 0.0 || v > 1.0) continue;
+          const double t = nrm.dot(r + gd * v);
+          if ((t > 0) != left) continue;
+          if (g.kerb) kerbAt = std::min(kerbAt, std::abs(t));
+          else if (std::abs(t) < walkAt) walkAt = std::abs(t), walkWidth = g.width;
+        }
+      }
+    // the sidewalk is the mapped footway; where a kerb line runs between the road and it, the
+    // sidewalk reaches from the kerb to the footway's outer edge (both measured). A kerb alone
+    // gives no sidewalk width and is not used.
+    if (walkAt < kMaxDistance) {
+      const double outer = walkAt + 0.5 * walkWidth;
+      const bool kerbInside = kerbAt < walkAt && outer - kerbAt >= 1.0;
+      dist.push_back(kerbInside ? 0.5 * (kerbAt + outer) : walkAt);
+      width.push_back(kerbInside ? outer - kerbAt : walkWidth);
+    }
+  }
+  if (samples.empty() || dist.size() < std::max<size_t>(2, (samples.size() + 1) / 2)) return std::nullopt;
+  std::nth_element(dist.begin(), dist.begin() + dist.size() / 2, dist.end());
+  std::nth_element(width.begin(), width.begin() + width.size() / 2, width.end());
+  return Measured{dist[dist.size() / 2], width[width.size() / 2]};
+}
 
 void Builder::attachSeparateSidewalks() {
   if (!opt.separateSidewalks) return;
   const CountryProfile &C = opt.country;
-  std::vector<Leg> legs;
-  std::map<std::pair<long, long>, std::vector<size_t>> grid;
   auto xy = [&](OsmId id, Vec2 &p) {
     const OsmNode *n = osm.node(id);
     if (!n) return false;
@@ -68,17 +128,10 @@ void Builder::attachSeparateSidewalks() {
     for (size_t i = 0; i + 1 < w.nodes.size(); ++i) {
       Vec2 a, b;
       if (!xy(w.nodes[i], a) || !xy(w.nodes[i + 1], b) || (b - a).norm() < 0.5) continue;
-      const size_t k = legs.size();
-      legs.push_back({a, b, width, levelOf(w.tags), kerbLine && !sidewalkWay});
-      const double L = (b - a).norm();
-      for (double u = 0; u <= L + kCell; u += 0.5 * kCell) {
-        const Vec2 p = a + (b - a) * std::min(1.0, u / L);
-        auto &cell = grid[{static_cast<long>(std::floor(p.x / kCell)), static_cast<long>(std::floor(p.y / kCell))}];
-        if (cell.empty() || cell.back() != k) cell.push_back(k);
-      }
+      sidewalks.add({a, b, width, levelOf(w.tags), kerbLine && !sidewalkWay});
     }
   }
-  if (legs.empty()) return;
+  if (sidewalks.empty()) return;
   // 1. measure: distance and width of the parallel sidewalk per segment side (NaN: none found)
   const size_t n = segs.size();
   std::vector<std::array<double, 2>> D(n, {kNaN, kNaN}), W(n, {kNaN, kNaN});
@@ -104,51 +157,21 @@ void Builder::attachSeparateSidewalks() {
     double total = 0;
     for (size_t i = 0; i + 1 < pts.size(); ++i) total += (pts[i + 1] - pts[i]).norm();
     if (total < 16.0) continue;  // too short to tell: inherits from its continuation below
+    // samples every kStep m, not within 6 m of the ends (there the sidewalk turns round the corner)
+    std::vector<SidewalkIndex::Sample> samples;
+    double run = 0;
+    for (size_t i = 0; i + 1 < pts.size(); ++i) {
+      const Vec2 a = pts[i], d = pts[i + 1] - pts[i];
+      const double L = d.norm();
+      if (L < 1e-6) continue;
+      const Vec2 dir = d * (1.0 / L);
+      for (double u = std::fmod(kStep - std::fmod(run, kStep), kStep); u < L; u += kStep)
+        if (run + u >= 6.0 && run + u <= total - 6.0) samples.push_back({a + dir * u, dir, level});
+      run += L;
+    }
     for (int side = 0; side < 2; ++side) {
       if (!allowed[si][side]) continue;
-      const bool left = side == 0;
-      std::vector<double> dist, width;
-      int samples = 0;
-      double run = 0;
-      for (size_t i = 0; i + 1 < pts.size(); ++i) {
-        const Vec2 a = pts[i], d = pts[i + 1] - pts[i];
-        const double L = d.norm();
-        if (L < 1e-6) continue;
-        const Vec2 dir = d * (1.0 / L);
-        for (double u = std::fmod(4.0 - std::fmod(run, 4.0), 4.0); u < L; u += 4.0) {
-          if (run + u < 6.0 || run + u > total - 6.0) continue;
-          ++samples;
-          const Vec2 p = a + dir * u;
-          double best = kMaxDistance, bw = 0, centre = 0;
-          const long cx = static_cast<long>(std::floor(p.x / kCell)), cy = static_cast<long>(std::floor(p.y / kCell));
-          for (long dx = -2; dx <= 2; ++dx)
-            for (long dy = -2; dy <= 2; ++dy) {
-              auto it = grid.find({cx + dx, cy + dy});
-              if (it == grid.end()) continue;
-              for (size_t k : it->second) {
-                const Leg &g = legs[k];
-                if (g.level != level) continue;  // a footway above or below this road is not its sidewalk
-                const Vec2 gd = g.b - g.a;
-                if (std::abs(gd.dot(dir)) < std::cos(25.0 * kPi / 180.0) * gd.norm()) continue;  // not parallel
-                // where the normal through the sample meets the leg: p + nrm t = g.a + gd v
-                const Vec2 nrm{-dir.y, dir.x};  // left normal
-                const Vec2 r = g.a - p;
-                const double v = -(dir.dot(r)) / dir.dot(gd);
-                if (v < 0.0 || v > 1.0) continue;
-                const double t = nrm.dot(r + gd * v);
-                if ((t > 0) != left) continue;
-                // the nearest line on this side wins; a kerb puts the sidewalk centre half a width beyond it
-                if (std::abs(t) < best) best = std::abs(t), bw = g.width, centre = std::abs(t) + (g.kerb ? 0.5 * g.width : 0.0);
-              }
-            }
-          if (best < kMaxDistance) dist.push_back(centre), width.push_back(bw);
-        }
-        run += L;
-      }
-      if (samples == 0 || dist.size() < std::max<size_t>(2, (samples + 1) / 2)) continue;
-      std::nth_element(dist.begin(), dist.begin() + dist.size() / 2, dist.end());
-      std::nth_element(width.begin(), width.begin() + width.size() / 2, width.end());
-      D[si][side] = dist[dist.size() / 2], W[si][side] = width[width.size() / 2];
+      if (const auto got = sidewalks.measure(samples, side == 0)) D[si][side] = got->centre, W[si][side] = got->width;
     }
   }
   // 2. continuity: a segment without a measurement of its own (short, or its sidewalk drawn round a
@@ -179,12 +202,40 @@ void Builder::attachSeparateSidewalks() {
       CrossSection x = segs[si].xs;
       if (!attachSeparateSidewalk(x, side == 0, D[si][side], W[si][side])) continue;
       // a verge wider than kMaxVerge is a plaza, a car park or another road's sidewalk: not this one
-      const auto &lanes = (side == 0 ? x.left : x.right).lanes;
-      if (std::any_of(lanes.begin(), lanes.end(), [](const LaneSpec &l) { return l.kind == LaneKind::Border && l.width > kMaxVerge; }))
-        continue;
+      if (hasVergeTooWide(x, side == 0)) continue;
       segs[si].xs = x;
       ++rep.separateSidewalks;
     }
+}
+
+// The lanes are laid out from the fitted reference line (OpenDRIVE 1.8 §9.3: lane borders are offsets
+// t from it), not from the OSM way the sidewalk was first measured from. Each section side that has
+// an attached sidewalk (a verge, LaneKind::Border) is measured again along the trimmed line, samples
+// every kStep m at least 2 m inside the road's ends; where too few samples see the sidewalk (a short
+// section, a bend), or the new layout does not fit, the first measurement stays.
+void Builder::remeasureSidewalks(const RoadMeta &m, const ReferenceLine &line, std::vector<SectionInfo> &secs) const {
+  if (sidewalks.empty()) return;
+  const double len = line.length();
+  auto levelAt = [&](double sFull) {
+    for (const auto &lr : m.layers)
+      if (sFull >= lr.s0 && sFull <= lr.s1) return lr.layer;
+    return 0;
+  };
+  for (size_t k = 0; k < secs.size(); ++k) {
+    const double s0 = std::max(secs[k].s, 2.0), s1 = std::min(k + 1 < secs.size() ? secs[k + 1].s : len, len - 2.0);
+    std::vector<SidewalkIndex::Sample> samples;
+    for (double s = s0 + 0.5 * kStep; s < s1; s += kStep) {
+      const auto e = line.eval(s);
+      samples.push_back({Vec2{e.x, e.y}, {std::cos(e.hdg), std::sin(e.hdg)}, levelAt(s + m.trimStart)});
+    }
+    for (const bool leftSide : {true, false}) {
+      if (!hasVerge(secs[k].xs, leftSide)) continue;
+      const auto got = sidewalks.measure(samples, leftSide);
+      if (!got) continue;
+      CrossSection x = secs[k].xs;
+      if (attachSeparateSidewalk(x, leftSide, got->centre, got->width) && !hasVergeTooWide(x, leftSide)) secs[k].xs = x;
+    }
+  }
 }
 
 // OpenDRIVE 1.9 §8.3: a lane border offset t from a reference line of curvature k folds (runs

@@ -107,8 +107,9 @@ std::string sidewalkTag(const Tags &t, const std::string &side) { return sideVal
 bool attachSeparateSidewalk(CrossSection &x, bool leftSide, double distance, double width, double maxOverlap) {
   SideSpec &s = leftSide ? x.left : x.right;
   SideSpec kept = s;
+  // the side's own sidewalk and a verge attached before are replaced (re-measured from the fitted line)
   kept.lanes.erase(std::remove_if(kept.lanes.begin(), kept.lanes.end(),
-                                  [](const LaneSpec &l) { return l.kind == LaneKind::Sidewalk; }),
+                                  [](const LaneSpec &l) { return l.kind == LaneKind::Sidewalk || l.kind == LaneKind::Border; }),
                    kept.lanes.end());
   // outer edge of the side's remaining lanes, as a distance from the OSM way (the divider lies at
   // laneOffset, left +)

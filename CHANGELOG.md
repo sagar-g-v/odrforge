@@ -15,7 +15,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   narrowing 0.22): folds LA 100 -> 78, London 42 -> 32, Tokyo 26 -> 19, Munich 35 -> 28. The verge
   lane stays (at least 5 cm) wherever the sidewalk is attached, so segments keep one lane layout (LA
   unexplained edge breaks 51 -> 36). OSM kerb lines (barrier=kerb) place the sidewalk's curb-side edge
-  where mapped (London: 1130 road sides, 537 corners; kept with Jev 0.64).
+  where a mapped footway runs beyond them on the same side: the sidewalk spans from the kerb to the
+  footway's outer edge, both measured (a kerb alone is not used). Once a road's reference line is
+  fitted, every attached side is measured again from that line, not the raw way (which lies 0.31 m off
+  it on average in London). Curb edges within 0.2 m of a London kerb line (new `tools/inspect/kerb_match.py`):
+  no kerbs 20.9 % (median 0.55 m) -> 45.2 % (median 0.24 m, no bias); folds 30 -> 31. Kept with Jev
+  0.88 (re-measuring 0.85). The rest is the kerb distance varying within a section (median p10-p90
+  spread 0.60 m) while verge widths are constant per section.
 - `ODRFORGE_VERBOSE` prints every build stage with its run time. Arm trimming now runs per junction
   in parallel (LA: 2 x 9.4 s -> 2 x 0.9 s, output byte-identical); overlap resolution (2 x 5 s) is a
   sequential sweep whose result depends on its order and stays single-threaded.
