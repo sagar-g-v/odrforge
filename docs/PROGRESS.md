@@ -85,6 +85,12 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   11 repeated relations but some matches are doubtful (a -5 deg service-road "turn", a street onto
   itself); Jev 0.70 - parked (`build/tmp/slip_relation_parked.diff`). slipLane lane type, entry/exit
   lanes and direct junctions with overlapZone are 1.8-only (medium priority), not started.
+- Direct junctions at freeway gores (1.5, standard profile): joining each gore's 4 m connecting road
+  into the ramp / main road converts 54 of 113 gores (28 kept: an arm reached by several connecting
+  roads; 28: carried shoulders would fold on the connecting road's bend; 3: unexpected road end);
+  all flow / continuity checks clean, XSD / Annex F / ASAM qc / esmini clean; 5 OSM-distance findings
+  on the joined first metres. Jev 0.76-0.79 - parked (`build/tmp/direct_parked/`: direct_junctions.cpp
+  + wiring.diff). Lane types onRamp / offRamp / entry / exit not started.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

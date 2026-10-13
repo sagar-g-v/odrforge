@@ -475,6 +475,28 @@ TEST_CASE("validator catches spec violations (negative tests)") {
   CHECK(validate(sampleNetwork()).errors == 0);
 }
 
+TEST_CASE("validator: a direct junction's linked road is one of its roads (1.9 section 12.6)") {
+  // road A ends in junction 100, road B starts there; a direct junction links A to B (@linkedRoad)
+  odr::OpenDrive od = sampleNetwork();
+  odr::Road b = od.roads[0];
+  b.id = "200";
+  od.roads[0].successor = odr::LinkTarget{"junction", "100", ""};
+  b.predecessor = odr::LinkTarget{"junction", "100", ""};
+  b.successor.reset();
+  od.roads.push_back(b);
+  odr::Junction J;
+  J.id = "100";
+  J.type = "direct";
+  odr::Connection cn;
+  cn.id = "0";
+  cn.incomingRoad = od.roads[0].id;
+  cn.connectingRoad = "200";  // written as @linkedRoad
+  cn.laneLinks = {{-1, -1}};
+  J.connections = {cn};
+  od.junctions.push_back(J);
+  CHECK(validate(od).count("road.linkage.both_sides_consistency") == 0);
+}
+
 TEST_CASE("writer: road length is never shorter than the written geometry (strict readers)") {
   // LibCarla checks s <= road length strictly: the written length must cover the written s + length
   // of the last geometry even after each value is rounded to the output precision

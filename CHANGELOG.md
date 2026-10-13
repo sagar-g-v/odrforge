@@ -84,6 +84,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Direct junctions in the checkers** (OpenDRIVE 1.9 §12.6): the exact network checker and the
+  validator now follow `<junction type="direct">` (the connection's `@linkedRoad`; lanes compared at
+  the cut). Maps without direct junctions check byte-identically; a test conversion with direct
+  junctions lost all its false topology / flow findings. Kept with Jev 0.90.
 - **Signal phases by traffic axis**: a phase (controller) holds an approach, the one opposite it and
   the approaches running parallel to either (a second carriageway, a slip road); before, parallel
   approaches waited in separate phases (23 junctions). No phase mixes crossing directions. Kept

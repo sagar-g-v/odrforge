@@ -202,6 +202,8 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         bool known = false;  // the junction must know this road (incoming, or target of a connecting road)
         for (const auto &c : jt->second->connections) {
           if (c.incomingRoad == r.id) known = true;
+          // OpenDRIVE 1.9 §12.6: a direct junction names the road it links to (@linkedRoad)
+          if (jt->second->type == "direct" && c.connectingRoad == r.id) known = true;
           auto cr = roads.find(c.connectingRoad);
           if (cr != roads.end() && cr->second->successor && cr->second->successor->elementId == r.id) known = true;
         }

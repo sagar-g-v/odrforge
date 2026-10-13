@@ -493,9 +493,12 @@ class Network:
         self.junctions = {}
         for j in root.findall("junction"):
             conns = []
+            direct = j.get("type") == "direct"
             for c in j.findall("connection"):
-                conns.append(dict(id=c.get("id"), incoming=c.get("incomingRoad"), connecting=c.get("connectingRoad"),
-                                  contact=c.get("contactPoint"),
+                # a direct junction (OpenDRIVE 1.9 section 12.6) links the incoming road to @linkedRoad itself
+                conns.append(dict(id=c.get("id"), incoming=c.get("incomingRoad"),
+                                  connecting=c.get("linkedRoad") if direct else c.get("connectingRoad"),
+                                  contact=c.get("contactPoint"), direct=direct,
                                   lanes=[(int(l.get("from")), int(l.get("to"))) for l in c.findall("laneLink")]))
             self.junctions[j.get("id")] = conns
 
@@ -736,6 +739,24 @@ def lane_links(net, res, rule="file"):
     links = []
     unlinked = {}   # (road id, end, junction) -> instance
 
+    def direct_link(inc, lnk, c, jid):
+        """OpenDRIVE 1.9 section 12.6: the incoming road's end at the junction meets the linked road's
+        contact end; laneLinks name the incoming and the linked lanes (no connecting road between)."""
+        e = junction_end(inc, jid, _xy(lnk, end_s(lnk, c["contact"])))
+        back = lnk.pred if c["contact"] == "start" else lnk.succ
+        if e is None or back is None or back.type != "junction" or back.id != jid:
+            _topo(res, inc, 0, 0, "direct_junction_not_linked", junction=jid, linked=lnk.id)
+            return
+        isec, lsec = inc.sections[end_k(inc, e)], lnk.sections[end_k(lnk, c["contact"])]
+        pairs = []
+        for f, t in c["lanes"]:
+            if f not in isec.lanes or t not in lsec.lanes:
+                _topo(res, inc, f, end_s(inc, e), "laneLink_lane_missing", junction=jid, connecting=lnk.id, to=t)
+                continue
+            pairs.append((f, t))
+        links.append(dict(fam="junction", A=inc, a_end=e, B=lnk, b_contact=c["contact"], pairs=sorted(pairs),
+                          junction=jid, direct=True))
+
     def unlinked_end(o, end, jid, con_id):
         key = (o.id, end, jid)
         if key not in unlinked:
@@ -817,6 +838,9 @@ def lane_links(net, res, rule="file"):
         seen_pairs = set()
         for c in net.junctions[jid]:
             inc, con = net.roads.get(c["incoming"]), net.roads.get(c["connecting"])
+            if c.get("direct") and inc is not None and con is not None and c["contact"] in ("start", "end"):
+                direct_link(inc, con, c, jid)
+                continue
             if inc is None or con is None or c["contact"] not in ("start", "end"):
                 _topo(res, inc if inc is not None else c["incoming"], 0, 0, "connection_road_missing", junction=jid,
                       connecting=c["connecting"])
@@ -870,7 +894,7 @@ def lane_links(net, res, rule="file"):
         # the converse: a drivable connecting-road lane entered at one of its ends (by its travel direction)
         # whose own lane link names a lane of the plain road there must be a laneLink of a connection of
         # this junction; esmini and CARLA route incoming -> connecting through the junction laneLinks.
-        cons = {c["connecting"] for c in net.junctions[jid] if c["connecting"] in net.roads}
+        cons = {c["connecting"] for c in net.junctions[jid] if c["connecting"] in net.roads and not c.get("direct")}
         cons |= {r.id for r in net.roads.values() if r.junction == jid}
         for cid in sorted(cons, key=_idkey):
             con = net.roads[cid]
@@ -913,7 +937,7 @@ def check_links(net, res, links):
         A, B = link_end(L["A"], L["a_end"]), contact_end(L["B"], L["b_contact"])
         v = min(L["A"].speed, L["B"].speed)
         key = tuple(sorted([(L["A"].id, L["a_end"]), (L["B"].id, L["b_contact"])]))
-        if key not in seen:
+        if key not in seen and not L.get("direct"):
             seen.add(key)
             compare_ref(res, L["fam"], A, B, v)
         for la, lb in L["pairs"]:
@@ -1689,6 +1713,9 @@ def junction_arms(net, jid):
         e = junction_end(inc, jid, (float(cx[0]), float(cy[0])), con.pred if c["contact"] == "start" else con.succ)
         if e is not None:
             arms.add((inc.id, e))
+        if c.get("direct"):  # the linked road itself is an arm, at its contact end
+            arms.add((con.id, c["contact"]))
+            continue
         other = con.succ if c["contact"] == "start" else con.pred
         if other is not None and other.type == "road" and other.id in net.roads and other.contact in ("start", "end"):
             arms.add((other.id, other.contact))
