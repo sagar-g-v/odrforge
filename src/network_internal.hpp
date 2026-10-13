@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -226,7 +227,12 @@ struct Builder {
   void buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId);
   void connectingRoadHeight(odr::Road &c, const ConnectionEnds &ends, double tRefIn, double tRefOut,
                             const Cluster &cl) const;
+  void markSignalControl();  // network_junctions.cpp, before direct junctions
   void buildSignals();
+  /// junctions with an OSM traffic_signals node in them, and the (chain, cluster) approaches that carry
+  /// a light node of their own within kControlReach of the junction (markSignalControl)
+  std::vector<char> lightInJunction;
+  std::set<std::pair<int, int>> litApproach;
   void buildObjects();
   void finish();
   void groupRoundabouts();

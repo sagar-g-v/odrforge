@@ -877,6 +877,31 @@ constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
 constexpr double kStopLineGap = 1.0;       // stop line before the crosswalk
 }  // namespace
 
+// OSM maps traffic signals either as one node in the junction (every approach signalised) or as a
+// node per approach at its stop line. A light node on an approach within kControlReach of a junction
+// signalises it; the approaches that carry their own light are remembered. Run before the direct
+// junctions: OpenDRIVE 1.8.0 §12.1 Table 54 - junctions with traffic lights are common junctions.
+void Builder::markSignalControl() {
+  constexpr double kControlReach = 40.0;
+  lightInJunction.assign(clusters.size(), 0);
+  for (size_t k = 0; k < clusters.size(); ++k) lightInJunction[k] = clusters[k].signalised;
+  litApproach.clear();
+  for (int ci = 0; ci < static_cast<int>(chains.size()); ++ci) {
+    const Chain &ch = chains[ci];
+    if (ch.internal) continue;
+    for (const RoadMeta &m : metas) {
+      if (m.chain != ci) continue;
+      for (const auto &[nid, s] : m.nodeS) {
+        const OsmNode *nd = osm.node(nid);
+        if (!nd || !tagIs(nd->tags, "highway", "traffic_signals")) continue;
+        if (ch.c1 >= 0 && m.full.length() - s < kControlReach) litApproach.insert({ci, ch.c1});
+        if (ch.c0 >= 0 && s < kControlReach) litApproach.insert({ci, ch.c0});
+      }
+    }
+  }
+  for (const auto &[chain, cluster] : litApproach) clusters[cluster].signalised = true;
+}
+
 void Builder::buildSignals() {
   const CountryProfile &C = opt.country;
   const TargetProfile &T = opt.target;
@@ -975,27 +1000,6 @@ void Builder::buildSignals() {
     if (tagIs(nd.tags, "highway", "stop") || tagIs(nd.tags, "highway", "give_way"))
       for (const auto &t : signTargets(nid, nd)) signedEnd.insert(t);
 
-  // OSM maps traffic signals either as one node in the junction (every approach signalised) or as a
-  // node per approach at its stop line. A light node on an approach within kControlReach of a
-  // junction signalises it; the approaches that carry their own light are remembered.
-  constexpr double kControlReach = 40.0;
-  std::vector<char> lightInJunction(clusters.size());
-  for (size_t k = 0; k < clusters.size(); ++k) lightInJunction[k] = clusters[k].signalised;
-  std::set<std::pair<int, int>> litApproach;  // (chain, cluster)
-  for (int ci = 0; ci < static_cast<int>(chains.size()); ++ci) {
-    const Chain &ch = chains[ci];
-    if (ch.internal) continue;
-    for (const RoadMeta &m : metas) {
-      if (m.chain != ci) continue;
-      for (const auto &[nid, s] : m.nodeS) {
-        const OsmNode *nd = osm.node(nid);
-        if (!nd || !tagIs(nd->tags, "highway", "traffic_signals")) continue;
-        if (ch.c1 >= 0 && m.full.length() - s < kControlReach) litApproach.insert({ci, ch.c1});
-        if (ch.c0 >= 0 && s < kControlReach) litApproach.insert({ci, ch.c0});
-      }
-    }
-  }
-  for (const auto &[chain, cluster] : litApproach) clusters[cluster].signalised = true;
   // a junction signalised through some of its approaches: an approach without a light of its own is
   // controlled by the stop / give-way sign OSM gives it (placed below), a service road or
   // living street (a driveway, a car park exit) by a give-way sign; other streets get a light (OSM
@@ -1070,13 +1074,25 @@ void Builder::buildSignals() {
       sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 4.5;
       placeAtEnd(r, a.end->atEnd, a.lanes, 0.2, sg);
       ctrls[a.group].signalIds.push_back(sg.id);
-      if (T.spec().hasSignalReferenceElement()) {
+      // Stop line: OpenDRIVE catalogue type 1100001 (invisible stop line, Signal reference 1.0.0
+      // Table 5), before the pedestrian crossings (Junction Guideline §6.3.3): pushed upstream,
+      // kStopLineGap clear, past every crosswalk that reaches from the junction side up to it - the
+      // approach's own and mapped ones; crosswalks wholly upstream of it are left behind it.
+      double back = 0.2;
+      for (bool moved = true; moved;) {
+        moved = false;
+        for (const odr::Object &o : r.objects) {
+          if (o.type != "crosswalk") continue;
+          const double d = a.end->atEnd ? r.length() - o.s : o.s;  // crosswalk centre from the junction end
+          const double far = d + 0.5 * o.length + kStopLineGap;
+          if (d - 0.5 * o.length < back && back < far) back = far, moved = true;
+        }
+      }
+      // an approach too short to stop before its crosswalk gets no stop line: the light keeps the lane
+      // validity itself (OpenDRIVE 1.8.0 §14.2; the §14.4 example light carries <validity>)
+      if (T.spec().hasSignalReferenceElement() && back < r.length()) {
         // ASAM Junction Guideline §9.2: traffic stops at a stop line, valid for the approach lanes and
         // dependent on the light; the light references it and carries no lane validity itself.
-        // Stop line: OpenDRIVE catalogue type 1100001 (invisible stop line, Signal reference 1.0.0
-        // Table 5), before the approach's crosswalk where there is one.
-        const bool crosswalk = opt.crosswalksAtSignals && r.length() >= kCrosswalkMinRoad;
-        const double back = crosswalk ? kCrosswalkCentreBack + 0.5 * kCrosswalkLength + kStopLineGap : 0.2;
         odr::Signal stop;
         stop.id = std::to_string(nextSignalId++);
         stop.name = "StopLine";

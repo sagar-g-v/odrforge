@@ -85,7 +85,10 @@ std::vector<int> Builder::endLanes(const odr::Road &r, bool atEnd, bool incoming
   std::vector<int> out;
   auto take = [&](const std::vector<odr::Lane> &side) {
     for (const auto &l : side) {
-      if (l.type != "driving") continue;
+      // driving, and the motorway lane types of OpenDRIVE 1.8.0 §11.7.1 (direct junctions type them)
+      if (l.type != "driving" && l.type != "entry" && l.type != "exit" && l.type != "onRamp" && l.type != "offRamp" &&
+          l.type != "connectingRamp")
+        continue;
       const bool plus = (l.id < 0) != lht(opt);
       if (plus == wantPlus) out.push_back(l.id);
     }
@@ -1057,9 +1060,10 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("elevation profiles", &detail::Builder::fitRoadElevation);
   stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
   stage("junctions", &detail::Builder::buildJunctions);
+  stage("signal control", &detail::Builder::markSignalControl);
   stage("direct junctions", &detail::Builder::directJunctions);
+  stage("objects", &detail::Builder::buildObjects);  // crosswalks before the stop lines placed behind them
   stage("signals", &detail::Builder::buildSignals);
-  stage("objects", &detail::Builder::buildObjects);
   stage("curb lanes", &detail::Builder::curbLanes);
   stage("lowered curbs", &detail::Builder::lowerCurbsAtCrosswalks);
   stage("cross paths", &detail::Builder::crossPaths);

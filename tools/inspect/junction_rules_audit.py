@@ -11,6 +11,7 @@ checkers measure (rule ids verbatim from the spec):
   junctions.direct.overlap_zone_*      (1.8.0, §12.6) overlapZone only in direct junctions
   junctions.common.virtual_junction_attributes (1.9.0, §12.2) mainRoad / orientation / sStart / sEnd only on virtual
   junctions.virtual.no_controllers     (1.9.0, §12.7) "Virtual junctions shall not have controllers ..."
+  1.8.0 §12.1 Table 54                 junctions with traffic lights are common: no controller in a direct junction
   junctions.virtual.only_one_start_end (1.9.0, §12.7) one sStart, one sEnd: here sStart <= sEnd within the main road
   road.lane.height.elem_asc_order      (§11.7) "<height> elements shall be defined in ascending order according to the
                                        s-coordinate."
@@ -68,6 +69,9 @@ def audit(path):
         if jt != "direct":
             continue
         n_direct += 1
+        # OpenDRIVE 1.8.0 §12.1 Table 54: junctions with traffic lights -> common
+        if j.find("controller") is not None:
+            fails["junctions.direct.traffic_lights(1.8.0 Table 54)"] += 1
         conns = j.findall("connection")
         pairs = [(c.get("incomingRoad"), c.get("linkedRoad")) for c in conns]
         # one road on one side, several on the other: one road in every connection, the others distinct

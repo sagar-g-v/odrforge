@@ -5,6 +5,16 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Traffic-light control follows OpenDRIVE 1.8.0 and the Junction Guideline** (multi-source review):
+  - 1.8.0 §12.1 Table 54 (junctions with traffic lights are common): signal control is decided before the
+    direct junctions; a signalised merge stays a common junction (Munich J247, London J86 had lights and
+    controllers in direct junctions);
+  - 1.8.0 §14.1: approaches whose lanes are onRamp / offRamp / entry / exit / connectingRamp now get their
+    light (LA 2, Munich 1, London 2 were uncontrolled);
+  - Junction Guideline §6.3.3: stop lines lay on crosswalks (LA 52, Munich 26, London 58): crosswalks are now
+    built first and each stop line is pushed 1 m clear upstream of every crosswalk between it and the
+    junction; an approach too short for that gets no stop line and its light keeps the lane validity
+    (1.8.0 §14.4 form). New `tools/inspect/signal_rules_audit.py`. Jev 0.82.
 - **Cross paths follow OpenDRIVE 1.8.0 and the Junction Guideline** (checked against 1.8.0 §12.1 / §12.5 /
   §12.7, XSD 1.8.1, Junction Guideline 1.0.0 §6.3.3, §6.4.3, §10.3.3 and the spec atlas):
   - crosswalks on junction approaches are no longer virtual junctions on the approach road: the guideline

@@ -25,6 +25,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.3e | Junction approach crosswalks as cross paths, virtual junction on the approach (standard; Jev 0.80) | LA 104 / Tokyo 291 cross paths |
 | 1.3f | Cross paths fixed to the §12.5 / §12.7.1 rules, `crosspath_audit.py` (Jev 0.88) | 0 rule failures, 6 areas |
 | 1.3g | Cross paths to 1.8.0 + Junction Guideline: flat only, priority, approach ones reverted (Jev 0.80 / 0.88) | Tokyo 315, LA 0 (banked) |
+| 4.4 | Signal control fixes from the spec review: no lights in direct junctions, ramp approaches lit, stop lines clear of crosswalks (Jev 0.82) | 0 audit failures |
 | 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
 | 1.5b | Ramp lane types onRamp / offRamp / connectingRamp / entry / exit (standard) | FK 108 lanes, LA 58 |
 | 1.5 | Direct junctions at freeway gores (standard; committed at Jev 0.79 by user decision) | 54 of 113 gores |

@@ -262,7 +262,8 @@ void Builder::directJunctions() {
   };
   std::vector<TrunkLane> trunkLanes;
   for (const Cluster &cl : clusters) {
-    if (!cl.gore || cl.junction < 0) continue;
+    // OpenDRIVE 1.8.0 §12.1 Table 54: a junction with traffic lights is a common junction
+    if (!cl.gore || cl.junction < 0 || cl.signalised) continue;
     odr::Junction &J = od.junctions[cl.junction];
     const bool diverge = cl.gore->diverge;
     // every connection joins one connecting road to one plain road (its arm on the far side), each
