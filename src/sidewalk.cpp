@@ -181,5 +181,38 @@ void Builder::attachSeparateSidewalks() {
     }
 }
 
+// OpenDRIVE 1.9 §8.3: a lane border offset t from a reference line of curvature k folds (runs
+// backwards) where k t reaches 1. A side extended to its separately mapped sidewalk can reach far
+// from the way; where the section bends towards that side so tightly that its outer edge would pass
+// kMaxBend / k, the verge narrows first (down to kMinVerge), then the sidewalk (down to kMinWalk).
+// Widths stay constant per section and blend between sections.
+void keepVergeFoldSafe(CrossSection &x, const ReferenceLine &line, double s0, double s1) {
+  constexpr double kMaxBend = 0.8, kMinVerge = 0.05, kMinWalk = 1.0;
+  for (const bool leftSide : {true, false}) {
+    SideSpec &side = leftSide ? x.left : x.right;
+    const bool hasVerge = std::any_of(side.lanes.begin(), side.lanes.end(),
+                                      [](const LaneSpec &l) { return l.kind == LaneKind::Border; });
+    if (!hasVerge) continue;
+    double tightest = 0.0;  // largest curvature towards this side over the section
+    for (double s = s0; s <= s1 + 1e-9; s += std::max(0.5, (s1 - s0) / 200.0))
+      tightest = std::max(tightest, (leftSide ? 1.0 : -1.0) * line.eval(s).kappa);
+    if (tightest <= 1e-9) continue;
+    const double reach = leftSide ? x.laneOffset + side.totalWidth() : side.totalWidth() - x.laneOffset;
+    double excess = reach - kMaxBend / tightest;
+    for (LaneSpec &l : side.lanes) {
+      if (excess <= 0.0) break;
+      if (l.kind != LaneKind::Border) continue;
+      const double cut = std::min(excess, std::max(0.0, l.width - kMinVerge));
+      l.width -= cut, excess -= cut;
+    }
+    for (LaneSpec &l : side.lanes) {
+      if (excess <= 0.0) break;
+      if (l.kind != LaneKind::Sidewalk) continue;
+      const double cut = std::min(excess, std::max(0.0, l.width - kMinWalk));
+      l.width -= cut, excess -= cut;
+    }
+  }
+}
+
 }  // namespace detail
 }  // namespace odrforge

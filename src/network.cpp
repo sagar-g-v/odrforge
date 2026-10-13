@@ -638,6 +638,8 @@ void Builder::buildRoads() {
         if (secs[k].s - secs[k - 1].s < 1.0) secs.erase(secs.begin() + k);
         else ++k;
     }
+    for (size_t k = 0; k < secs.size(); ++k)
+      keepVergeFoldSafe(secs[k].xs, r.planView, secs[k].s, k + 1 < secs.size() ? secs[k + 1].s : len);
     // lane sections, tapers and links
     for (size_t k = 0; k < secs.size(); ++k) r.lanes.push_back(makeLaneSection(secs[k].xs, secs[k].s, C));
     std::map<std::vector<odr::Lane> *, std::map<size_t, bool>> added, dropped;

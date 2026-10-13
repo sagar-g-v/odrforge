@@ -10,7 +10,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   curb mark, then the sidewalk at its mapped position). It extends 2131 road sides in LA, 1114 in
   London and lets corner sidewalks continue round 958 / 517 corners there, but verge widths do not
   yet blend across way segments and wide verges fold in tight bends (folds LA 69 -> 100), so it is
-  off by default.
+  off by default. Verges (then sidewalks, down to 1 m) now narrow per section where the bend towards
+  them is tighter than 0.8 / their reach (decided with Jev: per-section cap 0.63 vs sample-wise
+  narrowing 0.22): folds LA 100 -> 78, London 42 -> 32, Tokyo 26 -> 19, Munich 35 -> 28.
 - `ODRFORGE_VERBOSE` prints every build stage with its run time. Arm trimming now runs per junction
   in parallel (LA: 2 x 9.4 s -> 2 x 0.9 s, output byte-identical); overlap resolution (2 x 5 s) is a
   sequential sweep whose result depends on its order and stays single-threaded.

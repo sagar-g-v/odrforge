@@ -116,6 +116,10 @@ struct ConnectionEnds {
   double sOut() const { return outAtEnd ? out->length() : 0.0; }
 };
 
+/// A verge + sidewalk side (attached separate sidewalk) on the inside of a bend tighter than its
+/// reach narrows so it cannot fold: sidewalk.cpp
+void keepVergeFoldSafe(CrossSection &x, const ReferenceLine &line, double s0, double s1);
+
 struct Builder {
   const OsmData &osm;
   const Projection &proj;
