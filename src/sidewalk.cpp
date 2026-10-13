@@ -28,6 +28,7 @@ struct Leg {
   Vec2 a, b;
   double width;
   int level;  // OSM layer, bridges / tunnels one level apart from the ground when untagged
+  bool kerb;  // a kerb line (barrier=kerb): the sidewalk's curb-side edge, the sidewalk beyond it
 };
 // the level a way lies on: layer=*, else +1 for a bridge and -1 for a tunnel
 int levelOf(const Tags &t) {
@@ -58,13 +59,17 @@ void Builder::attachSeparateSidewalks() {
   };
   for (const auto &[id, w] : osm.ways) {
     const auto hw = tag(w.tags, "highway");
-    if (!hw || (*hw != "footway" && *hw != "path") || !tagIs(w.tags, "footway", "sidewalk")) continue;
-    const double width = tag(w.tags, "width") ? lengthTag(*tag(w.tags, "width")).value_or(C.sidewalkWidth) : C.sidewalkWidth;
+    const bool sidewalkWay = hw && (*hw == "footway" || *hw == "path") && tagIs(w.tags, "footway", "sidewalk");
+    // a kerb line along the road places the sidewalk's curb-side edge (closed kerbs ring traffic islands)
+    const bool kerbLine = tagIs(w.tags, "barrier", "kerb") && w.nodes.size() >= 2 && w.nodes.front() != w.nodes.back();
+    if (!sidewalkWay && !kerbLine) continue;
+    const double width = sidewalkWay && tag(w.tags, "width") ? lengthTag(*tag(w.tags, "width")).value_or(C.sidewalkWidth)
+                                                            : C.sidewalkWidth;
     for (size_t i = 0; i + 1 < w.nodes.size(); ++i) {
       Vec2 a, b;
       if (!xy(w.nodes[i], a) || !xy(w.nodes[i + 1], b) || (b - a).norm() < 0.5) continue;
       const size_t k = legs.size();
-      legs.push_back({a, b, width, levelOf(w.tags)});
+      legs.push_back({a, b, width, levelOf(w.tags), kerbLine && !sidewalkWay});
       const double L = (b - a).norm();
       for (double u = 0; u <= L + kCell; u += 0.5 * kCell) {
         const Vec2 p = a + (b - a) * std::min(1.0, u / L);
@@ -114,7 +119,7 @@ void Builder::attachSeparateSidewalks() {
           if (run + u < 6.0 || run + u > total - 6.0) continue;
           ++samples;
           const Vec2 p = a + dir * u;
-          double best = kMaxDistance, bw = 0;
+          double best = kMaxDistance, bw = 0, centre = 0;
           const long cx = static_cast<long>(std::floor(p.x / kCell)), cy = static_cast<long>(std::floor(p.y / kCell));
           for (long dx = -2; dx <= 2; ++dx)
             for (long dy = -2; dy <= 2; ++dy) {
@@ -132,10 +137,11 @@ void Builder::attachSeparateSidewalks() {
                 if (v < 0.0 || v > 1.0) continue;
                 const double t = nrm.dot(r + gd * v);
                 if ((t > 0) != left) continue;
-                if (std::abs(t) < best) best = std::abs(t), bw = g.width;
+                // the nearest line on this side wins; a kerb puts the sidewalk centre half a width beyond it
+                if (std::abs(t) < best) best = std::abs(t), bw = g.width, centre = std::abs(t) + (g.kerb ? 0.5 * g.width : 0.0);
               }
             }
-          if (best < kMaxDistance) dist.push_back(best), width.push_back(bw);
+          if (best < kMaxDistance) dist.push_back(centre), width.push_back(bw);
         }
         run += L;
       }
