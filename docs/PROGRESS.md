@@ -18,6 +18,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.4 | Crosswalk objects at OSM crossings and on signalised arms, outside the curb return (already existed) | - |
 | 1.7 | Roundabout junction groups | - |
 | 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
+| 3.2 | Annex D.1.4 vertical check (`annex_d_vertical.py`): z and roll at every lane link | 0 gaps, 0 roll mismatches in all six areas |
 | 2.3 | Road mark laneChange from the final mark type (double lines crossable from the broken side) | LA trapped flows 1 -> 0, missing-link islands 17 -> 2 |
 | 6 | Stage timing; arm trimming in parallel | LA trimming 9.4 s -> 0.9 s per pass |
 | tools | `jev_judge.py` (Jev reviews whole junctions, calibrated against planted defects) | Jev trusted on spec validity only |
@@ -68,6 +69,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Edge line next to a shoulder off motorways (driving lane edge and a one-way's left edge): solid per
   MUTCD 3B.06 / StVO Z.295; changes one place in the six areas (Munich Frauenstrasse); Jev 0.74 - not
   committed.
+- CARLA height steps LA (131): almost all on 5 garage-entrance service tunnels a few metres long
+  that drop ~6 m (35-55 % grade) into underground car parks; continuous (Annex D holds), but steeper
+  than the loader's 25 % step test. Spreading the drop needs the garage aisles beyond the portal.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

@@ -5,6 +5,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- `tools/inspect/annex_d_vertical.py`: OpenDRIVE 1.9 Annex D.1.4 vertical gaps - z and roll of the
+  touching points at every lane link (road links and junction lane links). Detects a planted 0.2 m
+  step and a planted 0.02 rad roll; the six areas have none (LA 14,538 links checked).
 - **Separate sidewalks (experimental, `--separate-sidewalks`)**: a sidewalk mapped as its own way
   next to a road is measured and the road's cross-section reaches out to it (a border verge with a
   curb mark, then the sidewalk at its mapped position). It extends 2131 road sides in LA, 1114 in
