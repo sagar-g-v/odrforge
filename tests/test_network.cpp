@@ -142,8 +142,9 @@ TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
         CHECK(stop->type == "1100001" && stop->country == "OpenDRIVE" && !stop->dynamic);
         CHECK(!stop->validity.empty() && stop->validity[0].fromLane <= stop->validity[0].toLane);
         CHECK(stop->dependencies.size() == 1 && stop->dependencies[0].id == s.id);
-        // before the approach crosswalk (3 m wide, centred 1.6 m from the road end)
-        CHECK(atEnd ? stop->s < road.length() - 3.1 : stop->s > 3.1);
+        // the crosswalk lies inside the junction (Junction Guideline section 6.4.3: the road ends before the cross
+        // path): the stop line at the road's end
+        CHECK(atEnd ? stop->s > road.length() - 0.5 : stop->s < 0.5);
       }
   CHECK(lights == 4);
   // every connecting road has exactly one lane linked at both ends (a corner sidewalk: its sidewalk
@@ -236,7 +237,9 @@ TEST_CASE("lowered curbs: over each crosswalk the curb and the sidewalk's inner 
     int lowered = 0;
     for (const auto &road : r.od.roads)
       for (const auto &o : road.objects) {
-        if (o.type != "crosswalk") continue;
+        // standard: the crosswalks lie inside the junction, on the cross paths' crossing roads; their corner
+        // sidewalks are lowered (checked in the junction cross path test)
+        if (o.type != "crosswalk" || road.name == "Crossing") continue;
         const odr::LaneSection &sec = odr::sectionAt(road, o.s);
         const double ds = o.s - sec.s;
         for (const auto *side : {&sec.left, &sec.right})
@@ -250,7 +253,7 @@ TEST_CASE("lowered curbs: over each crosswalk the curb and the sidewalk's inner 
             ++lowered;
           }
       }
-    CHECK(lowered > 0);
+    CHECK(lowered > 0 || std::string(target) == "asam");
   }
 }
 
@@ -320,13 +323,44 @@ TEST_CASE("junction grid (standard): reference line and elevation grid reproduce
   CHECK(buildOpenDrive(b.d, b.proj, o, &rep).junctions[0].grid.has_value() == false);
 }
 
-TEST_CASE("cross paths (standard): approach crosswalks of a junction are no virtual junctions") {
-  // Junction Guideline 1.0.0 section 6.3.3 / 6.4.3: crossings at a junction lie inside the common junction's
-  // area - not modelled as cross paths yet; their crosswalk objects stay
+TEST_CASE("cross paths (standard): the crosswalks of a signalised junction are cross paths inside it") {
+  // Junction Guideline 1.0.0 section 6.3.3 "Add roads for the pedestrian crossings inside of the junction area",
+  // section 6.4.3 "Choose the road reference lines to stop before any cross path in the junction"; OpenDRIVE 1.8.0
+  // section 12.5: the crossing road links the walking lanes of two connecting roads (the corner sidewalks)
   const Result r = build(crossroads(true), "US", "asam");
   CHECK(r.val.errors == 0);
-  CHECK(r.rep.crossPaths == 0);
-  CHECK(r.od.junctions.size() == 1 && r.od.junctions[0].crossPaths.empty());
+  CHECK(r.od.junctions.size() == 1);
+  if (r.od.junctions.size() != 1) return;
+  const odr::Junction &J = r.od.junctions[0];
+  CHECK(r.rep.junctionCrossPaths == 4 && J.crossPaths.size() == 4);
+  for (const auto &cp : J.crossPaths) {
+    const odr::Road *x = roadById(r.od, cp.crossingRoad), *a = roadById(r.od, cp.roadAtStart), *b = roadById(r.od, cp.roadAtEnd);
+    CHECK(x && a && b);
+    if (!x || !a || !b) return;
+    CHECK(x->junction == J.id && a->junction == J.id && b->junction == J.id && a != b);
+    CHECK(cornerSidewalk(*a) && cornerSidewalk(*b));
+    // the marking is on the crossing road; the linked walking lanes are lowered over the crossing
+    CHECK(std::count_if(x->objects.begin(), x->objects.end(), [](const odr::Object &o) { return o.type == "crosswalk"; }) == 1);
+    for (const auto &[road, link] : {std::pair<const odr::Road *, odr::CrossPath::Link>{a, cp.start}, {b, cp.end}}) {
+      const odr::LaneSection &sec = odr::sectionAt(*road, link.s);
+      const odr::Lane *walk = nullptr;
+      for (const auto &l : sec.right)
+        if (l.id == link.from) walk = &l;
+      CHECK(walk && walk->type == "sidewalk");
+      if (!walk) return;
+      double inner = walk->heightInner.value_or(0.0);
+      for (const auto &hc : walk->heightChanges)
+        if (hc.sOffset <= link.s - sec.s) inner = hc.inner;
+      CHECK(std::abs(inner - 0.02) < 1e-9);
+    }
+  }
+  // no crosswalk object left on the approaches: they end before the junction's cross paths
+  for (const auto &road : r.od.roads)
+    if (road.junction == "-1")
+      for (const auto &o : road.objects) CHECK(o.type != "crosswalk");
+  // carla: crosswalk objects on the approaches, no cross paths
+  const Result c = build(crossroads(true), "US", "carla");
+  CHECK(c.rep.crossPaths == 0);
 }
 
 TEST_CASE("cross paths (standard): a mid-block crossing is a virtual junction with one cross path, none in carla") {

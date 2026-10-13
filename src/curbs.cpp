@@ -143,9 +143,14 @@ void Builder::lowerCurbsAtCrosswalks() {
   for (odr::Road &r : od.roads) {
     // lowered s intervals per lane (section, id)
     std::map<std::pair<size_t, int>, std::vector<std::pair<double, double>>> lowered;
-    for (const odr::Object &o : r.objects) {
-      if (o.type != "crosswalk") continue;
-      const double s0 = std::max(0.0, o.s - 0.5 * o.length), s1 = std::min(r.length(), o.s + 0.5 * o.length);
+    // the crosswalks on this road, and the spans other crossings lower on it (cross paths in junctions)
+    std::vector<std::pair<double, double>> crossings;
+    for (const odr::Object &o : r.objects)
+      if (o.type == "crosswalk") crossings.push_back({o.s - 0.5 * o.length, o.s + 0.5 * o.length});
+    for (const auto &[ri, a0, a1] : loweredSpans)
+      if (ri == static_cast<size_t>(&r - od.roads.data())) crossings.push_back({a0, a1});
+    for (const auto &[c0, c1] : crossings) {
+      const double s0 = std::max(0.0, c0), s1 = std::min(r.length(), c1);
       for (size_t k = 0; k < r.lanes.size(); ++k) {
         const double a = r.lanes[k].s, b = k + 1 < r.lanes.size() ? r.lanes[k + 1].s : r.length();
         if (s1 <= a || s0 >= b) continue;

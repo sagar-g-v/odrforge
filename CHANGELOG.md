@@ -74,6 +74,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   failures (direct junction headings equal to 1e-8 rad); each rule verified to flag a planted violation.
 
 ### Added
+- **Crosswalks at junctions as cross paths inside the junction** (standard profile; Junction Guideline 1.0.0
+  §6.3.3 "Add roads for the pedestrian crossings inside of the junction area", §6.4.3 "Choose the road
+  reference lines to stop before any cross path in the junction"; OpenDRIVE 1.8.0 §12.5 Figure 85): an
+  approach of a signalised / crossing junction ends 3.1 m earlier where a corner sidewalk will exist on both
+  sides and its lanes stay the same; a crossing road of the junction runs across the arm's mouth between the
+  corner sidewalks' walking lanes (3 m wide, 2.5 / 2 m in tight corners), carries the crosswalk marking, and
+  the corner sidewalks are lowered over it; elsewhere the crosswalk stays on the approach. LA 28, Munich 13,
+  Frankfurt Kreuz 1, Tokyo 164 junction cross paths; no crosswalk lost; carla unchanged. Pedestrian lights on
+  the crossings are not modelled (OSM has no pedestrian phases). Jev 0.82.
 - **Junction reference line and elevation grid** (standard profile, OpenDRIVE 1.8.0 §12.9 / §12.11, common
   junctions): a straight `<planView>` line along the principal axis of the connecting roads, reaching every
   lane by a perpendicular, and an `<elevationGrid>` of 5 m squares covering them, sampled from the junction

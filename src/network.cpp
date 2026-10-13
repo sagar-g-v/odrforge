@@ -406,6 +406,36 @@ void Builder::trimRoads() {
   // how far a road end may be pulled back: freeway ramps leave at shallow angles and overlap their
   // carriageway for much longer than street corners
   auto trimCap = [](const RoadMeta &m) { return m.rank >= 8 || m.highway.find("_link") != std::string::npos ? 160.0 : 80.0; };
+  const bool crosswalksInJunctions = opt.crosswalksAtSignals && opt.target.spec().hasCrossPaths();
+  // will road end e of cluster c get a corner sidewalk on both sides? As buildCornerSidewalks decides: arms
+  // in the order of their outward headings; the corner between an arm and its anticlockwise neighbour joins
+  // the arm's sidewalk right of traffic arriving along it to the neighbour's right of traffic leaving along
+  // it, unless the turn is sharper than 120 degrees (a nose)
+  auto cornersOnBothSides = [&](const Cluster &c, const RoadEnd &e) {
+    auto end = [&](const RoadEnd &x) { return x.atEnd ? metas[x.road].sections.back().xs : metas[x.road].sections.front().xs; };
+    auto outward = [&](const RoadEnd &x) {
+      const ReferenceLine &l = metas[x.road].full;
+      return x.atEnd ? normalizeAngle(l.eval(l.length()).hdg + kPi) : l.eval(0.0).hdg;
+    };
+    auto walk = [](const SideSpec &sd) { return !sd.lanes.empty() && sd.lanes.back().kind == LaneKind::Sidewalk; };
+    // the sidewalk right of traffic arriving along x (leaving: the other side)
+    auto walkRight = [&](const RoadEnd &x, bool arriving) {
+      const CrossSection &xs = end(x);
+      return walk((x.atEnd == arriving) ? xs.right : xs.left);
+    };
+    std::vector<const RoadEnd *> arms;
+    for (const RoadEnd &x : c.ends) arms.push_back(&x);
+    std::sort(arms.begin(), arms.end(), [&](const RoadEnd *a, const RoadEnd *b) { return outward(*a) < outward(*b); });
+    const size_t n = arms.size();
+    size_t i = 0;
+    while (i < n && !(arms[i]->road == e.road && arms[i]->atEnd == e.atEnd)) ++i;
+    if (i == n) return false;
+    auto corner = [&](const RoadEnd &p, const RoadEnd &q) {  // arriving along p, leaving along q
+      const double turn = normalizeAngle(outward(q) - normalizeAngle(outward(p) + kPi));
+      return walkRight(p, true) && walkRight(q, false) && turn >= -2.0 * kPi / 3.0;
+    };
+    return corner(*arms[i], *arms[(i + 1) % n]) && corner(*arms[(i + n - 1) % n], *arms[i]);
+  };
   // register road ends at clusters
   for (int i = 0; i < static_cast<int>(metas.size()); ++i) {
     const Chain &ch = chains[metas[i].chain];
@@ -467,6 +497,23 @@ void Builder::trimRoads() {
       const double R = opt.cornerRadius * (m.rank >= 7 ? 1.5 : 1.0);
       const double corner = c.ends.size() >= 3 ? 0.7 * R : 0.0;
       double trim = lastOverlap < 0 ? 0.5 : lastOverlap + opt.stopLineSetback + corner;
+      // standard profile: the crosswalk of a signalised / crossing junction lies inside the junction (Junction
+      // Guideline 1.0.0 §6.3.3 "Add roads for the pedestrian crossings inside of the junction area", §6.4.3
+      // "Choose the road reference lines to stop before any cross path in the junction"): the approach ends
+      // before it - where a corner sidewalk on each side will give the cross path walking lanes to link
+      // (as buildCornerSidewalks makes them; cross_paths.cpp)
+      // ... and where the approach keeps its lanes over the extra length (ending it past a change of the lane
+      // count would leave the junction feeding only some of them)
+      auto sameLanes = [&](double extra) {
+        const double L0 = m.full.length(), d0 = std::min(trim, L0), d1 = std::min(trim + extra, L0);
+        const CrossSection &a = sectionAtFull(m, e.atEnd ? L0 - d0 : d0), &b = sectionAtFull(m, e.atEnd ? L0 - d1 : d1);
+        return a.left.drivingCount() == b.left.drivingCount() && a.right.drivingCount() == b.right.drivingCount();
+      };
+      if (crosswalksInJunctions && (c.signalised || c.crossing) && c.ends.size() >= 3 && cornersOnBothSides(c, e) &&
+          sameLanes(kCrosswalkJunctionDepth)) {
+        trim += kCrosswalkJunctionDepth;
+        (e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart) = true;
+      }
       if (const auto &fixed = e.atEnd ? m.fixedTrimEnd : m.fixedTrimStart) trim = *fixed;
       (e.atEnd ? metas[e.road].trimEnd : metas[e.road].trimStart) = trim;
     }
@@ -1050,6 +1097,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
     stage("cluster junctions", &detail::Builder::clusterJunctions);
     stage("reference lines", &detail::Builder::buildRoadGeometry);
     stage("lane-level gores", &detail::Builder::buildGores);
+    stage("signal control", &detail::Builder::markSignalControl);  // before the trims: crosswalks in junctions
     stage("trim roads", &detail::Builder::trimRoads);
     if (pass > 0 || !b.joinSqueezedJunctions()) break;
   }
@@ -1060,13 +1108,12 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("elevation profiles", &detail::Builder::fitRoadElevation);
   stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
   stage("junctions", &detail::Builder::buildJunctions);
-  stage("signal control", &detail::Builder::markSignalControl);
   stage("direct junctions", &detail::Builder::directJunctions);
   stage("objects", &detail::Builder::buildObjects);  // crosswalks before the stop lines placed behind them
   stage("signals", &detail::Builder::buildSignals);
   stage("curb lanes", &detail::Builder::curbLanes);
+  stage("cross paths", &detail::Builder::crossPaths);  // before the lowered curbs: it adds lowered spans
   stage("lowered curbs", &detail::Builder::lowerCurbsAtCrosswalks);
-  stage("cross paths", &detail::Builder::crossPaths);
   stage("junction grids", &detail::Builder::junctionGrids);
   stage("finish", &detail::Builder::finish);
   if (verbose)

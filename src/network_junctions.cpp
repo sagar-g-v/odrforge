@@ -870,10 +870,6 @@ void Builder::buildJunctions() {
 }
 
 namespace {
-// crosswalks put on every approach of a signalised junction (BuildOptions::crosswalksAtSignals)
-constexpr double kCrosswalkCentreBack = 1.6;  // from the road end
-constexpr double kCrosswalkLength = 3.0;
-constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
 constexpr double kStopLineGap = 1.0;       // stop line before the crosswalk
 }  // namespace
 
@@ -1267,6 +1263,11 @@ void Builder::buildObjects() {
       for (const RoadEnd &e : cl.ends) {
         odr::Road &r = od.roads[metas[e.road].roadIndex];
         if (r.length() < kCrosswalkMinRoad) continue;
+        // inside the junction (standard): the cross path's crossing road carries it (cross_paths.cpp) - when a
+        // corner sidewalk on each side gives it walking lanes to link; else the crosswalk stays on the approach
+        bool &inJunction = e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart;
+        if (inJunction && cl.junction >= 0 && cornerSidewalksAt(od.junctions[cl.junction], e).size() == 2) continue;
+        inJunction = false;
         crosswalk(r, e.atEnd ? r.length() - kCrosswalkCentreBack : kCrosswalkCentreBack);
       }
     }

@@ -5,6 +5,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -45,6 +46,13 @@ struct RoadEnd {
   bool atEnd = true;  ///< contact point "end" (else "start")
 };
 
+// crosswalks put on every approach of a signalised / crossing junction (BuildOptions::crosswalksAtSignals)
+constexpr double kCrosswalkCentreBack = 1.6;  // m from the road end
+constexpr double kCrosswalkLength = 3.0;
+constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
+/// how much further an approach ends when its crosswalk lies inside the junction (the crosswalk's far edge)
+constexpr double kCrosswalkJunctionDepth = kCrosswalkCentreBack + 0.5 * kCrosswalkLength;
+
 struct RoadMeta {
   int chain = -1;
   ReferenceLine full;  ///< untrimmed reference line
@@ -70,6 +78,8 @@ struct RoadMeta {
   double obs0 = 1e9, obs1 = 1e9;    ///< distance from the start / end to the nearest observed sample
   std::string highway;
   int rank = 0;        ///< road class priority (higher = more important)
+  /// the crosswalk at this end lies inside the junction (standard profile: a cross path of the junction)
+  bool crosswalkInJunctionStart = false, crosswalkInJunctionEnd = false;
 };
 
 struct Cluster {
@@ -190,9 +200,15 @@ struct Builder {
   void curbLanes();          // curbs.cpp
   void lowerCurbsAtCrosswalks();  // curbs.cpp
   void crossPaths();         // cross_paths.cpp
+  /// the corner sidewalks (connecting roads of curb / walking lanes) leaving road end e of a junction:
+  /// indices into od.roads, with whether each leaves from it (else arrives at it) (cross_paths.cpp)
+  std::vector<std::pair<size_t, bool>> cornerSidewalksAt(const odr::Junction &J, const RoadEnd &e) const;
   void junctionGrids();      // junction_surface.cpp
   /// crosswalks at OSM crossing nodes on a road (not in a junction): (road index, object id)
   std::vector<std::pair<size_t, std::string>> midBlockCrosswalks;
+  /// s ranges of sidewalks lowered for a crossing that is not a crosswalk object of that road (a cross path
+  /// inside a junction): (road index, s0, s1)
+  std::vector<std::tuple<size_t, double, double>> loweredSpans;
   void trimRoads();
   bool joinSqueezedJunctions();
   void makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap);
