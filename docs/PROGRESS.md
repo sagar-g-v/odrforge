@@ -91,7 +91,11 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Direct junctions (1.5): 59 of 113 gores stay common junctions (28 arm reached by several connecting
   roads, 28 fold risk for carried lanes, 3 unexpected end); 5 OSM-distance findings on the joined first
   metres.
-- Curb lanes: lowered curbs at crosswalks (lane height records) not done yet; curb lanes duplicate the
+- Lowered curbs at crosswalks (both profiles): curb lane and sidewalk inner edge drop to 0.02 m over each
+  crosswalk span (lane height records). Invariants unchanged, 1.4H / 1.8.1 XSD valid, CARLA loader 0
+  discontinuities, esmini 0 errors, unit test; CARLA's own mesh builder unverified. Jev 0.75 - parked
+  (`build/tmp/lowered_parked/lowered.diff`), needs your decision.
+- Curb lanes: curb lanes duplicate the
   sidewalk's existing fold / corner / edge-break findings (Stelvio folds 98 -> 140, same places).
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
