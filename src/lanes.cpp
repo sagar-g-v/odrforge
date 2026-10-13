@@ -115,8 +115,11 @@ bool attachSeparateSidewalk(CrossSection &x, bool leftSide, double distance, dou
   const double edge = leftSide ? x.laneOffset + kept.totalWidth() : kept.totalWidth() - x.laneOffset;
   const double gap = distance - 0.5 * width - edge;
   if (gap < -maxOverlap) return false;
-  if (gap > 0.05) kept.lanes.push_back({LaneKind::Border, gap, {}});
-  kept.lanes.push_back({LaneKind::Sidewalk, gap < 0.0 ? width + gap : width, {}});
+  // the verge is always written (at least kMinVerge) where the sidewalk is attached, so consecutive
+  // segments keep one lane layout and only its width changes (decided with Jev: 0.60 vs 0.44)
+  constexpr double kMinVerge = 0.05;
+  kept.lanes.push_back({LaneKind::Border, std::max(gap, kMinVerge), {}});
+  kept.lanes.push_back({LaneKind::Sidewalk, gap < kMinVerge ? width + gap - kMinVerge : width, {}});
   s = kept;
   return true;
 }
