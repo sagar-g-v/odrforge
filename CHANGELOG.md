@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Pitch kinks at junction entries** (OpenDRIVE 1.9 Annex D.1.5 "should have no vertical kinks"): a road's
+  roll rate at a junction plane is now the plane's analytic rate along it (as on the connecting roads), not
+  a finite difference after the blend. LA lane links with a pitch break > 0.01: 2655 -> 23 (worst 0.241 ->
+  0.109); other areas have no superelevation. `annex_d_vertical.py` measures D.1.5 pitch now (folded edges
+  skipped). Jev 0.84.
 - **Traffic lights at their physical location** (Junction Guideline §9.2) in the standard profile: zOffset
   2.42 m, the guideline examples' value for pole-mounted type 1000001 heads (was 0; carla keeps 0, CARLA
   spawns poles). Jev 0.83.

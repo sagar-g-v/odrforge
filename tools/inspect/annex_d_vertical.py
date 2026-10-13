@@ -1,7 +1,8 @@
 """OpenDRIVE 1.9 Annex D.1.4 vertical gaps: where two drivable lanes connect, the z and roll of their touching
-points (the lane's start / end at its inner and outer edge) shall match.
+points (the lane's start / end at its inner and outer edge) shall match. Annex D.1.5 vertical kinks ("should"):
+their pitch - the surface slope along the lane edge - should match too (--dpitch, reported separately).
 
-    python annex_d_vertical.py FILE.xodr [--dz 0.01] [--droll 0.002] [--list N]
+    python annex_d_vertical.py FILE.xodr [--dz 0.01] [--droll 0.002] [--dpitch 0.01] [--list N]
 
 Touching points are compared for every lane link between roads (road predecessor / successor, connecting
 roads included) and every junction lane link (incoming road lane -> connecting road lane). Surface height z(s, t) = elevation(s) +
@@ -41,6 +42,23 @@ def touching(road, s, lane_id, roll):
     return pts, float(road.ref(s)[2])
 
 
+def edge_slope(road, s, lane_id, roll, inner):
+    """slope dz / d(plan distance) of the lane's inner or outer edge, measured from s 2 cm into the road"""
+    h = 0.02 if s < road.length / 2 else -0.02
+    zs = []
+    for si in (s, s + h):
+        sec = road.section_at(si)
+        if sec.lane(lane_id) is None:
+            return None
+        t = road.borders_at(si, sec)[lane_id][0 if inner else 1]
+        x, y = road.point(np.array([si]), t)
+        zs.append((float(x[0]), float(y[0]), float(road.z(np.array([si]))[0]) + t * math.tan(roll(si))))
+    d = math.hypot(zs[1][0] - zs[0][0], zs[1][1] - zs[0][1])
+    # an edge that barely moves while s advances is folded (tight curve at large t; the invariants report
+    # folds): its pitch is not defined
+    return (zs[1][2] - zs[0][2]) / d if d > 0.5 * abs(h) else None
+
+
 def pairs(od):
     """(road a, s a, lane a, road b, s b, lane b) for every lane link."""
     R = od.roads
@@ -72,11 +90,12 @@ def main():
     ap.add_argument("xodr")
     ap.add_argument("--dz", type=float, default=0.01)
     ap.add_argument("--droll", type=float, default=0.002)
+    ap.add_argument("--dpitch", type=float, default=0.01)
     ap.add_argument("--list", type=int, default=0)
     a = ap.parse_args()
     od = G.OpenDrive(a.xodr)
     rolls = {rid: superelevation(r) for rid, r in od.roads.items()}
-    checked, gaps, rolls_bad, out = 0, 0, 0, []
+    checked, gaps, rolls_bad, kinks, out, worst_kink = 0, 0, 0, 0, [], []
     seen = set()
     for ra, sa, la, rb, sb, lb in pairs(od):
         key = tuple(sorted([(ra.id, sa, la), (rb.id, sb, lb)]))
@@ -105,7 +124,21 @@ def main():
             rolls_bad += 1
         if worst_dz > a.dz or droll > a.droll:
             out.append((worst_dz, droll, ra.id, la, rb.id, lb, pa[0][:2]))
+        # D.1.5: slopes measured into each road cancel where the edge continues without a kink
+        kink = 0.0
+        for k, p in enumerate(pa):
+            j = min(range(len(pb)), key=lambda j: math.hypot(pb[j][0] - p[0], pb[j][1] - p[1]))
+            ga = edge_slope(ra, sa, la, rolls[ra.id], k == 0)
+            gb = edge_slope(rb, sb, lb, rolls[rb.id], j == 0)
+            if ga is not None and gb is not None:
+                kink = max(kink, abs(ga + gb))
+        if kink > a.dpitch:
+            kinks += 1
+            worst_kink.append((kink, ra.id, la, rb.id, lb, pa[0][:2]))
     print(f"{checked} lane links checked: z gap > {a.dz} m at {gaps}, roll mismatch > {a.droll} rad at {rolls_bad}")
+    print(f"  D.1.5 pitch break > {a.dpitch} at {kinks}" + (f" (worst {max(worst_kink)[0]:.3f})" if worst_kink else ""))
+    for row in sorted(worst_kink, reverse=True)[: a.list]:
+        print(f"  pitch {row[0]:.3f} road {row[1]} lane {row[2]} -> road {row[3]} lane {row[4]} at ({row[5][0]:.0f}, {row[5][1]:.0f})")
     for row in sorted(out, reverse=True)[: a.list]:
         print(f"  dz {row[0]:.3f} m droll {row[1]:.4f} road {row[2]} lane {row[3]} -> road {row[4]} lane {row[5]} at ({row[6][0]:.0f}, {row[6][1]:.0f})")
 

@@ -1271,6 +1271,18 @@ void Builder::fitRoadElevation() {
         const int a = std::max(0, i - 1), b = std::min(n - 1, i + 1);
         dse[i] = (se[b] - se[a]) / std::max(1e-9, m.zs[b] - m.zs[a]);
       }
+      // at a junction plane the roll rate is the plane's along this road, d/ds atan(grad . left(s)) =
+      // -kappa (grad . dir) / (1 + g^2) - as on the connecting roads (connectingElevation): the lane edges'
+      // pitch then matches across the link (OpenDRIVE 1.9 Annex D.1.5: no vertical kinks)
+      if (opt.target.superelevation && opt.junctionSurfaces)
+        for (bool atEnd : {false, true}) {
+          const int ci = atEnd ? ch.c1 : ch.c0;
+          if (ci < 0 || !clusters[ci].hasPlane) continue;
+          const Vec2 grad(clusters[ci].plane[1], clusters[ci].plane[2]);
+          const Pose p = r.planView.eval(atEnd ? L : 0.0);
+          const double g = grad.dot(p.left());
+          dse[atEnd ? n - 1 : 0] = -p.kappa * grad.dot(p.dir()) / (1.0 + g * g);
+        }
       bool flat = true;
       for (double v : se) flat = flat && std::abs(v) < 1e-7;
       if (!flat)
