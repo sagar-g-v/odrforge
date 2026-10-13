@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Junction approach crosswalks as cross paths** (standard profile, OpenDRIVE 1.9 §12.5 / §12.7): the
+  crosswalks on the approaches of signalised and crossing junctions lie on the approach road, short of
+  the junction's connecting roads, so each gets a virtual junction on that road round the crosswalk,
+  holding its cross path - the same scheme as mid-block crossings. LA 104, Munich 52, London 23,
+  Frankfurt Kreuz 20, Tokyo 291. Kept with Jev 0.80 (a cross path of the intersection junction itself
+  scored 0.29: its crossing road would lie outside that junction's area).
 - **Mid-block crossings as cross paths** (standard profile, OpenDRIVE 1.9 §12.5 cross paths, introduced
   1.8.0, in a §12.7 virtual junction; Junction Guideline §10.3): an OSM crossing node on a road with a
   sidewalk on both sides becomes a virtual junction on the uncut road (mainRoad, sStart..sEnd round the

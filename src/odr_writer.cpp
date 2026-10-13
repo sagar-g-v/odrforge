@@ -467,14 +467,16 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
     attr(u, "code", k);
     attr(u, "value", v);
   }
-  // OpenDRIVE 1.9 §12.5: cross paths came with 1.8.0. Below it a junction holding only cross paths, and its
-  // crossing roads, have no form: they are left out (the crosswalk object on the road stays)
-  std::set<std::string> crossPathOnly;
+  // OpenDRIVE 1.9 §12.5: cross paths came with 1.8.0. Below it their crossing roads, and a junction holding
+  // only cross paths, have no form: they are left out (the crosswalk object on the road stays)
+  std::set<std::string> crossPathOnly, crossingRoads;
   if (!c.spec.hasCrossPaths())
-    for (const auto &j : od.junctions)
+    for (const auto &j : od.junctions) {
       if (j.connections.empty() && !j.crossPaths.empty()) crossPathOnly.insert(j.id);
+      for (const auto &cp : j.crossPaths) crossingRoads.insert(cp.crossingRoad);
+    }
   for (const auto &r : od.roads)
-    if (!crossPathOnly.count(r.junction)) writeRoad(root, r, c);
+    if (!crossingRoads.count(r.id)) writeRoad(root, r, c);
   for (const auto &ct : od.controllers) {
     auto e = root.append_child("controller");
     attr(e, "id", ct.id);

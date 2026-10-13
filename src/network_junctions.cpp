@@ -1235,7 +1235,7 @@ void Builder::buildObjects() {
           odr::Road &r = od.roads[m.roadIndex];
           const double s = std::clamp(sf - m.trimStart, 1.5, std::max(1.5, r.length() - 1.5));
           crosswalk(r, s);
-          midBlockCrosswalks.push_back({static_cast<size_t>(m.roadIndex), r.objects.back().id});
+          crosswalkRefs.push_back({static_cast<size_t>(m.roadIndex), r.objects.back().id});
         }
   }
   // crosswalks on every approach of signalised / crossing junctions
@@ -1246,6 +1246,7 @@ void Builder::buildObjects() {
         odr::Road &r = od.roads[metas[e.road].roadIndex];
         if (r.length() < kCrosswalkMinRoad) continue;
         crosswalk(r, e.atEnd ? r.length() - kCrosswalkCentreBack : kCrosswalkCentreBack);
+        crosswalkRefs.push_back({static_cast<size_t>(metas[e.road].roadIndex), r.objects.back().id});
       }
     }
   if (!opt.streetFurniture) return;

@@ -76,13 +76,18 @@ Result build(const OsmBuilder &b, const std::string &country = "US", const std::
 /// a connecting road along a junction corner: its sidewalk, behind a curb lane in the standard profile
 bool cornerSidewalk(const odr::Road &r) {
   const auto &sec = r.lanes.front();
-  return r.junction != "-1" && sec.left.empty() && !sec.right.empty() && sec.right.back().type == "sidewalk" &&
+  return r.junction != "-1" && r.name != "Crossing" && sec.left.empty() && !sec.right.empty() && sec.right.back().type == "sidewalk" &&
          std::all_of(sec.right.begin(), sec.right.end(), [](const odr::Lane &l) { return l.type == "sidewalk" || l.type == "curb"; });
 }
 
+/// roads in a junction (connecting roads; a cross path's crossing road not counted) or outside one
 int count(const odr::OpenDrive &od, bool junctionRoads) {
-  return static_cast<int>(std::count_if(od.roads.begin(), od.roads.end(),
-                                        [&](const odr::Road &r) { return (r.junction != "-1") == junctionRoads; }));
+  std::set<std::string> crossing;
+  for (const auto &j : od.junctions)
+    for (const auto &cp : j.crossPaths) crossing.insert(cp.crossingRoad);
+  return static_cast<int>(std::count_if(od.roads.begin(), od.roads.end(), [&](const odr::Road &r) {
+    return !crossing.count(r.id) && (r.junction != "-1") == junctionRoads;
+  }));
 }
 
 const odr::Road *roadById(const odr::OpenDrive &od, const std::string &id) {
@@ -107,7 +112,8 @@ OsmBuilder crossroads(bool signals) {
 TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
   const Result r = build(crossroads(true));
   CHECK(r.val.errors == 0);
-  CHECK(r.od.junctions.size() == 1);
+  // the crossroads junction, then a virtual one round each approach crosswalk (OpenDRIVE 1.9 section 12.7)
+  CHECK(r.od.junctions.size() == 5 && r.od.junctions[0].type == "default");
   CHECK(count(r.od, false) == 4);
   // 4 approaches x (left, straight, right), one lane each, and the sidewalk round each of the 4 corners
   CHECK(count(r.od, true) == 16);
@@ -142,9 +148,10 @@ TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
       }
   CHECK(lights == 4);
   // every connecting road has exactly one lane linked at both ends (a corner sidewalk: its sidewalk
-  // behind a curb lane, OpenDRIVE 1.9 section 11.8), and the junction lists it
+  // behind a curb lane, OpenDRIVE 1.9 section 11.8), and the junction lists it; a cross path's crossing
+  // road is linked by the cross path's lane links instead (section 12.5)
   for (const auto &road : r.od.roads) {
-    if (road.junction == "-1") continue;
+    if (road.junction == "-1" || road.name == "Crossing") continue;
     const auto &sec = road.lanes.front();
     CHECK(sec.left.size() + sec.right.size() == (cornerSidewalk(road) ? 2u : 1u));
     CHECK(road.predecessor && road.successor);
@@ -246,6 +253,35 @@ TEST_CASE("lowered curbs: over each crosswalk the curb and the sidewalk's inner 
       }
     CHECK(lowered > 0);
   }
+}
+
+TEST_CASE("cross paths (standard): each approach crosswalk of a signalised junction, in a virtual junction on the approach") {
+  const Result r = build(crossroads(true), "US", "asam");
+  CHECK(r.val.errors == 0);
+  // the crossroads junction and, OpenDRIVE 1.9 section 12.7, one virtual junction per approach
+  CHECK(r.od.junctions.size() == 5);
+  CHECK(r.rep.crossPaths == 4);
+  for (const auto &j : r.od.junctions) {
+    if (j.type != "virtual") {
+      CHECK(j.crossPaths.empty());
+      continue;
+    }
+    // section 12.5: its cross path's crossing road lies on the approach, within sStart .. sEnd
+    CHECK(j.crossPaths.size() == 1);
+    if (j.crossPaths.size() != 1) return;
+    const odr::CrossPath &cp = j.crossPaths[0];
+    const odr::Road *x = roadById(r.od, cp.crossingRoad);
+    CHECK(x != nullptr);
+    if (!x) return;
+    CHECK(x->junction == j.id);
+    CHECK(!x->predecessor && !x->successor);
+    CHECK(cp.roadAtStart == j.mainRoad && cp.roadAtEnd == j.mainRoad);
+    CHECK(j.sStart <= cp.start.s && cp.start.s <= j.sEnd);
+  }
+  // carla: the crosswalk objects only
+  const Result c = build(crossroads(true), "US", "carla");
+  CHECK(c.rep.crossPaths == 0);
+  CHECK(c.od.junctions.size() == 1);
 }
 
 TEST_CASE("cross paths (standard): a mid-block crossing is a virtual junction with one cross path, none in carla") {
@@ -364,7 +400,7 @@ TEST_CASE("network: left-hand traffic (GB) - rule LHT, +s lanes on the left") {
   CHECK(r.val.errors == 0);
   for (const auto &road : r.od.roads) {
     CHECK(road.rule == "LHT");
-    if (road.junction == "-1" || cornerSidewalk(road)) continue;
+    if (road.junction == "-1" || cornerSidewalk(road) || road.name == "Crossing") continue;  // walking lanes: right side
     // connecting lanes travel along +s: on the left side in LHT
     CHECK(!road.lanes.front().left.empty() && road.lanes.front().right.empty());
   }

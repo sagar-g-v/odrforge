@@ -22,6 +22,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 2.4 | Lane lines start / end with the taper (sOffset mark records) | 311 lanes over five areas |
 | 1.3c | Lowered curbs at crosswalks (both profiles; Jev 0.75, user decision) | Tokyo 986 / LA 264 crosswalk sides |
 | 1.3d | Mid-block crossings as cross paths in virtual junctions (standard, 1.8+; user decision) | LA 83 / Tokyo 342 cross paths |
+| 1.3e | Junction approach crosswalks as cross paths, virtual junction on the approach (standard; Jev 0.80) | LA 104 / Tokyo 291 cross paths |
 | 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
 | 1.5b | Ramp lane types onRamp / offRamp / connectingRamp / entry / exit (standard) | FK 108 lanes, LA 58 |
 | 1.5 | Direct junctions at freeway gores (standard; committed at Jev 0.79 by user decision) | 54 of 113 gores |
