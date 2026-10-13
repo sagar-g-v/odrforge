@@ -56,12 +56,18 @@ def main():
     areas = args.areas.split(",")
     jobs = [(area, d) for area in areas for d in (args.before, args.after)]
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda j: exact_counts(os.path.join(j[1], f"{j[0]}.{args.profile}.xodr"), j[0]), jobs))
+        # absolute paths: the checkers run with the data directory as their working directory
+        results = list(pool.map(lambda j: exact_counts(os.path.abspath(os.path.join(j[1], f"{j[0]}.{args.profile}.xodr")), j[0]), jobs))
     worse = 0
     for k, area in enumerate(areas):
         before, after = results[2 * k], results[2 * k + 1]
         changes = {key: (before.get(key, 0), after.get(key, 0)) for key in sorted(set(before) | set(after))
                    if before.get(key, 0) != after.get(key, 0)}
+        crashed = sorted(k for k in set(before) | set(after) if k.endswith(":CRASHED"))
+        if crashed:  # a checker that did not run proves nothing, also when it failed on both sides
+            print(f"== {area}: CHECKER FAILED ({', '.join(crashed)})")
+            worse += 1
+            continue
         print(f"== {area}: " + ("unchanged" if not changes else ""))
         for key, (b, a) in changes.items():
             print(f"   {key:55s} {b:7d} -> {a:7d}")
