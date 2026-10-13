@@ -61,10 +61,13 @@ const odr::Road *roadNear(const odr::OpenDrive &od, double x, double y, bool con
   return best;
 }
 
+/// lanes cars drive in: driving and the motorway entry / exit lane types (OpenDRIVE 1.9 §11.8)
 int drivingLanes(const odr::LaneSection &sec) {
   int n = 0;
   for (const auto *side : {&sec.left, &sec.right})
-    for (const auto &l : *side) n += l.type == "driving";
+    for (const auto &l : *side)
+      n += l.type == "driving" || l.type == "entry" || l.type == "exit" || l.type == "onRamp" || l.type == "offRamp" ||
+           l.type == "connectingRamp";
   return n;
 }
 
@@ -100,6 +103,10 @@ TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfa
       // OpenDRIVE 1.9 §12.6 / Junction Guideline §7.2: a direct junction - no connecting roads, the
       // trunk linked to the main road (3 lanes on) and to the ramp (its outermost lane)
       CHECK(rep.directJunctions == 1 && J.type == "direct" && J.connections.size() == 2);
+      // Junction Guideline §7.2.2.3 lane types: the trunk's branch lane is an exit lane, the ramp's lane offRamp
+      CHECK(trunk->lanes.back().right.size() >= 4 && trunk->lanes.back().right[3].type == "exit");
+      for (const auto &sec : ramp->lanes)
+        for (const auto &l : sec.right) CHECK(l.type != "driving");
       CHECK(std::none_of(od.roads.begin(), od.roads.end(), [](const odr::Road &r) { return r.junction != "-1"; }));
       for (const auto &cn : J.connections) {
         CHECK(cn.incomingRoad == trunk->id);

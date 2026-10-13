@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Ramp lane types** (standard profile, Junction Guideline §7.2.2.3, OpenDRIVE 1.9 §11.8): at direct
+  junctions a ramp's lanes are offRamp, onRamp or connectingRamp (motorway to motorway), the trunk
+  lanes leading into an exit are exit, those an entry becomes are entry. carla keeps driving (CARLA's
+  default lane filter). Kept with Jev 0.81.
 - **Direct junctions at freeway splits and merges** (standard profile, OpenDRIVE 1.9 §12.6, Junction
   Guideline §7.2): each gore's 4 m connecting road is joined into the ramp / main road it leads to or
   comes from, the arm's unreached lanes (shoulders, sidewalks) opening over >= 3 m per m of width, and

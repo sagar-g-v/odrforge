@@ -20,6 +20,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
 | 3.2 | Annex D.1.4 vertical check (`annex_d_vertical.py`): z and roll at every lane link | 0 gaps, 0 roll mismatches in all six areas |
 | 2.4 | Lane lines start / end with the taper (sOffset mark records) | 311 lanes over five areas |
+| 1.5b | Ramp lane types onRamp / offRamp / connectingRamp / entry / exit (standard) | FK 108 lanes, LA 58 |
 | 1.5 | Direct junctions at freeway gores (standard; committed at Jev 0.79 by user decision) | 54 of 113 gores |
 | 4.4 | Header `<license>` ODbL-1.0 with OSM attribution (standard) | - |
 | 4.3 | Signal phases by traffic axis (parallel approaches share a phase) | split parallel approaches 23 -> 0 junctions |
@@ -88,7 +89,7 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   lanes and direct junctions with overlapZone are 1.8-only (medium priority), not started.
 - Direct junctions (1.5): 59 of 113 gores stay common junctions (28 arm reached by several connecting
   roads, 28 fold risk for carried lanes, 3 unexpected end); 5 OSM-distance findings on the joined first
-  metres. Lane types onRamp / offRamp / entry / exit not started.
+  metres.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

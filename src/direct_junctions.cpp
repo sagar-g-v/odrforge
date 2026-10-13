@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 
 #include "network_internal.hpp"
@@ -221,6 +222,26 @@ void dropLinksAt(odr::Road &r, bool atEnd) {
     for (odr::Lane &l : *side) (atEnd ? l.link.successor : l.link.predecessor).reset();
 }
 
+/// A lane of road r followed from section k toward the road's end (forward) or start, through its lane
+/// links, retyped while it is a driving lane: the lane a ramp feeds (or leaves from) on the trunk.
+void retypeAlong(odr::Road &r, size_t k, int id, bool forward, const std::string &type) {
+  std::optional<int> at = id;
+  for (long i = static_cast<long>(k); at && i >= 0 && i < static_cast<long>(r.lanes.size()); i += forward ? 1 : -1) {
+    odr::Lane *l = laneById(r.lanes[static_cast<size_t>(i)], *at);
+    if (!l || l->type != "driving") return;
+    l->type = type;
+    at = forward ? l->link.successor : l->link.predecessor;
+  }
+}
+
+/// every driving lane of a road retyped (the ramp itself)
+void retypeRoad(odr::Road &r, const std::string &type) {
+  for (odr::LaneSection &sec : r.lanes)
+    for (auto *side : {&sec.left, &sec.right})
+      for (odr::Lane &l : *side)
+        if (l.type == "driving") l.type = type;
+}
+
 }  // namespace
 
 void Builder::directJunctions() {
@@ -228,6 +249,18 @@ void Builder::directJunctions() {
   std::map<std::string, size_t> indexOf;
   for (size_t i = 0; i < od.roads.size(); ++i) indexOf[od.roads[i].id] = i;
   std::vector<char> dropped(od.roads.size(), 0);
+  // ASAM Junction Guideline §7.2.2.3 (OpenDRIVE 1.9 §11.8 lane types): a ramp leaving at an exit is
+  // offRamp, one joining at an entry onRamp, one doing both (motorway to motorway) connectingRamp; the
+  // trunk lanes leading into an exit ramp are exit from where they begin, those an entry ramp becomes
+  // are entry until they end
+  constexpr int kLeaves = 1, kJoins = 2;
+  std::map<size_t, int> rampRole;  // road index -> kLeaves | kJoins
+  struct TrunkLane {
+    size_t road;
+    int id;
+    bool entry;  // followed from the junction forward (entry) or backward (exit)
+  };
+  std::vector<TrunkLane> trunkLanes;
   for (const Cluster &cl : clusters) {
     if (!cl.gore || cl.junction < 0) continue;
     odr::Junction &J = od.junctions[cl.junction];
@@ -309,6 +342,23 @@ void Builder::directJunctions() {
     J.type = "direct";
     J.connections = direct;
     ++rep.directJunctions;
+    // lane types once every junction is joined (a ramp may be joined at both ends)
+    const size_t rampIndex = metas[cl.gore->branch].roadIndex, trunkIndex = metas[cl.gore->trunk].roadIndex;
+    for (const odr::Connection &cn : J.connections) {
+      if (diverge && cn.connectingRoad == od.roads[rampIndex].id) {
+        rampRole[rampIndex] |= kLeaves;
+        for (const odr::LaneLink &ll : cn.laneLinks) trunkLanes.push_back({trunkIndex, ll.from, false});
+      } else if (!diverge && cn.incomingRoad == od.roads[rampIndex].id) {
+        rampRole[rampIndex] |= kJoins;
+        for (const odr::LaneLink &ll : cn.laneLinks) trunkLanes.push_back({trunkIndex, ll.to, true});
+      }
+    }
+  }
+  for (const auto &[road, role] : rampRole)
+    retypeRoad(od.roads[road], role == (kLeaves | kJoins) ? "connectingRamp" : role == kJoins ? "onRamp" : "offRamp");
+  for (const TrunkLane &t : trunkLanes) {
+    odr::Road &r = od.roads[t.road];
+    retypeAlong(r, t.entry ? 0 : r.lanes.size() - 1, t.id, t.entry, t.entry ? "entry" : "exit");
   }
   // connecting roads are appended after the plain roads: dropping them leaves the plain roads' places
   std::vector<odr::Road> kept;
