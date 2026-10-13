@@ -5,6 +5,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Header licence** (standard profile, OpenDRIVE 1.9 §6.4.2, introduced 1.8.0): the ODbL 1.0 licence
+  of the OpenStreetMap data with its attribution. Kept with Jev 0.89.
 - **Stop lines** (standard profile, ASAM Junction Guideline §9.2, OpenDRIVE 1.9 §14.3 / §14.4): every
   traffic light has a stop line on its approach - OpenDRIVE type 1100001, valid for the incoming
   lanes, 1 m before the approach crosswalk, dependent on the light - and references it; the light

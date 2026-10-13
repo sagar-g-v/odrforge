@@ -322,6 +322,24 @@ TEST_CASE("writer 1.8: walking / direction=both / access restriction children, d
   CHECK(std::string(d.child("OpenDRIVE").child("header").attribute("revMinor").value()) == "8");
 }
 
+TEST_CASE("writer: header <license> in 1.8 (OpenDRIVE 1.9 §6.4.2, introduced 1.8.0), none in 1.4") {
+  odr::OpenDrive od = sampleNetwork();
+  od.header.license = odr::License{"Open Data Commons Open Database License 1.0", "https://opendatacommons.org/licenses/odbl/1-0/",
+                                   "ODbL-1.0", "Contains data from OpenStreetMap"};
+  for (const int minor : {8, 4}) {
+    pugi::xml_document d;
+    CHECK(d.load_string(odr::toString(od, {minor, 12}).c_str()));
+    const auto header = d.child("OpenDRIVE").child("header");
+    const auto lic = header.child("license");
+    CHECK(bool(lic) == (minor == 8));
+    if (!lic) continue;
+    CHECK(std::string(lic.attribute("spdxid").value()) == "ODbL-1.0");
+    // schema order: geoReference, offset, license, userData
+    for (auto n = lic.next_sibling(); n; n = n.next_sibling())
+      CHECK(std::string(n.name()) != "geoReference" && std::string(n.name()) != "offset");
+  }
+}
+
 TEST_CASE("writer 1.4 (carla profile): pre-1.8 vocabulary, bare <outline>, center lane typed") {
   const std::string xml = odr::toString(sampleNetwork(), {4, 12});
   pugi::xml_document d;

@@ -17,6 +17,9 @@ struct SpecRevision {
   // OpenDRIVE 1.9 §8.5 header <offset>; introduced 1.6.
   bool hasHeaderOffset() const { return minor >= 6; }
 
+  // OpenDRIVE 1.9 §6.4.2 header <license>; introduced 1.8.0 (Table 9).
+  bool hasHeaderLicense() const { return minor >= 8; }
+
   // OpenDRIVE 1.9 §10.4 road types townExpressway, townCollector, townArterial, townPrivate,
   // townLocal, townPlayStreet; introduced 1.5 (1.4: town).
   bool hasTownRoadSubtypes() const { return minor >= 5; }

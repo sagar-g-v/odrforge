@@ -1342,6 +1342,11 @@ void Builder::finish() {
   od.header.east = maxX;
   od.header.west = minX;
   od.header.geoReference = proj.projString();
+  // the road network is derived from OpenStreetMap data, licensed under the ODbL 1.0, which asks for
+  // the attribution "(c) OpenStreetMap contributors" (osmfoundation.org/wiki/Licence/Attribution_Guidelines)
+  od.header.license = odr::License{"Open Data Commons Open Database License 1.0",
+                                   "https://opendatacommons.org/licenses/odbl/1-0/", "ODbL-1.0",
+                                   u8"Contains data \u00a9 OpenStreetMap contributors, available under the ODbL 1.0."};
   if (!opt.verticalDatum.empty()) od.header.userData["verticalDatum"] = opt.verticalDatum;
   od.header.revMinor = opt.target.revMinor;
   char buf[64];

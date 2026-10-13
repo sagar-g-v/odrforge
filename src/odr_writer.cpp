@@ -442,7 +442,14 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
     attrN(o, c, "z", od.header.offZ);
     attrN(o, c, "hdg", od.header.offHdg);
   }
-  // XSD t_header: userData after geoReference / offset
+  // XSD t_header: geoReference, offset, license, then userData
+  if (od.header.license && c.spec.hasHeaderLicense()) {
+    auto l = h.append_child("license");
+    attr(l, "name", od.header.license->name);
+    if (!od.header.license->resource.empty()) attr(l, "resource", od.header.license->resource);
+    if (!od.header.license->spdxid.empty()) attr(l, "spdxid", od.header.license->spdxid);
+    if (!od.header.license->text.empty()) attr(l, "text", od.header.license->text);
+  }
   for (const auto &[k, v] : od.header.userData) {
     auto u = h.append_child("userData");
     attr(u, "code", k);

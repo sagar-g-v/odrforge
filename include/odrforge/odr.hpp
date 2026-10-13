@@ -180,6 +180,11 @@ struct Controller {
   std::vector<std::string> signalIds;  ///< <control signalId=..>
 };
 
+/// OpenDRIVE 1.9 §6.4.2 <license> (introduced 1.8.0): licensing of the file's content
+struct License {
+  std::string name, resource, spdxid, text;
+};
+
 struct Header {
   int revMajor = 1, revMinor = 6;
   std::string name, version = "1", vendor = "OdrForge", date;
@@ -187,6 +192,7 @@ struct Header {
   std::string geoReference;  ///< PROJ string
   std::map<std::string, std::string> userData;  ///< e.g. verticalDatum
   double offX = 0, offY = 0, offZ = 0, offHdg = 0;
+  std::optional<License> license;
 };
 
 /// OpenDRIVE 1.9 §12.13 junction group (1.4+): junctions that belong together, e.g. a roundabout.
