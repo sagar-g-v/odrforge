@@ -540,6 +540,31 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
       attr(x, "type", "0");
       attr(x, "sequence", std::to_string(ct.sequence));
     }
+    // OpenDRIVE 1.8.0 §12.9 / §12.11; XSD 1.8.1 t_junction_common: ..., controller, surface, planView, objects,
+    // boundary, elevationGrid
+    if (j.grid && c.spec.hasJunctionGrid() && j.type == "default") {
+      auto g = e.append_child("planView").append_child("geometry");
+      attrN(g, c, "s", 0.0);
+      attrN(g, c, "x", j.grid->x);
+      attrN(g, c, "y", j.grid->y);
+      attrN(g, c, "hdg", j.grid->hdg);
+      attrN(g, c, "length", j.grid->length);
+      g.append_child("line");
+      auto eg = e.append_child("elevationGrid");
+      attrN(eg, c, "gridSpacing", j.grid->gridSpacing);
+      attrN(eg, c, "sStart", j.grid->sStart);
+      auto list = [&](const std::vector<double> &v) {
+        std::string out;
+        for (double z : v) out += (out.empty() ? "" : " ") + c.num(z);
+        return out;
+      };
+      for (const auto &row : j.grid->rows) {
+        auto x = eg.append_child("elevation");
+        attrN(x, c, "center", row.center);
+        if (!row.left.empty()) attr(x, "left", list(row.left));
+        if (!row.right.empty()) attr(x, "right", list(row.right));
+      }
+    }
   }
   // OpenDRIVE 1.9 §12.13 (XSD 1.4 - 1.8.1: after the junctions)
   for (const auto &g : od.junctionGroups) {

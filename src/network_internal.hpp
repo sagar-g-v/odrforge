@@ -190,6 +190,7 @@ struct Builder {
   void curbLanes();          // curbs.cpp
   void lowerCurbsAtCrosswalks();  // curbs.cpp
   void crossPaths();         // cross_paths.cpp
+  void junctionGrids();      // junction_surface.cpp
   /// crosswalks at OSM crossing nodes on a road (not in a junction): (road index, object id)
   std::vector<std::pair<size_t, std::string>> midBlockCrosswalks;
   void trimRoads();

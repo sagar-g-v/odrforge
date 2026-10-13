@@ -47,6 +47,9 @@ struct SpecRevision {
   // OpenDRIVE 1.8.0 §14.8 signal <semantics> (introduced 1.8.0; XSD 1.8.1: last child of <signal>).
   bool hasSignalSemantics() const { return minor >= 8; }
 
+  // OpenDRIVE 1.8.0 §12.9 junction <planView> and §12.11 <elevationGrid> (introduced 1.8.0).
+  bool hasJunctionGrid() const { return minor >= 8; }
+
   // OpenDRIVE 1.9 §11.8 lane type curb; introduced 1.6 (1.4: none - the curb is the sidewalk's
   // raised edge).
   bool hasCurbLanes() const { return minor >= 6; }

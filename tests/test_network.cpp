@@ -273,6 +273,53 @@ TEST_CASE("cross paths (standard): none on a road that is not flat (OpenDRIVE 1.
   }
 }
 
+TEST_CASE("junction grid (standard): reference line and elevation grid reproduce the connecting roads' heights") {
+  // OpenDRIVE 1.8.0 §12.9 / §12.11: one straight reference line reaching every junction point by a perpendicular,
+  // a grid of complete squares along it; the grid overrides the connecting roads' elevation, so it must equal it
+  BuildOptions o;
+  o.country = CountryProfile::load("US");
+  o.target = TargetProfile::byName("standard");
+  o.streetFurniture = false;
+  o.elevation = [](double x, double y) { return 0.04 * x + 0.02 * y; };  // a sloped crossroads
+  const OsmBuilder b = crossroads(true);
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.junctionGrids == 1);
+  const odr::Junction &J = od.junctions[0];
+  CHECK(J.grid.has_value());
+  if (!J.grid) return;
+  const odr::JunctionGrid &g = *J.grid;
+  const Vec2 d{std::cos(g.hdg), std::sin(g.hdg)}, n{-std::sin(g.hdg), std::cos(g.hdg)};
+  // bilinear in the square (exact for the bicubic interpolation of planar values)
+  auto at = [&](int k, int j) {
+    const auto &row = g.rows[k];
+    return j == 0 ? row.center : j > 0 ? row.left[j - 1] : row.right[-j - 1];
+  };
+  for (const auto &r : od.roads) {
+    if (r.junction != J.id) continue;
+    for (double s = 0.0; s <= r.length(); s += 0.5) {
+      const Pose p = r.planView.eval(s);
+      const double t = odr::laneOffsetAt(r, s);
+      const Vec2 q = p.offset(t) - Vec2{g.x, g.y};
+      const double ps = q.dot(d), pt = q.dot(n);
+      CHECK(ps >= 0.0 && ps <= g.length);  // rule junctions.geometry.ref_line_definition
+      const int k = static_cast<int>(std::floor(ps / g.gridSpacing)), j = static_cast<int>(std::floor(pt / g.gridSpacing));
+      CHECK(k >= 0 && k + 1 < static_cast<int>(g.rows.size()));
+      if (k < 0 || k + 1 >= static_cast<int>(g.rows.size())) return;
+      const int nl = static_cast<int>(g.rows[k].left.size()), nr = static_cast<int>(g.rows[k].right.size());
+      CHECK(j >= -nr && j + 1 <= nl);
+      if (j < -nr || j + 1 > nl) return;
+      const double u = ps / g.gridSpacing - k, v = pt / g.gridSpacing - j;
+      const double zg = at(k, j) * (1 - u) * (1 - v) + at(k + 1, j) * u * (1 - v) + at(k, j + 1) * (1 - u) * v + at(k + 1, j + 1) * u * v;
+      CHECK_NEAR(zg, odr::surfaceZ(r, s, t), 0.01);
+    }
+  }
+  // carla (1.4): no junction grid
+  o.target = TargetProfile::byName("carla");
+  CHECK(buildOpenDrive(b.d, b.proj, o, &rep).junctions[0].grid.has_value() == false);
+}
+
 TEST_CASE("cross paths (standard): approach crosswalks of a junction are no virtual junctions") {
   // Junction Guideline 1.0.0 section 6.3.3 / 6.4.3: crossings at a junction lie inside the common junction's
   // area - not modelled as cross paths yet; their crosswalk objects stay

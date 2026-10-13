@@ -74,6 +74,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   failures (direct junction headings equal to 1e-8 rad); each rule verified to flag a planted violation.
 
 ### Added
+- **Junction reference line and elevation grid** (standard profile, OpenDRIVE 1.8.0 §12.9 / §12.11, common
+  junctions): a straight `<planView>` line along the principal axis of the connecting roads, reaching every
+  lane by a perpendicular, and an `<elevationGrid>` of 5 m squares covering them, sampled from the junction
+  plane the connecting roads lie on (bicubic interpolation of planar values is exact, so the grid equals
+  their heights: max 8.9 mm). No boundary yet. `tools/inspect/grid_audit.py` measures the rules; 0 failures
+  in all six areas. Heights unchanged: LA's steep short roads are real walls / garage ramps in the terrain
+  data, which a junction surface cannot fix. Jev 0.76; committed on the user's decision.
 - **Junction approach crosswalks as cross paths** (standard profile, OpenDRIVE 1.9 §12.5 / §12.7): the
   crosswalks on the approaches of signalised and crossing junctions lie on the approach road, short of
   the junction's connecting roads, so each gets a virtual junction on that road round the crosswalk,

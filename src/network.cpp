@@ -1067,6 +1067,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("curb lanes", &detail::Builder::curbLanes);
   stage("lowered curbs", &detail::Builder::lowerCurbsAtCrosswalks);
   stage("cross paths", &detail::Builder::crossPaths);
+  stage("junction grids", &detail::Builder::junctionGrids);
   stage("finish", &detail::Builder::finish);
   if (verbose)
     std::fprintf(stderr, "[odrforge] segs %zu chains %zu clusters %zu roads %zu\n", b.segs.size(), b.chains.size(),

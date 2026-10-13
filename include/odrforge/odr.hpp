@@ -182,6 +182,17 @@ struct CrossPath {
   Link start, end;
 };
 
+/// OpenDRIVE 1.8.0 §12.9 junction reference line (one line) and §12.11 elevation grid along it
+struct JunctionGrid {
+  double x = 0.0, y = 0.0, hdg = 0.0, length = 0.0;  ///< the reference line: start, heading, length
+  double gridSpacing = 5.0, sStart = 0.0;
+  struct Row {
+    double center = 0.0;
+    std::vector<double> left, right;  ///< from inside to outside
+  };
+  std::vector<Row> rows;  ///< at s = sStart + k gridSpacing
+};
+
 struct Junction {
   std::string id, name;
   std::string type = "default";  ///< default, direct (1.7+), virtual, crossing (1.8)
@@ -195,6 +206,7 @@ struct Junction {
     std::string high, low;
   };
   std::vector<Priority> priorities;
+  std::optional<JunctionGrid> grid;  ///< common junctions, 1.8+
 };
 
 struct Controller {
