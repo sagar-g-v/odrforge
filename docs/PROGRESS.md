@@ -104,8 +104,11 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Overlap resolution (2 x 5 s on LA) is an order-dependent sweep; making it parallel needs a redesign.
 - CARLA height steps on LA (LibCarla ignores superelevation) and `jumps2.py` sampling every third
   waypoint (counts shift when roads are added).
-- Remaining plan items, not started - every one below 0.8 with Jev already at design level (2026-10-13),
-  awaiting the user's decision:
+- Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
+  briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
+  atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:
+  - crosswalks at junctions as cross paths inside the common junction (Junction Guideline §6.3.3 / §6.4.3:
+    incoming roads end before the cross path; pedestrian lights and invisible stop lines on the crossing);
   - road barriers from OSM guard_rail / jersey_barrier / cable_barrier ways (Frankfurt Kreuz 117, Tokyo 4,
     Munich 2) as barrier objects along the road: 0.66 (repeat segments, both profiles 0.48, standard only
     0.33, open outline 0.23 - 0.27); walls and fences as well: 0.35;
