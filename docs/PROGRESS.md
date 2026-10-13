@@ -20,6 +20,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
 | 3.2 | Annex D.1.4 vertical check (`annex_d_vertical.py`): z and roll at every lane link | 0 gaps, 0 roll mismatches in all six areas |
 | 2.4 | Lane lines start / end with the taper (sOffset mark records) | 311 lanes over five areas |
+| 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
 | 1.5b | Ramp lane types onRamp / offRamp / connectingRamp / entry / exit (standard) | FK 108 lanes, LA 58 |
 | 1.5 | Direct junctions at freeway gores (standard; committed at Jev 0.79 by user decision) | 54 of 113 gores |
 | 4.4 | Header `<license>` ODbL-1.0 with OSM attribution (standard) | - |
@@ -90,12 +91,8 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Direct junctions (1.5): 59 of 113 gores stay common junctions (28 arm reached by several connecting
   roads, 28 fold risk for carried lanes, 3 unexpected end); 5 OSM-distance findings on the joined first
   metres.
-- Curb lanes (plan 1.3, standard profile): every raised sidewalk split into a 0.15 m curb lane + the
-  sidewalk (outer edge kept), carried round corners; lane links and junction laneLinks carried over;
-  1.4 writes border. LA 464 ... Tokyo 2841 curbs; XSD / Annex F / ASAM qc / esmini clean, carla
-  byte-identical. New exact findings are only duplicates where the sidewalk is already flagged (Stelvio
-  folds 98 -> 140, corner continuity +147, edge breaks +20, no new place). Jev 0.78 (doubt: the doubled
-  counts) - parked (`build/tmp/curb_parked/`: curbs.cpp + curb.diff). Needs your decision.
+- Curb lanes: lowered curbs at crosswalks (lane height records) not done yet; curb lanes duplicate the
+  sidewalk's existing fold / corner / edge-break findings (Stelvio folds 98 -> 140, same places).
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

@@ -120,6 +120,10 @@ struct LaneTypeAndDirection {
 // OpenDRIVE 1.9 §11.8 lane type and direction; 1.8.0 Table 256 replaces sidewalk by walking and
 // bidirectional by driving with lane@direction="both". Before 1.8 the type is written as is.
 LaneTypeAndDirection laneTypeAndDirection(const Lane &l, const SpecRevision &spec) {
+  // OpenDRIVE 1.9 §11.8 lane types curb and connectingRamp (introduced 1.6): earlier revisions write
+  // the kerb as a border lane and a ramp between two motorways as a driving lane
+  if (!spec.hasCurbLanes() && l.type == "curb") return {"border", ""};
+  if (!spec.hasCurbLanes() && l.type == "connectingRamp") return {"driving", ""};
   if (!spec.hasLaneDirection()) return {l.type, ""};
   if (l.type == "sidewalk") return {"walking", l.direction};
   if (l.type == "bidirectional") return {"driving", "both"};

@@ -73,9 +73,11 @@ Result build(const OsmBuilder &b, const std::string &country = "US", const std::
 }
 
 // a junction road for pedestrians only: the sidewalk round a corner
+/// a connecting road along a junction corner: its sidewalk, behind a curb lane in the standard profile
 bool cornerSidewalk(const odr::Road &r) {
   const auto &sec = r.lanes.front();
-  return r.junction != "-1" && sec.left.empty() && sec.right.size() == 1 && sec.right.front().type == "sidewalk";
+  return r.junction != "-1" && sec.left.empty() && !sec.right.empty() && sec.right.back().type == "sidewalk" &&
+         std::all_of(sec.right.begin(), sec.right.end(), [](const odr::Lane &l) { return l.type == "sidewalk" || l.type == "curb"; });
 }
 
 int count(const odr::OpenDrive &od, bool junctionRoads) {
@@ -139,11 +141,12 @@ TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
         CHECK(atEnd ? stop->s < road.length() - 3.1 : stop->s > 3.1);
       }
   CHECK(lights == 4);
-  // every connecting road has exactly one lane linked at both ends, and the junction lists it
+  // every connecting road has exactly one lane linked at both ends (a corner sidewalk: its sidewalk
+  // behind a curb lane, OpenDRIVE 1.9 section 11.8), and the junction lists it
   for (const auto &road : r.od.roads) {
     if (road.junction == "-1") continue;
     const auto &sec = road.lanes.front();
-    CHECK(sec.left.size() + sec.right.size() == 1);
+    CHECK(sec.left.size() + sec.right.size() == (cornerSidewalk(road) ? 2u : 1u));
     CHECK(road.predecessor && road.successor);
   }
   CHECK(r.val.maxLinkGap < 0.02);
@@ -178,6 +181,46 @@ TEST_CASE("network: connecting roads use only line / arc / spiral and fit lane c
       CHECK(e.type() == GeomType::Line || e.type() == GeomType::Arc || e.type() == GeomType::Spiral);
   CHECK(r.val.maxLinkHeading < 1e-3);
   CHECK(r.val.maxLinkWidthDiff < 0.02);
+}
+
+TEST_CASE("curb lanes (standard): a 0.15 m curb before each sidewalk, carried round the corners; none in carla") {
+  const Result carla = build(crossroads(false), "US", "carla");
+  const Result std18 = build(crossroads(false), "US", "asam");
+  CHECK(std18.val.errors == 0);
+  int curbs = 0, cornerCurbs = 0;
+  for (const auto &road : carla.od.roads)
+    for (const auto &sec : road.lanes)
+      for (const auto *side : {&sec.left, &sec.right})
+        for (const auto &l : *side) CHECK(l.type != "curb");
+  for (size_t i = 0; i < std18.od.roads.size(); ++i) {
+    const odr::Road &road = std18.od.roads[i];
+    for (const auto &sec : road.lanes)
+      for (const auto *side : {&sec.left, &sec.right}) {
+        if (side->empty() || side->back().type != "sidewalk") continue;
+        // OpenDRIVE 1.9 section 11.8: the sidewalk sits behind a curb lane of kerb width and kerb height
+        CHECK(side->size() >= 2);
+        if (side->size() < 2) continue;
+        const odr::Lane &curb = (*side)[side->size() - 2];
+        CHECK(curb.type == "curb" && std::abs(odr::laneWidthAt(curb, 0.0) - 0.15) < 1e-9 && curb.heightInner);
+        ++curbs;
+        cornerCurbs += cornerSidewalk(road);
+      }
+  }
+  CHECK(curbs > 0 && cornerCurbs == 4);
+  // the sidewalk keeps its outer edge: the arms' total width is the same in both profiles
+  for (const auto &road : std18.od.roads) {
+    if (road.junction != "-1") continue;
+    const odr::Road *c = nullptr;
+    for (const auto &o : carla.od.roads)
+      if (o.junction == "-1" && o.userData.count("osmWays") && road.userData.count("osmWays") &&
+          o.userData.at("osmWays") == road.userData.at("osmWays"))
+        c = &o;
+    if (!c) continue;
+    double a0, a1, b0, b1;
+    const int outer = -static_cast<int>(road.lanes.front().right.size()), outerC = -static_cast<int>(c->lanes.front().right.size());
+    CHECK(odr::laneBorders(road, 1.0, outer, a0, a1) && odr::laneBorders(*c, 1.0, outerC, b0, b1));
+    CHECK(std::abs(a1 - b1) < 1e-6);
+  }
 }
 
 TEST_CASE("network: T junction with a stop sign on the minor road") {

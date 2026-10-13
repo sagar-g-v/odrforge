@@ -44,6 +44,10 @@ struct SpecRevision {
   // of the Junction Guideline §9.2 (light -> stop line reference) is written where it exists.
   bool hasSignalReferenceElement() const { return minor >= 8; }
 
+  // OpenDRIVE 1.9 §11.8 lane type curb; introduced 1.6 (1.4: none - the curb is the sidewalk's
+  // raised edge).
+  bool hasCurbLanes() const { return minor >= 6; }
+
   // OpenDRIVE 1.9 §11.8 lane@direction; 1.8.0 Table 228 introduces it and Table 256 deprecates
   // the lane types it replaces: bidirectional -> driving + direction="both", sidewalk -> walking.
   bool hasLaneDirection() const { return minor >= 8; }

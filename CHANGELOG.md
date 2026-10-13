@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Curb lanes** (standard profile, OpenDRIVE 1.9 §11.8 lane type curb, introduced 1.6): every raised
+  sidewalk - also round junction corners - gets a 0.15 m curb lane at kerb height, taken from the
+  sidewalk so its outer edge stays; lane links and junction laneLinks carried over; revisions before 1.6
+  write border (and driving for connectingRamp). New checker findings only duplicate places already
+  flagged for the sidewalk. Jev 0.78; committed on the user's decision.
 - **Ramp lane types** (standard profile, Junction Guideline §7.2.2.3, OpenDRIVE 1.9 §11.8): at direct
   junctions a ramp's lanes are offRamp, onRamp or connectingRamp (motorway to motorway), the trunk
   lanes leading into an exit are exit, those an entry becomes are entry. carla keeps driving (CARLA's
