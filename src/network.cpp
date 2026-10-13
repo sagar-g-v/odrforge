@@ -742,7 +742,9 @@ void Builder::buildRoads() {
           double s0 = 0.0;  // start of the full-width stretch
           if (g) l.widths.push_back(odr::Poly3::hermite(0.0, T, 0.0, 0.0, w, 0.0)), s0 = T, addTaper[k] = std::max(addTaper[k], T);
           if (d) dropTaper[k + 1] = std::max(dropTaper[k + 1], T);
-          else if (ta > 0.0) l.widths.push_back(odr::Poly3::hermite(0.0, ta, wm, mm, w, 0.0)), s0 = ta;
+          // a lane that blends to a new width at its start and ends at its section's end does both
+          // (T leaves room for the blend): the blend keeps its borders continuous across the boundary
+          if (!g && ta > 0.0) l.widths.push_back(odr::Poly3::hermite(0.0, ta, wm, mm, w, 0.0)), s0 = ta;
           const double hold = secLen - s0 - (d ? T : 0.0);
           if (hold > 1e-6) l.widths.push_back({s0, w, 0, 0, 0});
           if (d) l.widths.push_back(odr::Poly3::hermite(secLen - T, T, w, 0.0, 0.0, 0.0));

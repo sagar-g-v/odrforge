@@ -63,6 +63,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Lane widths blend at a section start even when the lane ends at the section's end.** The start
+  blend was dropped for such lanes, so their borders jumped sideways at the boundary (with
+  `--separate-sidewalks`, London: lane-edge position breaks 11 -> 0, heading breaks 21 -> 10; default
+  output unchanged on the test areas).
 - **Every lane entering a junction has a path through it** (OpenDRIVE 1.9 §12.3, Junction Guideline
   §6). A lane whose tagged turn had no road to take, or that a lane split skipped, ended at the
   junction. It now takes the target on its own side of the approach. Lanes without a path:
