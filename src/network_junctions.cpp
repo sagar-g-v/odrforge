@@ -957,6 +957,7 @@ void Builder::buildSignals() {
     sg.width = code.width;
     sg.height = code.height;
     sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
+    sg.semanticsPriority = hw == "stop" ? "stop" : "yield";  // OpenDRIVE 1.8.0 §14.8
     placeAtEnd(r, atEnd, lanes, 0.5, sg);
     r.signals.push_back(sg);
     ++rep.signals;
@@ -1072,7 +1073,10 @@ void Builder::buildSignals() {
       sg.subtype = code.subtype;
       sg.width = code.width;
       sg.height = code.height;
-      sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 4.5;
+      // OpenDRIVE 1.8.0 §14.1 zOffset: the signal origin above the reference-line elevation. On its pole beside
+      // the road, as in the Junction Guideline 1.0.0 §6.3.3 / §9 examples for type 1000001 (zOffset 2.42)
+      sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 2.42;
+      sg.semanticsPriority = "trafficLight";  // OpenDRIVE 1.8.0 §14.8; Junction Guideline §6.3.3 Code 14
       placeAtEnd(r, a.end->atEnd, a.lanes, 0.2, sg);
       ctrls[a.group].signalIds.push_back(sg.id);
       // Stop line: OpenDRIVE catalogue type 1100001 (invisible stop line, Signal reference 1.0.0
@@ -1100,6 +1104,7 @@ void Builder::buildSignals() {
         stop.country = "OpenDRIVE";
         stop.type = "1100001";
         stop.height = 0.03;
+        stop.semanticsPriority = "stopLine";  // OpenDRIVE 1.8.0 §14.8; Junction Guideline §6.3.3 Code 13
         placeAtEnd(r, a.end->atEnd, a.lanes, back, stop);
         double t0, t1, u0, u1;  // across the approach lanes: the line's centre and width
         odr::laneBorders(r, stop.s, stop.validity.front().fromLane, t0, t1);

@@ -53,7 +53,9 @@ struct TargetProfile {
   int revMinor = 8;
   bool openDriveSignCatalog = false;  ///< CARLA: country="OpenDRIVE", 206 stop / 205 yield / 274 speed
   bool speedSignKmhBuckets = false;   ///< CARLA: speed sign subtype 30..120 km/h in steps of 10
-  bool trafficLightZeroOffset = true; ///< place traffic-light signals on the road surface (CARLA spawns poles)
+  /// true: traffic-light signals on the road surface (CARLA spawns poles); false: at the signal head on its pole
+  /// (Junction Guideline 1.0.0 §9.2: "Traffic lights shall be defined at their physical location")
+  bool trafficLightZeroOffset = false;
   size_t maxIdLength = 0;             ///< CARLA: 32
   bool writeLaneOffsetForConnecting = true;
   /// false: flat cross sections for consumers that ignore <superelevation> (LibCarla's own road

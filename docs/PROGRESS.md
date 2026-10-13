@@ -101,6 +101,12 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Curb lanes: curb lanes duplicate the
   sidewalk's existing fold / corner / edge-break findings (Stelvio folds 98 -> 140, same places).
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
+- Steep short roads (LA Bunker Hill: 2 m roads climbing 3.4 m, CARLA loader 131 height jumps): each junction
+  is one near-flat plane while the measured terrain rises 3 - 4 m across a 12 m junction area, so the climb
+  lands on the short road between two planes. Limiting the level difference between planes (road length x
+  maxGrade) cut CARLA's jumps 131 -> 16 but moved measured street junctions by up to 2.5 m (Jev 0.75): parked
+  in build/tmp/plane_grade_parked.diff. The faithful fix is the junction surface item (elevation grid with
+  transition lengths, 1.9 §12.9 - 12.11): a decision for the user.
 - Direct junctions: 2 lane links from a ramp lane to a `shoulder` lane (Frankfurt); exit lanes typed from the
   road start, not where the lane begins (no spec rule); motorway_link roads whose origin lies outside the area
   keep driving.

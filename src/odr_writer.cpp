@@ -409,6 +409,9 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
         attr(x, "elementType", l.elementType);
         if (!l.type.empty()) attr(x, "type", l.type);
       }
+    // XSD 1.8.1 t_road_signals_signal: ... reference, position, userData, then semantics
+    if (c.spec.hasSignalSemantics() && !s.semanticsPriority.empty())
+      attr(e.append_child("semantics").append_child("priority"), "type", s.semanticsPriority);
   }
   for (const auto &s : r.signalReferences) {
     auto e = sigs.append_child("signalReference");

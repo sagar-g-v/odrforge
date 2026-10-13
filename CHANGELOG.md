@@ -5,6 +5,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Traffic lights at their physical location** (Junction Guideline §9.2) in the standard profile: zOffset
+  2.42 m, the guideline examples' value for pole-mounted type 1000001 heads (was 0; carla keeps 0, CARLA
+  spawns poles). Jev 0.83.
+- **Signal semantics** (OpenDRIVE 1.8.0 §14.8, XSD 1.8.1 order): `<semantics><priority>` stopLine /
+  trafficLight / stop / yield, as in Junction Guideline §6.3.3 Codes 13 / 14 / 20; 1.8+ only. Jev 0.80.
+- **Spec atlas corrections**: curb since 1.6.0 (not 1.4), connectingRamp not in 1.4H, the double road-mark
+  side rule (1.8.0 Table 167), and the signal-dependency wording that is already 1.8.0 §14.3. Jev 0.81.
 - **Header licence** (OpenDRIVE 1.8.0 §6.4.2 Table 9: `text` is "The full license text"): `<license>` keeps
   name / resource / spdxid; the ODbL attribution "Contains data © OpenStreetMap contributors" moved to header
   `<userData code="attribution">`, now in both profiles (1.4H header allows userData). Jev 0.85.

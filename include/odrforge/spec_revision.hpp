@@ -44,6 +44,9 @@ struct SpecRevision {
   // of the Junction Guideline §9.2 (light -> stop line reference) is written where it exists.
   bool hasSignalReferenceElement() const { return minor >= 8; }
 
+  // OpenDRIVE 1.8.0 §14.8 signal <semantics> (introduced 1.8.0; XSD 1.8.1: last child of <signal>).
+  bool hasSignalSemantics() const { return minor >= 8; }
+
   // OpenDRIVE 1.9 §11.8 lane type curb; introduced 1.6 (1.4: none - the curb is the sidewalk's
   // raised edge).
   bool hasCurbLanes() const { return minor >= 6; }

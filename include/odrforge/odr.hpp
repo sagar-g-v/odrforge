@@ -98,6 +98,9 @@ struct Signal {
   std::string unit, text;
   std::vector<ValidityRange> validity;
   std::vector<SignalDependency> dependencies;
+  /// OpenDRIVE 1.8.0 §14.8 <semantics><priority type> (XSD 1.8.1 e_signals_semantics_priority), e.g. stopLine,
+  /// trafficLight, stop, yield; empty: none
+  std::string semanticsPriority;
   std::vector<SignalLink> references;
 };
 
