@@ -44,7 +44,10 @@ Lane readLane(const pugi::xml_node &n) {
     l.speedMax = num(sp, "max");
     l.speedUnit = sp.attribute("unit").value();
   }
-  if (auto h = n.child("height")) l.heightInner = num(h, "inner"), l.heightOuter = num(h, "outer");
+  for (auto h : n.children("height")) {
+    if (!l.heightInner && !l.heightOuter) l.heightInner = num(h, "inner"), l.heightOuter = num(h, "outer");
+    else l.heightChanges.push_back({num(h, "sOffset"), num(h, "inner"), num(h, "outer")});
+  }
   return l;
 }
 

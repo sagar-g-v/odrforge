@@ -48,7 +48,11 @@ struct Lane {
   std::optional<double> speedMax;  ///< m/s
   std::string speedUnit = "m/s";
   std::vector<std::string> accessDeny;  ///< restricted road users (1.6 <access rule="deny" restriction=...>)
-  std::optional<double> heightInner, heightOuter;  ///< curb / sidewalk raise (m)
+  std::optional<double> heightInner, heightOuter;  ///< curb / sidewalk raise (m) from the section start
+  struct HeightChange {
+    double sOffset = 0.0, inner = 0.0, outer = 0.0;
+  };
+  std::vector<HeightChange> heightChanges;  ///< further <height> records (sOffset > 0, ascending), e.g. lowered curbs
   std::string material;          ///< surface (asphalt, concrete, ...)
   std::string direction;         ///< 1.8 lane direction: standard, reversed, both (empty = not written)
 };

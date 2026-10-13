@@ -5,6 +5,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Lowered curbs at crosswalks** (both profiles, OpenDRIVE 1.9 §11.8 lane height records): over each
+  crosswalk the curb lane and the sidewalk's inner edge drop to 0.02 m, the sidewalk ramping down to
+  the crossing. Jev 0.75; committed on the user's decision.
 - **Curb lanes** (standard profile, OpenDRIVE 1.9 §11.8 lane type curb, introduced 1.6): every raised
   sidewalk - also round junction corners - gets a 0.15 m curb lane at kerb height, taken from the
   sidewalk so its outer edge stays; lane links and junction laneLinks carried over; revisions before 1.6

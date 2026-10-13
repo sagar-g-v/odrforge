@@ -134,5 +134,52 @@ void Builder::curbLanes() {
   rep.curbLanes = static_cast<int>(split.size());
 }
 
+// Lowered (dropped) curbs at crosswalks: over the span of each crosswalk object the curb lane drops to
+// kLoweredCurb and the sidewalk's inner edge with it (the sidewalk ramps down to the crossing), on both
+// sides of the road; the heights return after the span. Lane height records (OpenDRIVE 1.9 §11.8, same
+// in 1.4) each hold from their sOffset to the next.
+void Builder::lowerCurbsAtCrosswalks() {
+  constexpr double kLoweredCurb = 0.02;  // m: a dropped kerb, a couple of centimetres above the road
+  for (odr::Road &r : od.roads) {
+    // lowered s intervals per lane (section, id)
+    std::map<std::pair<size_t, int>, std::vector<std::pair<double, double>>> lowered;
+    for (const odr::Object &o : r.objects) {
+      if (o.type != "crosswalk") continue;
+      const double s0 = std::max(0.0, o.s - 0.5 * o.length), s1 = std::min(r.length(), o.s + 0.5 * o.length);
+      for (size_t k = 0; k < r.lanes.size(); ++k) {
+        const double a = r.lanes[k].s, b = k + 1 < r.lanes.size() ? r.lanes[k + 1].s : r.length();
+        if (s1 <= a || s0 >= b) continue;
+        for (auto *side : {&r.lanes[k].left, &r.lanes[k].right}) {
+          if (side->empty() || side->back().type != "sidewalk" || !side->back().heightInner) continue;
+          lowered[{k, side->back().id}].push_back({std::max(s0, a) - a, std::min(s1, b) - a});
+          if (side->size() >= 2 && (*side)[side->size() - 2].type == "curb")
+            lowered[{k, (*side)[side->size() - 2].id}].push_back({std::max(s0, a) - a, std::min(s1, b) - a});
+        }
+      }
+    }
+    for (auto &[key, spans] : lowered) {
+      odr::LaneSection &sec = r.lanes[key.first];
+      odr::Lane *l = nullptr;
+      for (auto *side : {&sec.left, &sec.right})
+        for (odr::Lane &x : *side)
+          if (x.id == key.second) l = &x;
+      if (!l) continue;
+      const double secLen = (key.first + 1 < r.lanes.size() ? r.lanes[key.first + 1].s : r.length()) - sec.s;
+      const double inner = l->heightInner.value_or(0.0), outer = l->heightOuter.value_or(0.0);
+      const double lowOuter = l->type == "curb" ? kLoweredCurb : outer;  // the sidewalk ramps down from its outer edge
+      std::sort(spans.begin(), spans.end());
+      std::vector<std::pair<double, double>> merged;
+      for (const auto &sp : spans)
+        if (!merged.empty() && sp.first <= merged.back().second + 1e-6) merged.back().second = std::max(merged.back().second, sp.second);
+        else merged.push_back(sp);
+      for (const auto &[lo, hi] : merged) {
+        if (lo <= 1e-6) l->heightInner = kLoweredCurb, l->heightOuter = lowOuter;
+        else l->heightChanges.push_back({lo, kLoweredCurb, lowOuter});
+        if (hi < secLen - 1e-6) l->heightChanges.push_back({hi, inner, outer});
+      }
+    }
+  }
+}
+
 }  // namespace detail
 }  // namespace odrforge

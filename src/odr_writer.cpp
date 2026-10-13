@@ -193,6 +193,13 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     attrN(h, c, "inner", l.heightInner.value_or(0.0));
     attrN(h, c, "outer", l.heightOuter.value_or(0.0));
   }
+  // OpenDRIVE 1.9 §11.8 lane height: each record holds from its sOffset to the next (1.4: same)
+  for (const auto &hc : l.heightChanges) {
+    auto h = n.append_child("height");
+    attrN(h, c, "sOffset", hc.sOffset);
+    attrN(h, c, "inner", hc.inner);
+    attrN(h, c, "outer", hc.outer);
+  }
 }
 
 void writeValidity(pugi::xml_node n, const std::vector<ValidityRange> &v) {

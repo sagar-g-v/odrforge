@@ -223,6 +223,31 @@ TEST_CASE("curb lanes (standard): a 0.15 m curb before each sidewalk, carried ro
   }
 }
 
+TEST_CASE("lowered curbs: over each crosswalk the curb and the sidewalk's inner edge drop, both profiles") {
+  for (const char *target : {"carla", "asam"}) {
+    const Result r = build(crossroads(true), "US", target);
+    CHECK(r.val.errors == 0);
+    int lowered = 0;
+    for (const auto &road : r.od.roads)
+      for (const auto &o : road.objects) {
+        if (o.type != "crosswalk") continue;
+        const odr::LaneSection &sec = odr::sectionAt(road, o.s);
+        const double ds = o.s - sec.s;
+        for (const auto *side : {&sec.left, &sec.right})
+          for (const auto &l : *side) {
+            if (l.type != "sidewalk" && l.type != "curb") continue;
+            // the height record in force at the crosswalk centre (OpenDRIVE 1.9 section 11.8: each holds to the next)
+            double inner = l.heightInner.value_or(0.0);
+            for (const auto &h : l.heightChanges)
+              if (h.sOffset <= ds) inner = h.inner;
+            CHECK(std::abs(inner - 0.02) < 1e-9);
+            ++lowered;
+          }
+      }
+    CHECK(lowered > 0);
+  }
+}
+
 TEST_CASE("network: T junction with a stop sign on the minor road") {
   OsmBuilder b;
   const OsmId c = b.node(0, 0);
