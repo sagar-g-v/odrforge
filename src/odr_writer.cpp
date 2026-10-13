@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstdio>
 #include <pugixml.hpp>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -466,7 +467,14 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
     attr(u, "code", k);
     attr(u, "value", v);
   }
-  for (const auto &r : od.roads) writeRoad(root, r, c);
+  // OpenDRIVE 1.9 §12.5: cross paths came with 1.8.0. Below it a junction holding only cross paths, and its
+  // crossing roads, have no form: they are left out (the crosswalk object on the road stays)
+  std::set<std::string> crossPathOnly;
+  if (!c.spec.hasCrossPaths())
+    for (const auto &j : od.junctions)
+      if (j.connections.empty() && !j.crossPaths.empty()) crossPathOnly.insert(j.id);
+  for (const auto &r : od.roads)
+    if (!crossPathOnly.count(r.junction)) writeRoad(root, r, c);
   for (const auto &ct : od.controllers) {
     auto e = root.append_child("controller");
     attr(e, "id", ct.id);
@@ -479,10 +487,17 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
     }
   }
   for (const auto &j : od.junctions) {
+    if (crossPathOnly.count(j.id)) continue;
     auto e = root.append_child("junction");
     attr(e, "id", j.id);
     attr(e, "name", j.name);
     if (c.spec.writesDefaultJunctionType() || j.type != "default") attr(e, "type", j.type);
+    if (j.type == "virtual") {  // OpenDRIVE 1.9 §12.7 Table 69
+      attr(e, "mainRoad", j.mainRoad);
+      attrN(e, c, "sStart", j.sStart);
+      attrN(e, c, "sEnd", j.sEnd);
+      attr(e, "orientation", j.orientation);
+    }
     for (const auto &cn : j.connections) {
       auto x = e.append_child("connection");
       attr(x, "id", cn.id);
@@ -493,6 +508,20 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
         auto l = x.append_child("laneLink");
         attr(l, "from", std::to_string(ll.from));
         attr(l, "to", std::to_string(ll.to));
+      }
+    }
+    // OpenDRIVE 1.9 §12.5 (1.8+): after the connections
+    for (const auto &cp : c.spec.hasCrossPaths() ? j.crossPaths : std::vector<CrossPath>{}) {
+      auto x = e.append_child("crossPath");
+      attr(x, "id", cp.id);
+      attr(x, "crossingRoad", cp.crossingRoad);
+      attr(x, "roadAtStart", cp.roadAtStart);
+      attr(x, "roadAtEnd", cp.roadAtEnd);
+      for (const auto &[tag, l] : {std::pair<const char *, const CrossPath::Link &>{"startLaneLink", cp.start}, {"endLaneLink", cp.end}}) {
+        auto y = x.append_child(tag);
+        attr(y, "from", std::to_string(l.from));
+        attrN(y, c, "s", l.s);
+        attr(y, "to", std::to_string(l.to));
       }
     }
     for (const auto &p : j.priorities) {

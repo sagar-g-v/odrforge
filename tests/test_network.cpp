@@ -248,6 +248,55 @@ TEST_CASE("lowered curbs: over each crosswalk the curb and the sidewalk's inner 
   }
 }
 
+TEST_CASE("cross paths (standard): a mid-block crossing is a virtual junction with one cross path, none in carla") {
+  OsmBuilder b;
+  const OsmId x = b.node(0, 0, {{"highway", "crossing"}});
+  b.way({b.node(-100, 0), x, b.node(100, 0)}, {{"highway", "residential"}, {"lanes", "2"}, {"sidewalk", "both"}});
+  for (const char *target : {"asam", "carla"}) {
+    const Result r = build(b, "US", target);
+    CHECK(r.val.errors == 0);
+    const bool standard = std::string(target) == "asam";
+    CHECK(r.rep.crossPaths == (standard ? 1 : 0));
+    if (!standard) {
+      CHECK(r.od.junctions.empty());
+      continue;
+    }
+    // OpenDRIVE 1.9 section 12.7: a virtual junction on the uncut road, round the crosswalk
+    CHECK(r.od.junctions.size() == 1);
+    if (!(r.od.junctions.size() == 1)) return;
+    const odr::Junction &j = r.od.junctions[0];
+    CHECK(j.type == "virtual");
+    const odr::Road *main = roadById(r.od, j.mainRoad);
+    CHECK(main != nullptr);
+    if (!(main != nullptr)) return;
+    CHECK(main->junction == "-1");
+    CHECK(j.sStart < 0.5 * main->length() && 0.5 * main->length() < j.sEnd);
+    // section 12.5: the cross path links the outermost sidewalk on each side to the crossing road's lane
+    CHECK(j.crossPaths.size() == 1);
+    if (!(j.crossPaths.size() == 1)) return;
+    const odr::CrossPath &cp = j.crossPaths[0];
+    CHECK(cp.roadAtStart == main->id && cp.roadAtEnd == main->id);
+    const odr::LaneSection &sec = odr::sectionAt(*main, cp.start.s);
+    CHECK(cp.start.from == sec.right.back().id);
+    CHECK(cp.end.from == sec.left.back().id);
+    const odr::Road *x = roadById(r.od, cp.crossingRoad);
+    CHECK(x != nullptr);
+    if (!(x != nullptr)) return;
+    CHECK(x->junction == j.id);
+    CHECK(x->lanes.size() == 1 && x->lanes[0].right.size() == 1 && x->lanes[0].left.empty());
+    if (!(x->lanes.size() == 1 && x->lanes[0].right.size() == 1 && x->lanes[0].left.empty())) return;
+    CHECK(x->lanes[0].right[0].type == "sidewalk");
+    CHECK(cp.start.to == -1 && cp.end.to == -1);
+    // straight across, between the sidewalks' inner edges
+    double lIn, lOut, rIn, rOut;
+    CHECK(odr::laneBorders(*main, cp.start.s, cp.end.from, lIn, lOut));
+    if (!(odr::laneBorders(*main, cp.start.s, cp.end.from, lIn, lOut))) return;
+    CHECK(odr::laneBorders(*main, cp.start.s, cp.start.from, rIn, rOut));
+    if (!(odr::laneBorders(*main, cp.start.s, cp.start.from, rIn, rOut))) return;
+    CHECK_NEAR(x->length(), lIn - rIn, 1e-6);
+  }
+}
+
 TEST_CASE("network: T junction with a stop sign on the minor road") {
   OsmBuilder b;
   const OsmId c = b.node(0, 0);

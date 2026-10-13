@@ -93,6 +93,7 @@ struct BuildReport {
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added
   int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int directJunctions = 0;  ///< gores written as direct junctions (OpenDRIVE 1.7+)
+  int crossPaths = 0;       ///< mid-block crossings written as cross paths (OpenDRIVE 1.8+)
   int curbLanes = 0;        ///< sidewalk lane sections given a curb lane (OpenDRIVE 1.6+)
   int overlapShifts = 0;
   int cornerSidewalks = 0;          ///< sidewalks continued round junction corners

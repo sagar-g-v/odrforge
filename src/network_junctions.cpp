@@ -1235,6 +1235,7 @@ void Builder::buildObjects() {
           odr::Road &r = od.roads[m.roadIndex];
           const double s = std::clamp(sf - m.trimStart, 1.5, std::max(1.5, r.length() - 1.5));
           crosswalk(r, s);
+          midBlockCrosswalks.push_back({static_cast<size_t>(m.roadIndex), r.objects.back().id});
         }
   }
   // crosswalks on every approach of signalised / crossing junctions
@@ -1281,10 +1282,11 @@ namespace {
 
 // OpenDRIVE 1.9 §12.2: a junction exists to connect roads; one whose movements were all dropped
 // is removed (XSD 1.4 also requires at least one <connection>). Nothing references such a
-// junction: its connecting roads went with its movements.
+// junction: its connecting roads went with its movements. A virtual junction holding only cross
+// paths (§12.5, 1.8) connects its sidewalks and stays.
 void dropJunctionsWithoutConnections(odr::OpenDrive &od) {
   od.junctions.erase(std::remove_if(od.junctions.begin(), od.junctions.end(),
-                                    [](const odr::Junction &j) { return j.connections.empty(); }),
+                                    [](const odr::Junction &j) { return j.connections.empty() && j.crossPaths.empty(); }),
                      od.junctions.end());
 }
 

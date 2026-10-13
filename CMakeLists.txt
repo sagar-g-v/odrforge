@@ -54,6 +54,7 @@ add_library(odrforge
   src/gore.cpp
   src/direct_junctions.cpp
   src/curbs.cpp
+  src/cross_paths.cpp
   src/sidewalk.cpp
   src/viz.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp

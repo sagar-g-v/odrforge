@@ -5,6 +5,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Mid-block crossings as cross paths** (standard profile, OpenDRIVE 1.9 §12.5 cross paths, introduced
+  1.8.0, in a §12.7 virtual junction; Junction Guideline §10.3): an OSM crossing node on a road with a
+  sidewalk on both sides becomes a virtual junction on the uncut road (mainRoad, sStart..sEnd round the
+  crosswalk) holding a crossPath - a one-lane walking road straight across between the sidewalks' inner
+  edges, linked to the outermost sidewalk on each side. The crosswalk object stays. Writers for
+  revisions before 1.8 leave such junctions and their crossing roads out; carla output unchanged. The
+  validator and invariants checker accept crossing roads (linked by lane links, not road links). LA 83,
+  Munich 76, London 39, Frankfurt Kreuz 19, Tokyo 342, Stelvio 4. Committed on the user's decision.
 - **Lowered curbs at crosswalks** (both profiles, OpenDRIVE 1.9 §11.8 lane height records): over each
   crosswalk the curb lane and the sidewalk's inner edge drop to 0.02 m, the sidewalk ramping down to
   the crossing. Jev 0.75; committed on the user's decision.

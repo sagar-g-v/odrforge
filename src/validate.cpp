@@ -77,8 +77,11 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
 
   std::map<std::string, const odr::Road *> roads;
   std::map<std::string, const odr::Junction *> junctions;
-  for (const auto &j : od.junctions)
+  std::set<std::string> crossingRoads;  // OpenDRIVE 1.9 §12.5: a cross path's road, linked by its lane links
+  for (const auto &j : od.junctions) {
     if (!junctions.emplace(j.id, &j).second) err("ids.id_unique_in_class", "duplicate junction id " + j.id);
+    for (const auto &cp : j.crossPaths) crossingRoads.insert(cp.crossingRoad);
+  }
   for (const auto &r : od.roads) {
     if (!roads.emplace(r.id, &r).second) err("ids.id_unique_in_class", "duplicate road id " + r.id);
     if (target.name == "carla" && !isNumeric(r.id)) err("carla.numeric_ids", "road id not numeric " + r.id);
@@ -229,7 +232,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       }
     }
     // ---- connecting roads: lane-level fit at both ends (spec 6.1, pitfalls 4 - 6, 11)
-    if (r.junction != "-1" && !r.lanes.empty()) {
+    if (r.junction != "-1" && !r.lanes.empty() && !crossingRoads.count(r.id)) {
       if (!r.predecessor || !r.successor) err("spec6.1.connecting_road_links", R_ + "connecting road without predecessor and successor");
       const auto &first = r.lanes.front(), &last = r.lanes.back();
       for (const auto *side : {&first.left, &first.right})

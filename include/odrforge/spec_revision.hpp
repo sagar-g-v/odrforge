@@ -48,6 +48,9 @@ struct SpecRevision {
   // raised edge).
   bool hasCurbLanes() const { return minor >= 6; }
 
+  // OpenDRIVE 1.9 §12.5 <crossPath> in junctions (pedestrian crossings); introduced 1.8.0.
+  bool hasCrossPaths() const { return minor >= 8; }
+
   // OpenDRIVE 1.9 §11.8 lane@direction; 1.8.0 Table 228 introduces it and Table 256 deprecates
   // the lane types it replaces: bidirectional -> driving + direction="both", sidewalk -> walking.
   bool hasLaneDirection() const { return minor >= 8; }

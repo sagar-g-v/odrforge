@@ -491,6 +491,7 @@ class Network:
             r = Road(el)
             self.roads[r.id] = r
         self.junctions = {}
+        self.cross_paths = {}
         for j in root.findall("junction"):
             conns = []
             direct = j.get("type") == "direct"
@@ -501,6 +502,14 @@ class Network:
                                   contact=c.get("contactPoint"), direct=direct,
                                   lanes=[(int(l.get("from")), int(l.get("to"))) for l in c.findall("laneLink")]))
             self.junctions[j.get("id")] = conns
+            # OpenDRIVE 1.9 section 12.5 cross paths (1.8): crossing road, the roads at its ends, lane links with s
+            cps = []
+            for cp in j.findall("crossPath"):
+                st, en = cp.find("startLaneLink"), cp.find("endLaneLink")
+                cps.append(dict(id=cp.get("id"), crossing=cp.get("crossingRoad"), at_start=cp.get("roadAtStart"),
+                                at_end=cp.get("roadAtEnd"),
+                                links=[(int(x.get("from")), float(x.get("s")), int(x.get("to"))) for x in (st, en) if x is not None]))
+            self.cross_paths[j.get("id")] = cps
 
     def plain_roads(self):
         return [r for r in self.roads.values() if r.plain]
@@ -728,6 +737,15 @@ def _idkey(v):
     return (0, int(v), "") if v.lstrip("-").isdigit() else (1, 0, v)
 
 
+def end_k_at(r, s):
+    """index of the lane section of road r at s"""
+    k = 0
+    for i, sec in enumerate(r.sections):
+        if sec.s <= s + 1e-9:
+            k = i
+    return k
+
+
 def lane_links(net, res, rule="file"):
     """every lane link of the network: dicts with fam 'section' | 'road' | 'junction'.
     Also records topology instances (dangling / non-reciprocal / disagreeing / missing links).
@@ -825,7 +843,18 @@ def lane_links(net, res, rule="file"):
             elif lk.type == "junction" and lk.id not in net.junctions:
                 _topo(res, r, 0, end_s(r, end), "junction_missing", target=lk.id)
     for jid in sorted(net.junctions, key=_idkey):
-        if not net.junctions[jid]:
+        # a cross path names its crossing road and, on the roads at its ends, the lanes it links at s
+        for cp in net.cross_paths.get(jid, []):
+            X = net.roads.get(cp["crossing"])
+            for k, (road, (frm, s_at, to)) in enumerate(zip((cp["at_start"], cp["at_end"]), cp["links"])):
+                R = net.roads.get(road)
+                end = "start" if k == 0 else "end"
+                ok = X is not None and R is not None and 0.0 <= s_at <= R.length + 1e-6 and \
+                    frm in R.sections[end_k_at(R, s_at)].lanes and to in X.sections[end_k(X, end)].lanes
+                if not ok:
+                    _topo(res, road if R is None else R, frm, s_at, "cross_path_lane_missing", junction=jid,
+                          crossing=cp["crossing"], to=to)
+        if not net.junctions[jid] and not net.cross_paths.get(jid):
             refs = [(r, e) for r in net.roads.values() for e, lk in (("start", r.pred), ("end", r.succ))
                     if lk is not None and lk.type == "junction" and lk.id == jid]
             if refs:

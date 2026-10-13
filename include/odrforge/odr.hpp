@@ -167,10 +167,26 @@ struct JunctionController {
   int sequence = 0;
 };
 
+/// OpenDRIVE 1.9 §12.5 cross path (1.8+): a crossing road linking a lane of the road at its start to a
+/// lane of the road at its end (each at an s on that road)
+struct CrossPath {
+  std::string id, crossingRoad, roadAtStart, roadAtEnd;
+  struct Link {
+    int from = 0;   ///< lane of roadAtStart / roadAtEnd
+    double s = 0.0;  ///< on roadAtStart / roadAtEnd
+    int to = 0;     ///< lane of the crossing road
+  };
+  Link start, end;
+};
+
 struct Junction {
   std::string id, name;
   std::string type = "default";  ///< default, direct (1.7+), virtual, crossing (1.8)
+  /// virtual junctions (OpenDRIVE 1.9 §12.7): the uncut main road, the s range and the orientation
+  std::string mainRoad, orientation = "none";
+  double sStart = 0.0, sEnd = 0.0;
   std::vector<Connection> connections;
+  std::vector<CrossPath> crossPaths;
   std::vector<JunctionController> controllers;
   struct Priority {
     std::string high, low;
