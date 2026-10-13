@@ -82,6 +82,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Signal phases by traffic axis**: a phase (controller) holds an approach, the one opposite it and
+  the approaches running parallel to either (a second carriageway, a slip road); before, parallel
+  approaches waited in separate phases (23 junctions). No phase mixes crossing directions. Kept
+  with Jev 0.86.
 - **Lights on approaches OSM does not signalise**: a junction signalised through per-approach light
   nodes gave every approach a light. An approach without a light of its own now keeps only the stop /
   give-way sign OSM gives it (it had a light and the sign), a service road or living street gets a

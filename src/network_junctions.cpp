@@ -1011,7 +1011,7 @@ void Builder::buildSignals() {
   for (Cluster &cl : clusters) {
     if (!cl.signalised || cl.junction < 0) continue;
     odr::Junction &J = od.junctions[cl.junction];
-    // phases: opposite approaches share a controller
+    // phases: the approaches of one traffic axis share a controller
     struct Approach {
       const RoadEnd *end;
       double heading;
@@ -1030,15 +1030,23 @@ void Builder::buildSignals() {
       const Pose p = r.planView.eval(e.atEnd ? r.length() : 0.0);
       ap.push_back({&e, e.atEnd ? p.hdg : p.hdg + kPi, lanes, -1});
     }
+    // a phase is one traffic axis: an approach, the one arriving opposite it (within 0.6 rad), and the
+    // approaches running beside either of them (a parallel carriageway or slip road, within 0.35 rad).
+    // Two approaches from the same side at different angles are not one phase: their paths cross.
+    auto parallel = [](double h0, double h1) { return std::abs(normalizeAngle(h1 - h0)) < 0.35; };
+    auto opposite = [](double h0, double h1) { return std::abs(std::abs(normalizeAngle(h1 - h0)) - kPi) < 0.6; };
     int groups = 0;
     for (size_t i = 0; i < ap.size(); ++i) {
       if (ap[i].group >= 0) continue;
       ap[i].group = groups;
-      for (size_t j = i + 1; j < ap.size(); ++j)
-        if (ap[j].group < 0 && std::abs(std::abs(normalizeAngle(ap[j].heading - ap[i].heading)) - kPi) < 0.6) {
-          ap[j].group = groups;
-          break;
-        }
+      std::vector<size_t> members{i};
+      bool oppositeTaken = false;
+      for (size_t j = i + 1; j < ap.size(); ++j) {
+        if (ap[j].group >= 0) continue;
+        bool joins = std::any_of(members.begin(), members.end(), [&](size_t m) { return parallel(ap[m].heading, ap[j].heading); });
+        if (!joins && !oppositeTaken && opposite(ap[i].heading, ap[j].heading)) joins = oppositeTaken = true;
+        if (joins) ap[j].group = groups, members.push_back(j);
+      }
       ++groups;
     }
     std::vector<odr::Controller> ctrls(groups);

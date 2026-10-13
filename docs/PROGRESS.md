@@ -20,6 +20,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
 | 3.2 | Annex D.1.4 vertical check (`annex_d_vertical.py`): z and roll at every lane link | 0 gaps, 0 roll mismatches in all six areas |
 | 2.4 | Lane lines start / end with the taper (sOffset mark records) | 311 lanes over five areas |
+| 4.3 | Signal phases by traffic axis (parallel approaches share a phase) | split parallel approaches 23 -> 0 junctions |
 | 4.2 | Lights only on approaches OSM signalises; driveways yield; own signs not doubled with a light | lights 1,518 -> 1,350, give-way +129 |
 | 4.1 | Stop lines with light -> stop line reference and stop line -> light dependency (standard) | 1,518 stop lines over five areas |
 | 2.3 | Road mark laneChange from the final mark type (double lines crossable from the broken side) | LA trapped flows 1 -> 0, missing-link islands 17 -> 2 |
