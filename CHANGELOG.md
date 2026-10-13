@@ -74,6 +74,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Unmeasured road ends** (a tunnel or covered way running to the road end, an unmeasured deck): the
+  profile continued at the smoother's end slope, which the last one or two samples set - in LA a 0.4 m
+  outlier lifted an 80 m tunnel and its underground junction by 6.7 m, 1.8 m under the street above
+  (road_overlap error with --separate-sidewalks). It now continues at the grade of a line through the
+  measurements within 20 m. LA: 38 of 1778 roads move > 1 cm (5 > 2 m, on the West 4th Street viaduct
+  whose ends are unmeasured), invariants unchanged, no crossing under 4.5 m clearance (minimum 6.2 m
+  before and after); the other areas have no terrain and are unchanged. Kept with Jev 0.80.
 - **Lane widths blend at a section start even when the lane ends at the section's end.** The start
   blend was dropped for such lanes, so their borders jumped sideways at the boundary (with
   `--separate-sidewalks`, London: lane-edge position breaks 11 -> 0, heading breaks 21 -> 10; default

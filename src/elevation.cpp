@@ -100,6 +100,29 @@ double carriagewayCentre(const odr::Road &r, double s, double *half = nullptr) {
 
 double smoothstepC1(double u) { return u * u * (3.0 - 2.0 * u); }
 
+/// Profile z at stations s beyond the first / last measured sample (weight > 0) continues from the
+/// profile at that sample at the grade of a least-squares line through the measurements y within
+/// `window` of it (limited to maxGrade): a ramp keeps climbing, one noisy sample does not tilt it.
+void extendUnmeasuredEnds(std::vector<double> &z, const std::vector<double> &s, const std::vector<double> &y,
+                          const std::vector<double> &weight, double window, double maxGrade) {
+  const auto first = std::find_if(weight.begin(), weight.end(), [](double v) { return v > 0.0; });
+  if (first == weight.end()) return;
+  const size_t i0 = static_cast<size_t>(first - weight.begin());
+  size_t i1 = weight.size() - 1;
+  while (weight[i1] <= 0.0) --i1;
+  auto gradeNear = [&](size_t k) {
+    double sw = 0, ss = 0, sz = 0, sss = 0, ssz = 0;
+    for (size_t i = i0; i <= i1; ++i)
+      if (weight[i] > 0.0 && std::abs(s[i] - s[k]) <= window)
+        sw += weight[i], ss += weight[i] * s[i], sz += weight[i] * y[i], sss += weight[i] * s[i] * s[i], ssz += weight[i] * s[i] * y[i];
+    const double den = sw * sss - ss * ss;
+    return den > 1e-9 ? std::clamp((sw * ssz - ss * sz) / den, -maxGrade, maxGrade) : 0.0;
+  };
+  const double g0 = gradeNear(i0), g1 = gradeNear(i1);
+  for (size_t i = 0; i < i0; ++i) z[i] = z[i0] + g0 * (s[i] - s[i0]);
+  for (size_t i = i1 + 1; i < z.size(); ++i) z[i] = z[i1] + g1 * (s[i] - s[i1]);
+}
+
 /// heights along a road on flat ground (z = 0) where some samples are pinned to a level (NaN: free).
 /// Runs of samples pinned to one height are plateaus; a plateau meets the ground through a C1 ramp
 /// on either side that is nowhere steeper than `grade` (a smoothstep is steepest in its middle, at
@@ -890,6 +913,12 @@ void Builder::sampleElevation() {
       lambda *= 4.0;
       m.zz = whittaker(y, w, lambda);
     }
+    // before the first and after the last measured sample (a tunnel or a covered way running to the
+    // road end, an unmeasured deck, the edge of the terrain data) the smoothest curve carries the
+    // slope at its very end - set by the last one or two samples - over the whole stretch (LA: a
+    // 0.4 m outlier lifted an 80 m tunnel by 6 m). The grade measured over the last 20 m continues
+    // instead; the junction surfaces decide the rest.
+    extendUnmeasuredEnds(m.zz, m.zs, y, w, 20.0, opt.maxGrade);
     // cross slope (spec 3 superelevation) where the road lies on the measured ground; smooth and
     // limited to 8 %; the profile above is at the carriageway centre, the reference line is tc away
     std::vector<double> cy(n, kNaN), cw(n, 0.0);
