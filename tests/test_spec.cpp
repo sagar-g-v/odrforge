@@ -5,6 +5,7 @@
 #include <set>
 #include <sstream>
 
+#include "odrforge/lanes.hpp"
 #include "odrforge/odr.hpp"
 #include "odrforge/rules.hpp"
 #include "odrforge/validate.hpp"
@@ -338,6 +339,37 @@ TEST_CASE("writer 1.4 (carla profile): pre-1.8 vocabulary, bare <outline>, cente
   CHECK(!direction && !restrictionChild && centerType);
   const auto obj = d.select_node("//object").node();
   CHECK(obj.child("outline") && !obj.child("outlines"));
+}
+
+TEST_CASE("road marks: laneChange follows the lines (1.9 §11.9 Table 48, double lines Table 173)") {
+  // a US street: two-way left-turn lane on the left, a driving lane each way, a bike lane and a sidewalk on the right
+  CrossSection x;
+  x.highway = "secondary";
+  x.left.lanes = {{LaneKind::Bidirectional, 4.0, {}}, {LaneKind::Driving, 3.5, {}}};
+  x.right.lanes = {{LaneKind::Driving, 3.5, {}}, {LaneKind::Biking, 1.5, {}}, {LaneKind::Sidewalk, 2.0, {}}};
+  const CountryProfile us;
+  const odr::LaneSection sec = makeLaneSection(x, 0.0, us);
+  // the turn lane: broken line next to it on both sides (MUTCD 3B.03), entered and left sideways
+  CHECK(sec.center.roadMarks.front().type == "broken solid");  // center lane: lines left to right
+  CHECK(sec.center.roadMarks.front().laneChange == "both");
+  CHECK(sec.left[0].roadMarks.front().type == "broken solid");  // lane +1 outer edge: inside to outside
+  CHECK(sec.left[0].roadMarks.front().laneChange == "both");
+  // solid lines are not crossed: the driving lane's edge to the bike lane and the bike lane's own edge
+  CHECK(sec.right[0].roadMarks.front().type == "solid" && sec.right[0].roadMarks.front().laneChange == "none");
+  CHECK(sec.right[1].roadMarks.front().type == "solid" && sec.right[1].roadMarks.front().laneChange == "none");
+  // a "solid broken" center line (solid left, broken right) is crossed from the right lane only:
+  // toward the higher id
+  CrossSection y;
+  y.highway = "secondary";
+  y.left.lanes = {{LaneKind::Driving, 3.5, {}}};
+  y.right.lanes = {{LaneKind::Driving, 3.5, {}}};
+  CountryProfile c = us;
+  c.centerLineTwoWay = "solid broken";
+  CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "increase");
+  c.centerLineTwoWay = "broken solid";
+  CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "decrease");
+  c.centerLineTwoWay = "broken";
+  CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "both");
 }
 
 TEST_CASE("output profiles: standard is OpenDRIVE 1.8, carla is 1.4, older names mean standard") {

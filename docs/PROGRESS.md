@@ -17,6 +17,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.3 | Sidewalks continue round junction corners; curb-return arm cuts; fillet curbs; noses at acute corners | 1,661 corners continued, 29 too tight, 170 noses |
 | 1.4 | Crosswalk objects at OSM crossings and on signalised arms, outside the curb return (already existed) | - |
 | 1.7 | Roundabout junction groups | - |
+| 2.3 | Road mark laneChange from the final mark type (double lines crossable from the broken side) | LA trapped flows 1 -> 0, missing-link islands 17 -> 2 |
 | 6 | Stage timing; arm trimming in parallel | LA trimming 9.4 s -> 0.9 s per pass |
 | tools | `jev_judge.py` (Jev reviews whole junctions, calibrated against planted defects) | Jev trusted on spec validity only |
 
@@ -46,6 +47,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 ## Known open items
 
 - Folds on loop streets kept as roads (Munich 6), lane-edge breaks LA +6 since phase 1.1.
+- Munich `pairs.missing` 118 is two boundary artefacts counted per pair: the entry on road 743 (a 2 m
+  stub cut by the clip box at c70, junction 315) reaches no exit, and the exit at node 7832370184 (a
+  driveway ending on a highway=path) is reached by no entry.
 - Separate sidewalks: the lane-edge position breaks (London 11) do not come from the verge appearing
   / disappearing between segments (keeping a 5 cm verge everywhere changed nothing); next suspect is
   the sidewalk distance changing between segments at plain road-to-road links without a blend.

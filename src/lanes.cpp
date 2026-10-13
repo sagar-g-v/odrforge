@@ -361,7 +361,26 @@ struct EdgeContext {
   LaneKind next;                    ///< kind of the next lane outward (Sidewalk past the last)
   bool isOutermost;
   bool motorwayLike;
+  int side;                         ///< +1 left lanes, -1 right lanes
 };
+
+// OpenDRIVE 1.9 §11.9 Table 48 laneChange: the direction a lane change across the mark is allowed in,
+// lanes numbered in ascending order from right to left (1.4: same attribute and values). A solid line
+// is not crossed; a double line (Table 173: its lines listed from inside to outside, on the center
+// lane from left to right) is crossed from its broken side only. side: +1 left lanes, -1 right lanes,
+// 0 the center lane.
+std::string laneChangeAcross(const std::string &type, int side) {
+  if (type == "solid" || type == "solid solid" || type == "curb" || type == "edge" || type == "grass") return "none";
+  if (type != "solid broken" && type != "broken solid") return "both";
+  const bool firstNextToLowerIds = side > 0;  // left lanes: inside is the lower id; right lanes and center: the higher
+  const bool brokenNextToLowerIds = (type == "broken solid") == firstNextToLowerIds;
+  return brokenNextToLowerIds ? "increase" : "decrease";
+}
+
+// US two-way left-turn lane (MUTCD 2009 §3B.03): bordered on each side by a broken line next to it and
+// a solid line beyond, entered from either direction. Its turns lead into driveways the map does not
+// have, so traffic in it must be able to leave it sideways too: laneChange both.
+constexpr const char *kTurnLaneChange = "both";
 
 // OpenDRIVE 1.9 §11.9 lane road marks: a lane carries the line on its outer edge. Lane lines
 // between driving lanes are broken; the edge of the carriageway is solid (laneChange none) next to a
@@ -382,8 +401,10 @@ odr::RoadMark outerEdgeMark(LaneKind kind, const EdgeContext &e, const CountryPr
     m.color = c.edgeLineColor;
     m.laneChange = "none";
   } else if (kind == LaneKind::Bidirectional) {
-    m.type = "solid broken";
+    m.type = "broken solid";  // the broken line next to the turn lane
     m.color = c.centerLineColor;
+    m.laneChange = kTurnLaneChange;
+    return m;
   } else if (kind == LaneKind::Sidewalk || e.isOutermost) {
     m.type = "none";
   } else if (kind == LaneKind::Biking) {
@@ -393,6 +414,7 @@ odr::RoadMark outerEdgeMark(LaneKind kind, const EdgeContext &e, const CountryPr
     m.type = "none";
   }
   if (kind == LaneKind::Bus) m.weight = "bold";
+  m.laneChange = laneChangeAcross(m.type, e.side);
   return m;
 }
 
@@ -415,7 +437,7 @@ std::vector<odr::Lane> sideLanes(const SideSpec &side, int sign, bool motorwayLi
     if (isDrivingOrBus(spec.kind)) ++drivingSeen;
     const bool isOutermost = i + 1 == side.lanes.size();
     const EdgeContext edge{drivingSeen < drivingLanes, isOutermost ? LaneKind::Sidewalk : side.lanes[i + 1].kind,
-                           isOutermost, motorwayLike};
+                           isOutermost, motorwayLike, sign};
     l.roadMarks.push_back(outerEdgeMark(spec.kind, edge, c));
     out.push_back(l);
   }
@@ -430,8 +452,9 @@ odr::RoadMark centerLineMark(const CrossSection &x, bool motorwayLike, const Cou
   if (nl > 0 && nr > 0) {
     m.type = (nl >= 2 && nr >= 2) ? c.centerLineMultiLane : c.centerLineTwoWay;
     m.color = c.centerLineColor;
-    m.laneChange = m.type == "broken" ? "both" : "none";
-    if (!x.left.lanes.empty() && x.left.lanes.front().kind == LaneKind::Bidirectional) m.type = "broken solid";
+    m.laneChange = laneChangeAcross(m.type, 0);
+    if (!x.left.lanes.empty() && x.left.lanes.front().kind == LaneKind::Bidirectional)
+      m.type = "broken solid", m.laneChange = kTurnLaneChange;  // left to right: broken next to the turn lane
   } else if (motorwayLike) {
     m.type = "solid";
     m.color = c.centerLineColor == "yellow" ? "yellow" : c.edgeLineColor;

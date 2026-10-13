@@ -74,6 +74,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Road mark laneChange** (OpenDRIVE 1.9 §11.9 Table 48 / 173, same in 1.4): derived from the final
+  mark type - solid lines are not crossed, a double line only from its broken side. The center line
+  next to a US two-way left-turn lane was written laneChange none (its type was overridden after the
+  value was set), and the turn lane's own edge put the solid line next to it; both edges are now
+  broken next to the turn lane (MUTCD §3B.03), crossable both ways. Bike-lane solid edges: both ->
+  none. LA lane flow: trapped 1 -> 0, islands with a missing link 17 -> 2. Kept with Jev 0.83.
 - **Removable lane-section boundaries**: placing the sections on the trimmed road (end sections
   stretched, tiny ones dropped) could leave two equal neighbouring sections; the second is now
   dropped (OpenDRIVE 1.8 §11.3 needs a new section only where lanes change). London 8 -> 6, Munich
