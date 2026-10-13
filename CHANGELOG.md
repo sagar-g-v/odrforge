@@ -5,6 +5,19 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Header licence** (OpenDRIVE 1.8.0 §6.4.2 Table 9: `text` is "The full license text"): `<license>` keeps
+  name / resource / spdxid; the ODbL attribution "Contains data © OpenStreetMap contributors" moved to header
+  `<userData code="attribution">`, now in both profiles (1.4H header allows userData). Jev 0.85.
+- **Lowered-curb height records** carry a hold record 1 cm before each change: same profile under 1.8.0
+  §11.6 (a record holds until the next) and for 1.4 readers that interpolate (1.4H §5.3.7.2.1.1.9 gives
+  heights "at discrete positions"; Junction Guideline §6.3.2 writes hold records). Jev 0.83.
+- **Code citations**: 21 comments citing the internal notes ("spec 3", "spec 6.1, pitfalls") and two wrong
+  sections now cite OpenDRIVE 1.8.0 sections, verified against the local spec; 1.9-only rule ids marked;
+  an unsupported "spec: avoid geometries below 1 mm" is now stated as our own guard. Jev 0.85.
+- **`exact_diff.py`** ran the checkers on relative paths from another working directory: after cache
+  deletion both sides failed and compared "unchanged", invalidating regression claims made earlier today.
+  Fixed (absolute paths, a failed checker reported as such); re-verified against c6818fb rebuilt in a
+  worktree: carla unchanged, standard differences only at the two signalised merges. Jev 0.89.
 - **Motorway lane types follow OpenDRIVE 1.8.0 §11.7.1 and Junction Guideline §7** (spec review found
   ramp types on tertiary / service / primary roads, motorway-to-motorway links typed offRamp / onRamp,
   entry / exit lanes on ramps, never-merging lanes typed entry):

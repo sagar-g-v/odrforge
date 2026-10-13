@@ -854,7 +854,7 @@ void Builder::buildJunctions() {
       }
     }
     buildCornerSidewalks(cl, J, connecting, nextConnId);
-    // spec 5 (road.linkage.both_sides_consistency): a road links to the junction only if the
+    // OpenDRIVE 1.8.0 §10.3 (1.9.0 rule road.linkage.both_sides_consistency): a road links to the junction only if the
     // junction connects it (as incoming road or as the target of a connecting road)
     std::set<std::string> used;
     for (const auto &cn : J.connections) used.insert(cn.incomingRoad);
@@ -936,7 +936,8 @@ void Builder::buildSignals() {
     sg.t = to + (outer > 0 ? 0.6 : -0.6);
     const bool plus = (outer < 0) != LHT;
     sg.orientation = plus ? "+" : "-";
-    // spec 7.1: <validity fromLane toLane> with fromLane <= toLane (numerically)
+    // OpenDRIVE 1.8.0 §14.2: "The value of the @fromLane attribute shall be lower than or equal to the value
+    // of the @toLane attribute."
     const auto [mn, mx] = std::minmax_element(lanes.begin(), lanes.end());
     sg.validity.push_back({*mn, *mx});
   };
@@ -1360,11 +1361,14 @@ void Builder::finish() {
   od.header.east = maxX;
   od.header.west = minX;
   od.header.geoReference = proj.projString();
-  // the road network is derived from OpenStreetMap data, licensed under the ODbL 1.0, which asks for
-  // the attribution "(c) OpenStreetMap contributors" (osmfoundation.org/wiki/Licence/Attribution_Guidelines)
+  // the road network is derived from OpenStreetMap data, licensed under the ODbL 1.0 (OpenDRIVE 1.8.0 \u00a76.4.2
+  // <license>: name, resource, spdxid; @text would be "The full license text" - left out, the resource links
+  // it). ODbL asks for the attribution "(c) OpenStreetMap contributors"
+  // (osmfoundation.org/wiki/Licence/Attribution_Guidelines): header <userData> (1.8.0 \u00a77, 1.4H \u00a75.2), both
+  // profiles
   od.header.license = odr::License{"Open Data Commons Open Database License 1.0",
-                                   "https://opendatacommons.org/licenses/odbl/1-0/", "ODbL-1.0",
-                                   u8"Contains data \u00a9 OpenStreetMap contributors, available under the ODbL 1.0."};
+                                   "https://opendatacommons.org/licenses/odbl/1-0/", "ODbL-1.0", ""};
+  od.header.userData["attribution"] = u8"Contains data \u00a9 OpenStreetMap contributors, available under the ODbL 1.0.";
   if (!opt.verticalDatum.empty()) od.header.userData["verticalDatum"] = opt.verticalDatum;
   od.header.revMinor = opt.target.revMinor;
   char buf[64];

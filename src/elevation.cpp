@@ -1,7 +1,8 @@
 // OdrForge - road elevation from terrain / structure surfaces, junction surfaces and banking.
 //
 // Spec basis (docs/research/opendrive_spec_notes.md):
-//  - spec 3: <elevation s a b c d> with absolute s; <superelevation> = roll angle about the reference
+//  - OpenDRIVE 1.8.0 §10.5.1 / §10.5.2 (1.4H §5.3.5.1 / §5.3.6.1): <elevation s a b c d> with absolute s;
+//    <superelevation> = roll angle about the reference
 //    line, positive falling to the right, so the surface height at lateral t is z(s) + t tan(se(s)).
 //  - pitfall 11: C1 elevation joins and matching z at links.
 #include <algorithm>
@@ -919,7 +920,7 @@ void Builder::sampleElevation() {
     // 0.4 m outlier lifted an 80 m tunnel by 6 m). The grade measured over the last 20 m continues
     // instead; the junction surfaces decide the rest.
     extendUnmeasuredEnds(m.zz, m.zs, y, w, 20.0, opt.maxGrade);
-    // cross slope (spec 3 superelevation) where the road lies on the measured ground; smooth and
+    // cross slope (OpenDRIVE 1.8.0 §10.5.2 superelevation) where the road lies on the measured ground; smooth and
     // limited to 8 %; the profile above is at the carriageway centre, the reference line is tc away
     std::vector<double> cy(n, kNaN), cw(n, 0.0);
     for (size_t i = 0; i < n; ++i)
@@ -1254,7 +1255,7 @@ void Builder::fitRoadElevation() {
       r.elevation.push_back(odr::Poly3::hermite(m.zs[a], m.zs[b] - m.zs[a], z[a], dz[a], z[b], dz[b]));
     }
     if (r.elevation.empty()) r.elevation.push_back({0.0, z.empty() ? 0.0 : z[0], 0, 0, 0});
-    // banking toward the junction planes (spec 3 superelevation), flat in between
+    // banking toward the junction planes (OpenDRIVE 1.8.0 §10.5.2 superelevation), flat in between
     r.superelevation.clear();
     {
       std::vector<double> se(n, 0.0), dse(n, 0.0);

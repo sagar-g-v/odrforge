@@ -73,7 +73,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
   auto err = [&](const std::string &rule, const std::string &m) { report(true, rule, m); };
   auto warn = [&](const std::string &rule, const std::string &m) { report(false, rule, m); };
 
-  // ---- header (spec 1.2, 1.3)
+  // ---- header (OpenDRIVE 1.8.0 §6.4, georeferencing §8.5)
   if (od.header.revMinor < 4 || od.header.revMinor > 9) err("spec1.2.revMinor", "unsupported revMinor");
   if (od.header.geoReference.empty()) warn("spec1.3.geoReference", "no geoReference");
 
@@ -94,7 +94,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
     const std::string R_ = "road " + r.id + ": ";
     const double L = r.length();
     if (r.junction != "-1" && !junctions.count(r.junction)) err("ids.only_ref_defined_ids", R_ + "unknown junction " + r.junction);
-    // ---- planView (spec 2)
+    // ---- planView (OpenDRIVE 1.8.0 §9.2 road reference line)
     if (r.planView.elements.empty()) err("road.geometry.refline_exists", R_ + "no geometry");
     double s = 0.0;
     for (size_t i = 0; i < r.planView.elements.size(); ++i) {
@@ -120,7 +120,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       }
       s += e.length;
     }
-    // ---- elevation / laneOffset records (spec 3, 4.1): ascending and continuous
+    // ---- elevation / laneOffset records (OpenDRIVE 1.8.0 §10.5, §11.4): ascending and continuous
     auto profile = [&](const std::vector<odr::Poly3> &v, const char *rule, const char *what) {
       for (size_t i = 1; i < v.size(); ++i) {
         if (v[i].s < v[i - 1].s) err(rule, R_ + what + " records not ascending");
@@ -136,7 +136,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       if (rev >= 8 && !t.country.empty() && t.country.size() != 2) err("road.type.only_alpha_2_country_codes", R_ + "country " + t.country);
       if (t.speedMax && !kSpeedUnits.count(t.speedUnit)) err("spec3.speed_unit", R_ + "road speed unit " + t.speedUnit);
     }
-    // ---- lane sections (spec 4)
+    // ---- lane sections (OpenDRIVE 1.8.0 §11.3)
     if (r.lanes.empty()) err("road.lane_section.lane_sect_req", R_ + "no lane section");
     if (!r.lanes.empty() && r.lanes.front().s > 1e-6) err("road.lane.lane_sect_first", R_ + "first lane section does not start at 0");
     for (size_t si = 0; si < r.lanes.size(); ++si) {
@@ -158,7 +158,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
           if (l.id != sign * static_cast<int>(k + 1)) err("road.lane.lane_order_no_gaps", Ls + "ids not contiguous 1..n / -1..-m");
           if (!validLaneType(l.type, rev)) err("spec4.3.lane_type_enum", Ls + "type '" + l.type + "' not valid in 1." + std::to_string(rev));
           if (target.name == "carla" && !carlaLaneType(l.type)) err("carla.lane_type", Ls + "type unknown to CARLA");
-          // width (spec 4.4)
+          // width (OpenDRIVE 1.8.0 §11.6)
           if (l.widths.empty() || std::abs(l.widths.front().s) > 1e-9) err("road.lane.width.sOffset_zero", Ls + "no width entry at sOffset 0");
           for (size_t w = 1; w < l.widths.size(); ++w) {
             if (l.widths[w].s < l.widths[w - 1].s) err("road.lane.width.elem_asc_order", Ls + "width records not ascending");
@@ -176,7 +176,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
             if (m.weight != "standard" && m.weight != "bold") err("spec4.5.roadMark_weight", Ls + "roadMark weight " + m.weight);
           }
           if (l.speedMax && !kSpeedUnits.count(l.speedUnit)) err("spec4.7.speed_unit", Ls + "lane speed unit " + l.speedUnit);
-          // lane links inside the road (spec 4.6): must exist in the neighbouring section, consistently
+          // lane links inside the road (OpenDRIVE 1.8.0 §11.5): must exist in the neighbouring section, consistently
           if (l.link.predecessor && si > 0) {
             const auto *p = odr::findLane(r.lanes[si - 1], *l.link.predecessor);
             if (!p) err("spec4.6.lane_link_target", Ls + "predecessor lane missing in previous section");
@@ -185,7 +185,8 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
           if (l.link.successor && si + 1 < r.lanes.size()) {
             if (!odr::findLane(r.lanes[si + 1], *l.link.successor)) err("spec4.6.lane_link_target", Ls + "successor lane missing in next section");
           }
-          // a lane with zero width at a section joint must not be linked across it (spec 4.4)
+          // a lane with zero width at a section joint must not be linked across it (OpenDRIVE 1.8.0 §11.5,
+          // rules road.lane.link.zero_width_at_start / zero_width_at_end)
           if (si > 0 && l.link.predecessor && odr::laneWidthAt(l, 0.0) < 1e-6)
             err("road.lane.link.zero_width_at_start", Ls + "starts with zero width but has a predecessor");
           if (si + 1 < r.lanes.size() && l.link.successor && odr::laneWidthAt(l, secLen) < 1e-6)
@@ -193,7 +194,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         }
       }
     }
-    // ---- road links (spec 5)
+    // ---- road links (OpenDRIVE 1.8.0 §10.3)
     for (bool pred : {true, false}) {
       const auto &lt = pred ? r.predecessor : r.successor;
       if (!lt) continue;
@@ -233,7 +234,8 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         err("spec5.elementType", R_ + "link elementType " + lt->elementType);
       }
     }
-    // ---- connecting roads: lane-level fit at both ends (spec 6.1, pitfalls 4 - 6, 11)
+    // ---- connecting roads: lane-level fit at both ends (OpenDRIVE 1.8.0 §12.4 "The linked lanes shall
+    // fit smoothly", 1.9.0 rule junctions.connection.smooth_fit)
     if (r.junction != "-1" && !r.lanes.empty() && !crossingRoads.count(r.id)) {
       if (!r.predecessor || !r.successor) err("spec6.1.connecting_road_links", R_ + "connecting road without predecessor and successor");
       const auto &first = r.lanes.front(), &last = r.lanes.back();
@@ -275,7 +277,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
               R.maxLinkWidthDiff = std::max(R.maxLinkWidthDiff, std::abs(wo - wc));
               if (std::abs(wo - wc) > 0.02) err("spec10.lane_width_at_junction", R_ + "lane width differs from road " + o.id);
             }
-            // surface height at the two lane centres (elevation + banking, spec 3)
+            // surface height at the two lane centres (elevation + banking, OpenDRIVE 1.8.0 §10.5)
             double oa, ob, ca, cb;
             odr::laneBorders(o, so, *ll, oa, ob);
             odr::laneBorders(r, sc, l.id, ca, cb);
@@ -287,7 +289,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
     }
   }
 
-  // ---- signals (spec 7) and objects (spec 8)
+  // ---- signals (OpenDRIVE 1.8.0 §14) and objects (§13)
   std::set<std::string> signalIds, dynamicSignals, objectIds;
   for (const auto &r : od.roads) {
     const bool lhtRoad = r.rule == "LHT";
@@ -335,7 +337,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
     for (const auto &t : r.tunnels)
       if (!objectIds.insert(t.id).second) err("ids.id_unique_in_class", "tunnel " + t.id + ": duplicate object id");
   }
-  // ---- controllers (spec 7.2)
+  // ---- controllers (OpenDRIVE 1.8.0 §14.6)
   std::set<std::string> ctrlIds, referenced;
   for (const auto &c : od.controllers) {
     if (!ctrlIds.insert(c.id).second) err("ids.id_unique_in_class", "duplicate controller id " + c.id);
@@ -345,7 +347,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       else if (!dynamicSignals.count(sid)) warn("spec7.2.control_dynamic", "controller " + c.id + " controls static signal " + sid);
     }
   }
-  // ---- junctions (spec 6)
+  // ---- junctions (OpenDRIVE 1.8.0 §12)
   for (const auto &j : od.junctions) {
     const std::string J_ = "junction " + j.id + ": ";
     std::set<std::pair<std::string, std::string>> pairs;

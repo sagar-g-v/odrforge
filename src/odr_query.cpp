@@ -84,7 +84,7 @@ double superelevationAt(const Road &r, double s) {
 }
 
 double surfaceZ(const Road &r, double s, double t) {
-  // spec 3: superelevation is the roll angle about the reference line, positive falling to the right
+  // OpenDRIVE 1.8.0 §10.5.2: superelevation is the roll angle about the reference line, positive falling to the right
   return elevationAt(r, s) + t * std::tan(superelevationAt(r, s));
 }
 

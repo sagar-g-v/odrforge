@@ -9,7 +9,7 @@
 //     ways' nodes, so heading and curvature stay continuous);
 //   * the trunk road runs on up to the separation point S, where the branch carriageway clears the
 //     main one, carrying the branch lanes beside the main lanes (added with a taper at the OSM node
-//     for a diverge, dropped there for a merge) - spec 4.4 lane sections, 4.5 width;
+//     for a diverge, dropped there for a merge) - OpenDRIVE 1.8.0 §11.3 lane sections, §11.6 lane width;
 //   * the junction is a few metres at S: main lanes continue 1:1, the branch lanes become the ramp.
 #include <algorithm>
 #include <cmath>

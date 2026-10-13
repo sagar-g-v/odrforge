@@ -177,6 +177,18 @@ void Builder::lowerCurbsAtCrosswalks() {
         else l->heightChanges.push_back({lo, kLoweredCurb, lowOuter});
         if (hi < secLen - 1e-6) l->heightChanges.push_back({hi, inner, outer});
       }
+      // 1.8.0 §11.6: a height record holds until the next one (a step). 1.4H §5.3.7.2.1.1.9 only gives heights
+      // "at discrete positions": a record kHold before each change repeats the height before it, so a reader
+      // that interpolates sees the same profile (Junction Guideline §6.3.2 writes such hold records too)
+      constexpr double kHold = 0.01;
+      std::vector<odr::Lane::HeightChange> held;
+      double prevS = 0.0, prevIn = l->heightInner.value_or(0.0), prevOut = l->heightOuter.value_or(0.0);
+      for (const odr::Lane::HeightChange &h : l->heightChanges) {
+        if (h.sOffset - kHold > prevS + kHold) held.push_back({h.sOffset - kHold, prevIn, prevOut});
+        held.push_back(h);
+        prevS = h.sOffset, prevIn = h.inner, prevOut = h.outer;
+      }
+      l->heightChanges = held;
     }
   }
 }

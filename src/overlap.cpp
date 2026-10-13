@@ -4,7 +4,8 @@
 // parallel service roads are often drawn closer together than their lanes are wide. With real lane
 // widths the carriageways would overlap (a visible defect in any mesh). For near-parallel roads on
 // the same layer, each road is pushed half of the overlap away from the other through an extra,
-// smooth laneOffset profile (spec 4.1: laneOffset shifts lane 0 relative to the reference line).
+// smooth laneOffset profile (OpenDRIVE 1.8.0 §11.4 [1.9 §11.5]: laneOffset shifts lane 0 relative to the
+// reference line).
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -16,7 +17,7 @@ namespace detail {
 
 namespace {
 
-/// d laneOffset / ds at s (OpenDRIVE 1.9 §11.3 laneOffset: a cubic per record, s absolute)
+/// d laneOffset / ds at s (OpenDRIVE 1.8.0 §11.4 [1.9 §11.5] laneOffset: a cubic per record, s absolute)
 double laneOffsetSlope(const odr::Road &r, double s) {
   const odr::Poly3 *rec = nullptr;
   for (const odr::Poly3 &p : r.laneOffset)

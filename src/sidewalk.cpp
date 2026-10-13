@@ -208,7 +208,7 @@ void Builder::attachSeparateSidewalks() {
     }
 }
 
-// The lanes are laid out from the fitted reference line (OpenDRIVE 1.8 §9.3: lane borders are offsets
+// The lanes are laid out from the fitted reference line (OpenDRIVE 1.8.0 §11.6 lane geometry [1.9 §11.7]: lane borders are offsets
 // t from it), not from the OSM way the sidewalk was first measured from. Each section side that has
 // an attached sidewalk (a verge, LaneKind::Border) is measured again along the trimmed line, samples
 // every kStep m at least 2 m inside the road's ends; where too few samples see the sidewalk (a short
