@@ -9,6 +9,8 @@ namespace odrforge {
 
 namespace {
 
+// lanes carrying vehicle traffic: driving and the motorway lane types of OpenDRIVE 1.8.0 §11.7.1
+const std::set<std::string> kVehicleLanes = {"driving", "entry", "exit", "onRamp", "offRamp", "connectingRamp", "bidirectional"};
 const std::set<std::string> kLaneTypes14 = {"none", "driving", "stop", "shoulder", "biking", "sidewalk", "border",
                                             "restricted", "parking", "bidirectional", "median", "special1",
                                             "special2", "special3", "roadWorks", "tram", "rail", "entry", "exit",
@@ -479,7 +481,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         const odr::LaneSection &sec = odr::sectionAt(r, s);
         for (const auto *side : {&sec.left, &sec.right})
           for (const auto &l : *side) {
-            if (l.type != "driving") continue;
+            if (!kVehicleLanes.count(l.type)) continue;
             Pose c;
             double a, b;
             if (!odr::laneCenter(r, s, l.id, c) || !odr::laneBorders(r, s, l.id, a, b) || std::abs(b - a) < 0.5) continue;
@@ -504,7 +506,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
               for (const auto *qside : {&qs.left, &qs.right})
                 for (const auto &ql : *qside) {
                   double qa, qb;
-                  if (ql.type != "driving" || !odr::laneBorders(q, so, ql.id, qa, qb)) continue;
+                  if (!kVehicleLanes.count(ql.type) || !odr::laneBorders(q, so, ql.id, qa, qb)) continue;
                   if (to > std::min(qa, qb) + 0.2 && to < std::max(qa, qb) - 0.2) inside = true;
                 }
               if (inside && std::abs(odr::surfaceZ(q, so, to) - z) < 3.0) {

@@ -5,6 +5,16 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Motorway lane types follow OpenDRIVE 1.8.0 §11.7.1 and Junction Guideline §7** (spec review found
+  ramp types on tertiary / service / primary roads, motorway-to-motorway links typed offRamp / onRamp,
+  entry / exit lanes on ramps, never-merging lanes typed entry):
+  - every one-way motorway_link road is typed by what lies beyond it through link roads in travel direction
+    (a street junction ends the search): motorway both sides connectingRamp, upstream offRamp, downstream
+    onRamp, neither (data edge) driving;
+  - entry / exit lanes only on motorway / trunk main roads; entry only where the lane narrows to zero (a lane
+    gain stays driving, a weaving lane is typed by its exit);
+  - the validator's road_overlap check counted only `driving` lanes, so retyped ramps escaped it; it now
+    counts every vehicle lane type. Jev 0.85.
 - **Traffic-light control follows OpenDRIVE 1.8.0 and the Junction Guideline** (multi-source review):
   - 1.8.0 §12.1 Table 54 (junctions with traffic lights are common): signal control is decided before the
     direct junctions; a signalised merge stays a common junction (Munich J247, London J86 had lights and

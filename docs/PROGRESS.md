@@ -26,6 +26,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.3f | Cross paths fixed to the §12.5 / §12.7.1 rules, `crosspath_audit.py` (Jev 0.88) | 0 rule failures, 6 areas |
 | 1.3g | Cross paths to 1.8.0 + Junction Guideline: flat only, priority, approach ones reverted (Jev 0.80 / 0.88) | Tokyo 315, LA 0 (banked) |
 | 4.4 | Signal control fixes from the spec review: no lights in direct junctions, ramp approaches lit, stop lines clear of crosswalks (Jev 0.82) | 0 audit failures |
+| 1.5b | Motorway lane types re-derived per 1.8.0 §11.7.1 / Guideline §7; validator overlap over all vehicle lanes (Jev 0.85) | ramp types only on motorway_link |
 | 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
 | 1.5b | Ramp lane types onRamp / offRamp / connectingRamp / entry / exit (standard) | FK 108 lanes, LA 58 |
 | 1.5 | Direct junctions at freeway gores (standard; committed at Jev 0.79 by user decision) | 54 of 113 gores |
@@ -100,6 +101,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Curb lanes: curb lanes duplicate the
   sidewalk's existing fold / corner / edge-break findings (Stelvio folds 98 -> 140, same places).
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
+- Direct junctions: 2 lane links from a ramp lane to a `shoulder` lane (Frankfurt); exit lanes typed from the
+  road start, not where the lane begins (no spec rule); motorway_link roads whose origin lies outside the area
+  keep driving.
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.
 - Overlap resolution (2 x 5 s on LA) is an order-dependent sweep; making it parallel needs a redesign.

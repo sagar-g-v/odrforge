@@ -234,6 +234,23 @@ void retypeAlong(odr::Road &r, size_t k, int id, bool forward, const std::string
   }
 }
 
+/// does lane id of road r, followed forward from section k through its lane links while it is a driving
+/// lane, end within the road - narrowing to zero width (an entry lane merging into the main road)?
+bool laneEndsAhead(odr::Road &r, size_t k, int id) {
+  std::optional<int> at = id;
+  for (size_t i = k; at && i < r.lanes.size(); ++i) {
+    const odr::Lane *l = laneById(r.lanes[i], *at);
+    if (!l || l->type != "driving") return false;
+    if (!l->link.successor) {
+      const double sEnd = i + 1 < r.lanes.size() ? r.lanes[i + 1].s : r.length();
+      double a, b;
+      return odr::laneBorders(r, sEnd - 1e-6, *at, a, b) && std::abs(b - a) < 0.05;
+    }
+    at = l->link.successor;
+  }
+  return false;
+}
+
 /// every driving lane of a road retyped (the ramp itself)
 void retypeRoad(odr::Road &r, const std::string &type) {
   for (odr::LaneSection &sec : r.lanes)
@@ -249,12 +266,7 @@ void Builder::directJunctions() {
   std::map<std::string, size_t> indexOf;
   for (size_t i = 0; i < od.roads.size(); ++i) indexOf[od.roads[i].id] = i;
   std::vector<char> dropped(od.roads.size(), 0);
-  // ASAM Junction Guideline §7.2.2.3 (OpenDRIVE 1.9 §11.8 lane types): a ramp leaving at an exit is
-  // offRamp, one joining at an entry onRamp, one doing both (motorway to motorway) connectingRamp; the
-  // trunk lanes leading into an exit ramp are exit from where they begin, those an entry ramp becomes
-  // are entry until they end
-  constexpr int kLeaves = 1, kJoins = 2;
-  std::map<size_t, int> rampRole;  // road index -> kLeaves | kJoins
+  // exit / entry lanes on the main road at the gores (typed after all joins, below)
   struct TrunkLane {
     size_t road;
     int id;
@@ -343,22 +355,82 @@ void Builder::directJunctions() {
     J.type = "direct";
     J.connections = direct;
     ++rep.directJunctions;
-    // lane types once every junction is joined (a ramp may be joined at both ends)
+    // the main road's lanes that the branch leaves from or joins (Junction Guideline 1.0.0 §7.2.2.3 /
+    // §7.3.2.3) - exit / entry lanes exist on a motorway or an expressway (trunk) only: §7.1 "typical
+    // for motorways, rural junctions"; a split of an urban street keeps its driving lanes
+    const std::string &trunkClass = metas[cl.gore->trunk].highway;
+    if (trunkClass != "motorway" && trunkClass != "trunk") continue;
     const size_t rampIndex = metas[cl.gore->branch].roadIndex, trunkIndex = metas[cl.gore->trunk].roadIndex;
     for (const odr::Connection &cn : J.connections) {
-      if (diverge && cn.connectingRoad == od.roads[rampIndex].id) {
-        rampRole[rampIndex] |= kLeaves;
+      if (diverge && cn.connectingRoad == od.roads[rampIndex].id)
         for (const odr::LaneLink &ll : cn.laneLinks) trunkLanes.push_back({trunkIndex, ll.from, false});
-      } else if (!diverge && cn.incomingRoad == od.roads[rampIndex].id) {
-        rampRole[rampIndex] |= kJoins;
+      else if (!diverge && cn.incomingRoad == od.roads[rampIndex].id)
         for (const odr::LaneLink &ll : cn.laneLinks) trunkLanes.push_back({trunkIndex, ll.to, true});
-      }
     }
   }
-  for (const auto &[road, role] : rampRole)
-    retypeRoad(od.roads[road], role == (kLeaves | kJoins) ? "connectingRamp" : role == kJoins ? "onRamp" : "offRamp");
+  // OpenDRIVE 1.8.0 §11.7.1 lane types: "onRamp: Ramp leading to a motorway from rural or urban roads",
+  // "offRamp: Ramp leading away from a motorway and onto rural urban roads", "connectingRamp: Ramp that
+  // connects two motorways". Every motorway_link road (its driving lanes) is typed by what lies beyond
+  // its two ends through link roads only: a motorway behind it, ahead of it, or both. A two-way link
+  // has no single role and keeps driving.
+  std::map<std::pair<int, bool>, size_t> clusterAt;  // (meta, atEnd) -> cluster
+  for (size_t k = 0; k < clusters.size(); ++k)
+    for (const RoadEnd &e : clusters[k].ends) clusterAt[{e.road, e.atEnd}] = k;
+  auto isLink = [](const std::string &hw) { return hw.size() > 5 && hw.compare(hw.size() - 5, 5, "_link") == 0; };
+  // travel direction of each road: +1 along s, -1 against, 0 both ways (or no driving lane)
+  const bool lhtRoads = opt.country.leftHandTraffic;
+  std::vector<int> travel(metas.size(), 0);
+  for (size_t mi = 0; mi < metas.size(); ++mi) {
+    if (metas[mi].roadIndex < 0) continue;
+    int plus = 0, minus = 0;
+    for (const odr::LaneSection &sec : od.roads[metas[mi].roadIndex].lanes)
+      for (const auto *side : {&sec.left, &sec.right})
+        for (const odr::Lane &l : *side)
+          if (l.type == "driving") ++(((l.id < 0) != lhtRoads) ? plus : minus);
+    travel[mi] = (plus > 0) == (minus > 0) ? 0 : plus > 0 ? 1 : -1;
+  }
+  // a road end arrives at its junction (traffic flows into it) or departs from it
+  auto arrives = [&](const RoadEnd &e) { return travel[e.road] == (e.atEnd ? 1 : -1); };
+  auto departs = [&](const RoadEnd &e) { return travel[e.road] == (e.atEnd ? -1 : 1); };
+  // is there a motorway upstream (traffic arriving at the junction at the ramp's start) or downstream (at its
+  // end), through link roads that run the same way only? A street junction ends the search: a ramp beyond
+  // it is another ramp; a sibling branch of a split is not upstream.
+  auto reachesMotorway = [&](int mi, bool upstream) {
+    std::set<size_t> seen;
+    std::vector<int> todo{mi};
+    while (!todo.empty()) {
+      const int m = todo.back();
+      todo.pop_back();
+      const bool atEnd = (travel[m] == 1) != upstream;  // the junction ahead (downstream) or behind
+      const auto it = clusterAt.find({m, atEnd});
+      if (it == clusterAt.end() || !seen.insert(it->second).second) continue;
+      bool street = false;
+      std::vector<int> next;
+      for (const RoadEnd &e : clusters[it->second].ends) {
+        if (e.road == m) continue;
+        const bool onward = upstream ? arrives(e) : departs(e);
+        if (metas[e.road].highway == "motorway" && onward) return true;
+        if (!isLink(metas[e.road].highway)) street = true;
+        else if (onward) next.push_back(e.road);
+      }
+      if (!street) todo.insert(todo.end(), next.begin(), next.end());
+    }
+    return false;
+  };
+  for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
+    const RoadMeta &m = metas[mi];
+    if (m.highway != "motorway_link" || m.roadIndex < 0 || dropped[m.roadIndex] || travel[mi] == 0) continue;
+    const bool fromMotorway = reachesMotorway(mi, true), toMotorway = reachesMotorway(mi, false);
+    if (fromMotorway || toMotorway)
+      retypeRoad(od.roads[m.roadIndex], fromMotorway && toMotorway ? "connectingRamp" : fromMotorway ? "offRamp" : "onRamp");
+  }
+  // "exit: Lane that is used for sections that are parallel to the main road and lead to an exit from
+  // the main road", "entry: ... parallel to the main road and merge into the main road" (1.8.0 §11.7.1):
+  // an entry lane only where it ends (narrows to zero) on the road - a lane gained from the ramp that runs
+  // on stays driving (and a weaving lane is typed by the exit it leads to)
   for (const TrunkLane &t : trunkLanes) {
     odr::Road &r = od.roads[t.road];
+    if (t.entry && !laneEndsAhead(r, 0, t.id)) continue;
     retypeAlong(r, t.entry ? 0 : r.lanes.size() - 1, t.id, t.entry, t.entry ? "entry" : "exit");
   }
   // connecting roads are appended after the plain roads: dropping them leaves the plain roads' places

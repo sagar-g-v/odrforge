@@ -73,6 +73,29 @@ int drivingLanes(const odr::LaneSection &sec) {
 
 }  // namespace
 
+TEST_CASE("gore: a split of an urban street keeps driving lanes (motorway lane types only at motorways)") {
+  // OpenDRIVE 1.8.0 §11.7.1 onRamp / offRamp / connectingRamp are ramps to and from motorways; Junction
+  // Guideline 1.0.0 §7.1: entry and exit lanes are typical for motorways and rural junctions
+  OsmB b;
+  const OsmId n = b.node(0, 0);
+  const Tags street{{"highway", "tertiary"}, {"lanes", "3"}, {"oneway", "yes"}, {"sidewalk", "no"}};
+  b.way({b.node(-400, 0), b.node(-200, 0), n}, street);
+  b.way({n, b.node(200, 0), b.node(400, 0)}, street);
+  b.way({n, b.node(80, -3), b.node(160, -9), b.node(240, -20), b.node(330, -42)},
+        {{"highway", "tertiary"}, {"lanes", "1"}, {"oneway", "yes"}, {"sidewalk", "no"}});
+  BuildOptions o = opts();
+  o.target = TargetProfile::byName("standard");
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.directJunctions == 1);  // the split is a direct junction all the same
+  for (const auto &r : od.roads)
+    for (const auto &sec : r.lanes)
+      for (const auto *side : {&sec.left, &sec.right})
+        for (const auto &l : *side)
+          CHECK(l.type != "entry" && l.type != "exit" && l.type != "onRamp" && l.type != "offRamp" && l.type != "connectingRamp");
+}
+
 TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfaces") {
   OsmB b;
   const OsmId n = b.node(0, 0);
@@ -105,8 +128,9 @@ TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfa
       CHECK(rep.directJunctions == 1 && J.type == "direct" && J.connections.size() == 2);
       // Junction Guideline §7.2.2.3 lane types: the trunk's branch lane is an exit lane, the ramp's lane offRamp
       CHECK(trunk->lanes.back().right.size() >= 4 && trunk->lanes.back().right[3].type == "exit");
+      // OpenDRIVE 1.8.0 §11.7.1: "offRamp: Ramp leading away from a motorway"
       for (const auto &sec : ramp->lanes)
-        for (const auto &l : sec.right) CHECK(l.type != "driving");
+        for (const auto &l : sec.right) CHECK(l.type == "offRamp");
       CHECK(std::none_of(od.roads.begin(), od.roads.end(), [](const odr::Road &r) { return r.junction != "-1"; }));
       for (const auto &cn : J.connections) {
         CHECK(cn.incomingRoad == trunk->id);
