@@ -916,7 +916,72 @@ void Builder::buildSignals() {
     sg.validity.push_back({*mn, *mx});
   };
 
-  // traffic lights near (within 40 m of) a cluster also signalise it
+  // a stop / give-way sign placed at a road end (OSM highway=stop | give_way)
+  auto placeSign = [&](const std::string &hw, int mi, bool atEnd) {
+    odr::Road &r = od.roads[metas[mi].roadIndex];
+    auto lanes = endLanes(r, atEnd, true);
+    if (lanes.empty()) return;
+    const SignCode code = signCode(hw);
+    odr::Signal sg;
+    sg.id = std::to_string(nextSignalId++);
+    sg.name = hw == "stop" ? "Stop" : "GiveWay";
+    sg.country = code.country;
+    sg.type = code.type;
+    sg.subtype = code.subtype;
+    sg.width = code.width;
+    sg.height = code.height;
+    sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
+    placeAtEnd(r, atEnd, lanes, 0.5, sg);
+    r.signals.push_back(sg);
+    ++rep.signals;
+  };
+
+  // the road ends a stop / give-way node applies to: in a junction its minor approaches (all of them
+  // for an all-way stop); on a road the junction its direction tag points to, else the nearest
+  auto signTargets = [&](OsmId nid, const OsmNode &nd) {
+    std::vector<std::pair<int, bool>> targets;  // (meta index, atEnd)
+    if (auto it = clusterOf.find(nid); it != clusterOf.end()) {
+      const Cluster &cl = clusters[it->second];
+      const bool allWay = tagIs(nd.tags, "stop", "all");
+      int minRank = 99;
+      for (const RoadEnd &e : cl.ends) minRank = std::min(minRank, metas[e.road].rank);
+      for (const RoadEnd &e : cl.ends)
+        if (allWay || metas[e.road].rank == minRank) targets.push_back({e.road, e.atEnd});
+      return targets;
+    }
+    for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
+      const RoadMeta &m = metas[mi];
+      for (const auto &[n2, s] : m.nodeS) {
+        if (n2 != nid) continue;
+        const Chain &ch = chains[m.chain];
+        const std::string dir = tag(nd.tags, "direction").value_or("");
+        bool toEnd;
+        if (dir == "forward" || dir == "backward") {
+          // direction is relative to the OSM way; find whether this part runs along it
+          bool partFwd = true;
+          for (const Part &p : ch.parts)
+            if (std::count(segs[p.seg].nodes.begin(), segs[p.seg].nodes.end(), nid)) partFwd = p.fwd;
+          toEnd = (dir == "forward") == partFwd;
+        } else {
+          toEnd = (m.full.length() - s) < s;  // nearest junction
+        }
+        if ((toEnd ? ch.c1 : ch.c0) >= 0) targets.push_back({mi, toEnd});
+      }
+    }
+    return targets;
+  };
+  std::set<std::pair<int, bool>> signedEnd;  // road ends that get a stop / give-way sign
+  for (const auto &[nid, nd] : osm.nodes)
+    if (tagIs(nd.tags, "highway", "stop") || tagIs(nd.tags, "highway", "give_way"))
+      for (const auto &t : signTargets(nid, nd)) signedEnd.insert(t);
+
+  // OSM maps traffic signals either as one node in the junction (every approach signalised) or as a
+  // node per approach at its stop line. A light node on an approach within kControlReach of a
+  // junction signalises it; the approaches that carry their own light are remembered.
+  constexpr double kControlReach = 40.0;
+  std::vector<char> lightInJunction(clusters.size());
+  for (size_t k = 0; k < clusters.size(); ++k) lightInJunction[k] = clusters[k].signalised;
+  std::set<std::pair<int, int>> litApproach;  // (chain, cluster)
   for (int ci = 0; ci < static_cast<int>(chains.size()); ++ci) {
     const Chain &ch = chains[ci];
     if (ch.internal) continue;
@@ -925,11 +990,23 @@ void Builder::buildSignals() {
       for (const auto &[nid, s] : m.nodeS) {
         const OsmNode *nd = osm.node(nid);
         if (!nd || !tagIs(nd->tags, "highway", "traffic_signals")) continue;
-        if (ch.c1 >= 0 && m.full.length() - s < 40.0) clusters[ch.c1].signalised = true;
-        if (ch.c0 >= 0 && s < 40.0) clusters[ch.c0].signalised = true;
+        if (ch.c1 >= 0 && m.full.length() - s < kControlReach) litApproach.insert({ci, ch.c1});
+        if (ch.c0 >= 0 && s < kControlReach) litApproach.insert({ci, ch.c0});
       }
     }
   }
+  for (const auto &[chain, cluster] : litApproach) clusters[cluster].signalised = true;
+  // a junction signalised through some of its approaches: an approach without a light of its own is
+  // controlled by the stop / give-way sign OSM gives it (placed below), a service road or
+  // living street (a driveway, a car park exit) by a give-way sign; other streets get a light (OSM
+  // leaves many signalised approaches unmapped). Decided with Jev (0.86).
+  enum class Control { Light, OwnSign, GiveWay };
+  auto controlOf = [&](int cluster, const RoadEnd &e) {
+    const std::pair<int, int> key{metas[e.road].chain, cluster};
+    if (lightInJunction[cluster] || litApproach.count(key)) return Control::Light;
+    if (signedEnd.count({e.road, e.atEnd})) return Control::OwnSign;
+    return metas[e.road].rank <= classRank("living_street") ? Control::GiveWay : Control::Light;
+  };
 
   for (Cluster &cl : clusters) {
     if (!cl.signalised || cl.junction < 0) continue;
@@ -942,10 +1019,14 @@ void Builder::buildSignals() {
       int group = -1;
     };
     std::vector<Approach> ap;
+    const int clusterIndex = static_cast<int>(&cl - clusters.data());
     for (const RoadEnd &e : cl.ends) {
       odr::Road &r = od.roads[metas[e.road].roadIndex];
       auto lanes = endLanes(r, e.atEnd, true);
       if (lanes.empty()) continue;
+      const Control control = controlOf(clusterIndex, e);
+      if (control == Control::GiveWay) placeSign("give_way", e.road, e.atEnd);
+      if (control != Control::Light) continue;
       const Pose p = r.planView.eval(e.atEnd ? r.length() : 0.0);
       ap.push_back({&e, e.atEnd ? p.hdg : p.hdg + kPi, lanes, -1});
     }
@@ -1017,53 +1098,7 @@ void Builder::buildSignals() {
   for (const auto &[nid, nd] : osm.nodes) {
     const std::string hw = tag(nd.tags, "highway").value_or("");
     if (hw != "stop" && hw != "give_way") continue;
-    const SignCode code = signCode(hw);
-    std::vector<std::pair<int, bool>> targets;  // (meta index, atEnd)
-    if (auto it = clusterOf.find(nid); it != clusterOf.end()) {
-      const Cluster &cl = clusters[it->second];
-      const bool allWay = tagIs(nd.tags, "stop", "all");
-      int minRank = 99;
-      for (const RoadEnd &e : cl.ends) minRank = std::min(minRank, metas[e.road].rank);
-      for (const RoadEnd &e : cl.ends)
-        if (allWay || metas[e.road].rank == minRank) targets.push_back({e.road, e.atEnd});
-    } else {
-      for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
-        const RoadMeta &m = metas[mi];
-        for (const auto &[n2, s] : m.nodeS) {
-          if (n2 != nid) continue;
-          const Chain &ch = chains[m.chain];
-          const std::string dir = tag(nd.tags, "direction").value_or("");
-          bool toEnd;
-          if (dir == "forward" || dir == "backward") {
-            // direction is relative to the OSM way; find whether this part runs along it
-            bool partFwd = true;
-            for (const Part &p : ch.parts)
-              if (std::count(segs[p.seg].nodes.begin(), segs[p.seg].nodes.end(), nid)) partFwd = p.fwd;
-            toEnd = (dir == "forward") == partFwd;
-          } else {
-            toEnd = (m.full.length() - s) < s;  // nearest junction
-          }
-          if ((toEnd ? ch.c1 : ch.c0) >= 0) targets.push_back({mi, toEnd});
-        }
-      }
-    }
-    for (const auto &[mi, atEnd] : targets) {
-      odr::Road &r = od.roads[metas[mi].roadIndex];
-      auto lanes = endLanes(r, atEnd, true);
-      if (lanes.empty()) continue;
-      odr::Signal sg;
-      sg.id = std::to_string(nextSignalId++);
-      sg.name = hw == "stop" ? "Stop" : "GiveWay";
-      sg.country = code.country;
-      sg.type = code.type;
-      sg.subtype = code.subtype;
-      sg.width = code.width;
-      sg.height = code.height;
-      sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
-      placeAtEnd(r, atEnd, lanes, 0.5, sg);
-      r.signals.push_back(sg);
-      ++rep.signals;
-    }
+    for (const auto &[mi, atEnd] : signTargets(nid, nd)) placeSign(hw, mi, atEnd);
   }
 
   // speed-limit signs where the limit changes along the direction of travel (or a road starts)

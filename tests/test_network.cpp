@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <set>
 
 #include "odrforge/network.hpp"
@@ -146,6 +147,27 @@ TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
     CHECK(road.predecessor && road.successor);
   }
   CHECK(r.val.maxLinkGap < 0.02);
+}
+
+TEST_CASE("signals: lights mapped per approach - an unmapped driveway yields, a street gets a light") {
+  // lights mapped on the west and east approaches only; the north street and the south driveway have none
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0);
+  const Tags light{{"highway", "traffic_signals"}};
+  b.way({b.node(-120, 0), b.node(-20, 0, light), c}, {{"highway", "secondary"}, {"lanes", "2"}, {"name", "W"}});
+  b.way({c, b.node(20, 0, light), b.node(120, 0)}, {{"highway", "secondary"}, {"lanes", "2"}, {"name", "E"}});
+  b.way({c, b.node(0, 60), b.node(0, 120)}, {{"highway", "residential"}, {"name", "N"}});
+  b.way({b.node(0, -120), b.node(0, -60), c}, {{"highway", "service"}, {"name", "S"}});
+  const Result r = build(b);
+  CHECK(r.val.errors == 0);
+  std::map<std::string, int> lights, giveWays;
+  for (const auto &road : r.od.roads)
+    for (const auto &sg : road.signals) {
+      if (sg.dynamic) ++lights[road.name];
+      if (sg.name == "GiveWay") ++giveWays[road.name];
+    }
+  CHECK(lights["W"] == 1 && lights["E"] == 1 && lights["N"] == 1);
+  CHECK(lights["S"] == 0 && giveWays["S"] == 1);
 }
 
 TEST_CASE("network: connecting roads use only line / arc / spiral and fit lane centres") {

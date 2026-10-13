@@ -82,6 +82,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Lights on approaches OSM does not signalise**: a junction signalised through per-approach light
+  nodes gave every approach a light. An approach without a light of its own now keeps only the stop /
+  give-way sign OSM gives it (it had a light and the sign), a service road or living street gets a
+  give-way sign instead (driveways, alleys, parking exits); other unmapped streets keep a light.
+  Lights 1,518 -> 1,350 over five areas, give-way signs +129. No junction <priority> records: the
+  signs carry the priority (1.9 §12.4, junctions.priority.no_signals). Kept with Jev 0.86.
 - **Lane lines along tapers** (OpenDRIVE 1.9 §11.9, sOffset records): the line between a lane being
   added (or ending) and the lane it opens from was drawn along the whole taper, on top of the edge
   or center line where the new lane is centimetres wide. It now starts where the lane is fully open
