@@ -20,7 +20,12 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 6 | Stage timing; arm trimming in parallel | LA trimming 9.4 s -> 0.9 s per pass |
 | tools | `jev_judge.py` (Jev reviews whole junctions, calibrated against planted defects) | Jev trusted on spec validity only |
 
-## Needs your input
+## Decisions (2026-10-13)
+
+Pushed; keep `rule="LHT"` in carla files; separate sidewalks next; 1.8-only features medium
+priority; Jev consulted for every decision; kerb lines used where mapped.
+
+## Needs your input (answered above)
 
 1. **Push** `geometry-quality` to GitHub? Nothing has been pushed.
 2. **LHT in 1.4 files**: the carla profile writes `rule="LHT"` although OpenDRIVE 1.4 has no such
