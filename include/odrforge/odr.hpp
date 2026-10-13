@@ -70,6 +70,18 @@ struct ValidityRange {
   int fromLane = 0, toLane = 0;
 };
 
+/// OpenDRIVE 1.9 §14.3 <dependency>: the signal with this id controls this one (e.g. a stop line
+/// obeyed while that traffic light is red)
+struct SignalDependency {
+  std::string id, type;
+};
+
+/// OpenDRIVE 1.9 §14.4 <reference>: a link from this signal to another signal or object (e.g. a
+/// traffic light to the stop line where traffic stops for it)
+struct SignalLink {
+  std::string elementId, elementType = "signal", type;
+};
+
 struct Signal {
   std::string id, name;
   double s = 0.0, t = 0.0, zOffset = 0.0, hOffset = 0.0, height = 0.0, width = 0.0;
@@ -81,6 +93,8 @@ struct Signal {
   std::optional<double> value;
   std::string unit, text;
   std::vector<ValidityRange> validity;
+  std::vector<SignalDependency> dependencies;
+  std::vector<SignalLink> references;
 };
 
 struct SignalReference {

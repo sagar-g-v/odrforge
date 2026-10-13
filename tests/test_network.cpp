@@ -122,7 +122,20 @@ TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
         const bool atEnd = road.successor && road.successor->elementType == "junction";
         CHECK(atEnd ? s.s > road.length() - 1.0 : s.s < 1.0);
         CHECK(s.orientation == (atEnd ? "+" : "-"));
-        CHECK(!s.validity.empty() && s.validity[0].fromLane <= s.validity[0].toLane);
+        // Junction Guideline §9.2 (1.8): the light carries no lane validity; it references the stop
+        // line on its approach, which holds the validity and depends on the light
+        CHECK(s.validity.empty());
+        CHECK(s.references.size() == 1 && s.references[0].type == "stopLine");
+        if (s.references.size() != 1) continue;
+        const auto stop = std::find_if(road.signals.begin(), road.signals.end(),
+                                       [&](const odr::Signal &x) { return x.id == s.references[0].elementId; });
+        CHECK(stop != road.signals.end());
+        if (stop == road.signals.end()) continue;
+        CHECK(stop->type == "1100001" && stop->country == "OpenDRIVE" && !stop->dynamic);
+        CHECK(!stop->validity.empty() && stop->validity[0].fromLane <= stop->validity[0].toLane);
+        CHECK(stop->dependencies.size() == 1 && stop->dependencies[0].id == s.id);
+        // before the approach crosswalk (3 m wide, centred 1.6 m from the road end)
+        CHECK(atEnd ? stop->s < road.length() - 3.1 : stop->s > 3.1);
       }
   CHECK(lights == 4);
   // every connecting road has exactly one lane linked at both ends, and the junction lists it

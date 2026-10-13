@@ -869,6 +869,14 @@ void Builder::buildJunctions() {
   for (auto &c : connecting) od.roads.push_back(std::move(c));
 }
 
+namespace {
+// crosswalks put on every approach of a signalised junction (BuildOptions::crosswalksAtSignals)
+constexpr double kCrosswalkCentreBack = 1.6;  // from the road end
+constexpr double kCrosswalkLength = 3.0;
+constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
+constexpr double kStopLineGap = 1.0;       // stop line before the crosswalk
+}  // namespace
+
 void Builder::buildSignals() {
   const CountryProfile &C = opt.country;
   const TargetProfile &T = opt.target;
@@ -973,6 +981,31 @@ void Builder::buildSignals() {
       sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 4.5;
       placeAtEnd(r, a.end->atEnd, a.lanes, 0.2, sg);
       ctrls[a.group].signalIds.push_back(sg.id);
+      if (T.spec().hasSignalReferenceElement()) {
+        // ASAM Junction Guideline §9.2: traffic stops at a stop line, valid for the approach lanes and
+        // dependent on the light; the light references it and carries no lane validity itself.
+        // Stop line: OpenDRIVE catalogue type 1100001 (invisible stop line, Signal reference 1.0.0
+        // Table 5), before the approach's crosswalk where there is one.
+        const bool crosswalk = opt.crosswalksAtSignals && r.length() >= kCrosswalkMinRoad;
+        const double back = crosswalk ? kCrosswalkCentreBack + 0.5 * kCrosswalkLength + kStopLineGap : 0.2;
+        odr::Signal stop;
+        stop.id = std::to_string(nextSignalId++);
+        stop.name = "StopLine";
+        stop.country = "OpenDRIVE";
+        stop.type = "1100001";
+        stop.height = 0.03;
+        placeAtEnd(r, a.end->atEnd, a.lanes, back, stop);
+        double t0, t1, u0, u1;  // across the approach lanes: the line's centre and width
+        odr::laneBorders(r, stop.s, stop.validity.front().fromLane, t0, t1);
+        odr::laneBorders(r, stop.s, stop.validity.front().toLane, u0, u1);
+        const double lo = std::min({t0, t1, u0, u1}), hi = std::max({t0, t1, u0, u1});
+        stop.t = 0.5 * (lo + hi);
+        stop.width = hi - lo;
+        stop.dependencies.push_back({sg.id, "trafficLight"});
+        sg.references.push_back({stop.id, "signal", "stopLine"});
+        sg.validity.clear();
+        r.signals.push_back(stop);
+      }
       r.signals.push_back(sg);
       ++rep.signals;
     }
@@ -1142,10 +1175,11 @@ void Builder::buildObjects() {
     o.type = "crosswalk";
     o.s = s;
     o.t = 0.0;
-    o.length = 3.0;
+    o.length = kCrosswalkLength;
     o.width = hi - lo;
     o.orientation = "none";
-    o.outline = {{-1.5, lo, 0, 0}, {1.5, lo, 0, 0}, {1.5, hi, 0, 0}, {-1.5, hi, 0, 0}};
+    const double h = 0.5 * kCrosswalkLength;
+    o.outline = {{-h, lo, 0, 0}, {h, lo, 0, 0}, {h, hi, 0, 0}, {-h, hi, 0, 0}};
     r.objects.push_back(o);
     ++rep.objects;
   };
@@ -1166,8 +1200,8 @@ void Builder::buildObjects() {
       if (!(cl.signalised || cl.crossing)) continue;
       for (const RoadEnd &e : cl.ends) {
         odr::Road &r = od.roads[metas[e.road].roadIndex];
-        if (r.length() < 6.0) continue;
-        crosswalk(r, e.atEnd ? r.length() - 1.6 : 1.6);
+        if (r.length() < kCrosswalkMinRoad) continue;
+        crosswalk(r, e.atEnd ? r.length() - kCrosswalkCentreBack : kCrosswalkCentreBack);
       }
     }
   if (!opt.streetFurniture) return;

@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Stop lines** (standard profile, ASAM Junction Guideline §9.2, OpenDRIVE 1.9 §14.3 / §14.4): every
+  traffic light has a stop line on its approach - OpenDRIVE type 1100001, valid for the incoming
+  lanes, 1 m before the approach crosswalk, dependent on the light - and references it; the light
+  carries no lane validity of its own. The carla (1.4) profile, which has no signal references, keeps
+  lights with validity. Kept with Jev 0.84.
 - `tools/inspect/annex_d_vertical.py`: OpenDRIVE 1.9 Annex D.1.4 vertical gaps - z and roll of the
   touching points at every lane link (road links and junction lane links). Detects a planted 0.2 m
   step and a planted 0.02 rad roll; the six areas have none (LA 14,538 links checked).

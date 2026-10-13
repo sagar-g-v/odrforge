@@ -384,6 +384,19 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     attrN(e, c, "pitch", 0.0);
     attrN(e, c, "roll", 0.0);
     writeValidity(e, s.validity);
+    // OpenDRIVE 1.9 §14.3 / §14.4: validity, then dependencies, then references (schema order)
+    for (const auto &d : s.dependencies) {
+      auto x = e.append_child("dependency");
+      attr(x, "id", d.id);
+      if (!d.type.empty()) attr(x, "type", d.type);
+    }
+    if (c.spec.hasSignalReferenceElement())
+      for (const auto &l : s.references) {
+        auto x = e.append_child("reference");
+        attr(x, "elementId", l.elementId);
+        attr(x, "elementType", l.elementType);
+        if (!l.type.empty()) attr(x, "type", l.type);
+      }
   }
   for (const auto &s : r.signalReferences) {
     auto e = sigs.append_child("signalReference");

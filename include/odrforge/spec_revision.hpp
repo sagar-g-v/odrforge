@@ -36,6 +36,11 @@ struct SpecRevision {
   // access@restriction in favour of these child elements.
   bool hasAccessRestrictionElements() const { return minor >= 8; }
 
+  // OpenDRIVE 1.9 §14.4 <signal><reference elementId elementType type/>: in the 1.8.1 schema
+  // (t_road_signals_signal_reference), not in 1.4 (1.4H XSD: <dependency> only). The stop-line model
+  // of the Junction Guideline §9.2 (light -> stop line reference) is written where it exists.
+  bool hasSignalReferenceElement() const { return minor >= 8; }
+
   // OpenDRIVE 1.9 §11.8 lane@direction; 1.8.0 Table 228 introduces it and Table 256 deprecates
   // the lane types it replaces: bidirectional -> driving + direction="both", sidewalk -> walking.
   bool hasLaneDirection() const { return minor >= 8; }
