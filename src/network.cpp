@@ -534,6 +534,39 @@ bool sameSide(const SideSpec &a, const SideSpec &b) {
 // layout, laneOffset within 5 cm, the same speeds) and with the same widths. OpenDRIVE 1.8 §11.3
 // needs a new lane section only where lanes change; such a boundary is removable (NAT-2) and the
 // second section is dropped, the first continuing.
+// A lane opening (or closing) over a taper splits off one neighbour of its kind: a lane added at the
+// outer side from the lane inside it, a turn pocket at the inner side from the lane outside it. The
+// line between the two (on the inner lane's outer edge, OpenDRIVE 1.9 §11.9 marks on the outer edge)
+// is the index of the lane carrying it, or npos when the lane has no such neighbour.
+size_t taperLineLane(const std::vector<odr::Lane> &side, size_t i) {
+  if (side[i].type != "driving") return std::string::npos;
+  if (i + 1 < side.size() && side[i + 1].type == "driving") return i;  // pocket: its own outer edge
+  if (i > 0 && side[i - 1].type == "driving") return i - 1;            // added outside: the inner lane's edge
+  return std::string::npos;
+}
+
+// OpenDRIVE 1.9 §11.9 road marks change along a lane with sOffset records (1.4: same). Over the given
+// spans (sorted, within the section) the lane's single mark gives way to no mark: the line between a
+// lane and the one opening beside it is drawn where the lane is open, not along the taper, where it
+// would lie on the edge or center line it splits from.
+void quietMarkOver(odr::Lane &l, std::vector<std::pair<double, double>> spans, double sectionLength) {
+  if (l.roadMarks.size() != 1 || l.roadMarks.front().type == "none" || spans.empty()) return;
+  const odr::RoadMark full = l.roadMarks.front();
+  auto record = [&](odr::RoadMark m, double s) {
+    m.sOffset = s;
+    l.roadMarks.push_back(m);
+  };
+  std::sort(spans.begin(), spans.end());
+  l.roadMarks.clear();
+  double markedFrom = 0.0;  // start of the stretch still to be written with the full mark
+  for (const auto &[a, b] : spans) {
+    if (a > markedFrom + 1e-6) record(full, markedFrom);
+    if (l.roadMarks.empty() || l.roadMarks.back().type != "none") record(odr::RoadMark{}, std::max(a, markedFrom));
+    markedFrom = std::max(markedFrom, b);
+  }
+  if (markedFrom < sectionLength - 1e-6) record(full, markedFrom);
+}
+
 void mergeEqualSections(std::vector<SectionInfo> &secs) {
   auto equal = [](const CrossSection &a, const CrossSection &b) {
     return a.oneway == b.oneway && std::abs(a.laneOffset - b.laneOffset) <= 0.05 && a.roundabout == b.roundabout &&
@@ -734,6 +767,8 @@ void Builder::buildRoads() {
     auto blendMid = [](double v0, double v1, double tb, double ta) {
       return std::pair<double, double>{v0 + (v1 - v0) * tb / (tb + ta), 1.5 * (v1 - v0) / (tb + ta)};
     };
+    // per lane carrying a line beside a taper: its section's length and the taper spans
+    std::map<std::pair<std::vector<odr::Lane> *, size_t>, std::pair<double, std::vector<std::pair<double, double>>>> quietSpans;
     for (size_t k = 0; k < r.lanes.size(); ++k) {
       const double secLen = (k + 1 < r.lanes.size() ? r.lanes[k + 1].s : len) - r.lanes[k].s;
       for (auto *side : {&r.lanes[k].left, &r.lanes[k].right})
@@ -775,8 +810,15 @@ void Builder::buildRoads() {
           const double hold = secLen - s0 - (d ? T : 0.0);
           if (hold > 1e-6) l.widths.push_back({s0, w, 0, 0, 0});
           if (d) l.widths.push_back(odr::Poly3::hermite(secLen - T, T, w, 0.0, 0.0, 0.0));
+          if (const size_t line = taperLineLane(*side, i); line != std::string::npos) {
+            auto &[sectionLength, spans] = quietSpans[{side, line}];
+            sectionLength = secLen;
+            if (g) spans.push_back({0.0, T});
+            if (d) spans.push_back({secLen - T, secLen});
+          }
         }
     }
+    for (auto &[at, q] : quietSpans) quietMarkOver((*at.first)[at.second], q.second, q.first);
     // lane offset: every section carries its own cross-section's offset, which places the OSM way where
     // OSM says it is (the middle of the carriageway, or the placement=* lane). It moves in the window of
     // the lanes that cause the change, so the lanes flowing on stay continuous: before the boundary

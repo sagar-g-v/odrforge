@@ -77,6 +77,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Lane lines along tapers** (OpenDRIVE 1.9 §11.9, sOffset records): the line between a lane being
+  added (or ending) and the lane it opens from was drawn along the whole taper, on top of the edge
+  or center line where the new lane is centimetres wide. It now starts where the lane is fully open
+  (ends where it starts closing). LA 208, Munich 45, FK 29, London 20, Tokyo 9 lanes. Kept with Jev 0.87.
 - **Lane-edge kinks at junctions** (OpenDRIVE 1.9 Annex D.1.3): overlap resolution rebuilt an arm's
   laneOffset with a one-sided slope at its ends, so a push still ramping there left a sloped offset;
   on a curve each lane edge then turned by a different angle the connecting road could not follow.

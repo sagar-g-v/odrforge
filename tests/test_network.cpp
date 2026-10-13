@@ -189,6 +189,19 @@ TEST_CASE("network: lane added along a road becomes a tapered lane section, not 
     }
   }
   CHECK(added == 1);
+  // 1.9 §11.9: the line between the new lane and the lane it opens from is drawn once the lane is
+  // fully open - no mark along the taper, the lane line from where the taper ends
+  const auto &opened = road.lanes[1].right;
+  for (size_t i = 0; i < opened.size(); ++i) {
+    if (opened[i].type != "driving" || opened[i].link.predecessor) continue;
+    const bool pocket = i + 1 < opened.size() && opened[i + 1].type == "driving";
+    const odr::Lane &line = pocket ? opened[i] : opened[i - 1];
+    CHECK(line.roadMarks.size() == 2);
+    if (line.roadMarks.size() != 2) continue;
+    CHECK(line.roadMarks[0].type == "none" && line.roadMarks[0].sOffset == 0.0);
+    CHECK(line.roadMarks[1].type == "broken");
+    CHECK_NEAR(odr::laneWidthAt(opened[i], line.roadMarks[1].sOffset), opened[i].widths.back().a, 1e-6);
+  }
   // only right lanes on a RHT oneway, centred on the way through laneOffset
   CHECK(road.lanes[0].left.empty() || road.lanes[0].left.front().type != "driving");
 }

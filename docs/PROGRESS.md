@@ -19,6 +19,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.7 | Roundabout junction groups | - |
 | 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
 | 3.2 | Annex D.1.4 vertical check (`annex_d_vertical.py`): z and roll at every lane link | 0 gaps, 0 roll mismatches in all six areas |
+| 2.4 | Lane lines start / end with the taper (sOffset mark records) | 311 lanes over five areas |
 | 2.3 | Road mark laneChange from the final mark type (double lines crossable from the broken side) | LA trapped flows 1 -> 0, missing-link islands 17 -> 2 |
 | 6 | Stage timing; arm trimming in parallel | LA trimming 9.4 s -> 0.9 s per pass |
 | tools | `jev_judge.py` (Jev reviews whole junctions, calibrated against planted defects) | Jev trusted on spec validity only |
