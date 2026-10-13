@@ -107,9 +107,13 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   maxGrade) cut CARLA's jumps 131 -> 16 but moved measured street junctions by up to 2.5 m (Jev 0.75): parked
   in build/tmp/plane_grade_parked.diff. The faithful fix is the junction surface item (elevation grid with
   transition lengths, 1.9 §12.9 - 12.11): a decision for the user.
-- Direct junctions: 2 lane links from a ramp lane to a `shoulder` lane (Frankfurt); exit lanes typed from the
-  road start, not where the lane begins (no spec rule); motorway_link roads whose origin lies outside the area
-  keep driving.
+- Direct junctions: exit lanes typed from the road start, not where the lane begins (no spec rule);
+  motorway_link roads whose origin lies outside the area keep driving. (Two "ramp -> shoulder" lane links
+  reported earlier were an artifact of the counting script - it took lane types from the wrong section.)
+- Not changed, with reason: redundant lane-section boundaries where only laneOffset differs (LA 218 / 275 /
+  298) break no verified rule (1.8.0 §11.3 requires a new section only when the lane count changes; the
+  atlas' 1.8.1 performance.avoid_redundant_info cannot be checked locally); bus lanes as access deny vs the
+  1.8.0 example's allow bus - no test area has a bus lane (0 <access> in the outputs).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.
 - Overlap resolution (2 x 5 s on LA) is an order-dependent sweep; making it parallel needs a redesign.
