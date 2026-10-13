@@ -1244,6 +1244,13 @@ void Builder::buildObjects() {
     r.objects.push_back(o);
     ++rep.objects;
   };
+  // a crosswalk inside the junction (standard) needs a corner sidewalk on each side for its cross path to
+  // link (cross_paths.cpp); where the corner builder made fewer, the crosswalk stays on the approach
+  for (const Cluster &cl : clusters)
+    for (const RoadEnd &e : cl.ends) {
+      bool &inJunction = e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart;
+      if (inJunction && !(cl.junction >= 0 && cornerSidewalksAt(od.junctions[cl.junction], e).size() == 2)) inJunction = false;
+    }
   // mapped crossings on roads
   for (const auto &[nid, nd] : osm.nodes) {
     if (!tagIs(nd.tags, "highway", "crossing") || clusterOf.count(nid)) continue;
@@ -1251,7 +1258,12 @@ void Builder::buildObjects() {
       for (const auto &[n2, sf] : m.nodeS)
         if (n2 == nid) {
           odr::Road &r = od.roads[m.roadIndex];
-          const double s = std::clamp(sf - m.trimStart, 1.5, std::max(1.5, r.length() - 1.5));
+          // a crossing at the mouth of a junction whose crosswalk is a cross path inside it: that cross path is
+          // this crossing (no second marking on the approach)
+          const double raw = sf - m.trimStart;
+          if ((m.crosswalkInJunctionStart && raw < kCrosswalkLength) || (m.crosswalkInJunctionEnd && raw > r.length() - kCrosswalkLength))
+            continue;
+          const double s = std::clamp(raw, 1.5, std::max(1.5, r.length() - 1.5));
           crosswalk(r, s);
           midBlockCrosswalks.push_back({static_cast<size_t>(m.roadIndex), r.objects.back().id});
         }
@@ -1263,11 +1275,8 @@ void Builder::buildObjects() {
       for (const RoadEnd &e : cl.ends) {
         odr::Road &r = od.roads[metas[e.road].roadIndex];
         if (r.length() < kCrosswalkMinRoad) continue;
-        // inside the junction (standard): the cross path's crossing road carries it (cross_paths.cpp) - when a
-        // corner sidewalk on each side gives it walking lanes to link; else the crosswalk stays on the approach
-        bool &inJunction = e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart;
-        if (inJunction && cl.junction >= 0 && cornerSidewalksAt(od.junctions[cl.junction], e).size() == 2) continue;
-        inJunction = false;
+        // inside the junction (standard): the cross path's crossing road carries it (cross_paths.cpp)
+        if (e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart) continue;
         crosswalk(r, e.atEnd ? r.length() - kCrosswalkCentreBack : kCrosswalkCentreBack);
       }
     }

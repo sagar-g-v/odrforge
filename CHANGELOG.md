@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **No second marking for a crossing at a junction mouth** (standard): an OSM crossing node within 3 m of an
+  approach end whose crosswalk is a junction cross path is that cross path - it no longer also becomes an
+  approach crosswalk (and a mid-block cross path). LA 16, Tokyo 83 duplicates removed, each within 4.3 m of
+  its junction cross path. Jev 0.84.
 - **Pitch kinks at junction entries** (OpenDRIVE 1.9 Annex D.1.5 "should have no vertical kinks"): a road's
   roll rate at a junction plane is now the plane's analytic rate along it (as on the connecting roads), not
   a finite difference after the blend. LA lane links with a pitch break > 0.01: 2655 -> 23 (worst 0.241 ->
