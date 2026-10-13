@@ -102,6 +102,14 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Overlap resolution (2 x 5 s on LA) is an order-dependent sweep; making it parallel needs a redesign.
 - CARLA height steps on LA (LibCarla ignores superelevation) and `jumps2.py` sampling every third
   waypoint (counts shift when roads are added).
-- Not yet started: 1.5 direct junctions, 1.6 slip lanes, virtual junctions (driveways), 1.8 junction
-  surface, Phase 2 lane vocabulary / road marks, Phase 3 G2 smoothness, Phase 4 signals and stop lines,
-  Phase 5 pedestrian network.
+- Remaining plan items, not started - every one below 0.8 with Jev already at design level (2026-10-13),
+  awaiting the user's decision:
+  - road barriers from OSM guard_rail / jersey_barrier / cable_barrier ways (Frankfurt Kreuz 117, Tokyo 4,
+    Munich 2) as barrier objects along the road: 0.66 (repeat segments, both profiles 0.48, standard only
+    0.33, open outline 0.23 - 0.27); walls and fences as well: 0.35;
+  - driveways as virtual junctions (standard; uncut street, turn roads linked with elementS / elementDir):
+    0.64 (0.67 as an idea);
+  - roundabout junction groups exist already; level crossings need railways, which are not converted
+    (0.61 as an idea);
+  - junction surface (boundary / elevationGrid) 0.50, pedestrian network from separate footways 0.48,
+    G2 lane-border curvature 0.38, signalReference on connecting roads 0.21.
