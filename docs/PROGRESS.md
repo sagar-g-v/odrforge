@@ -52,6 +52,14 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Kerb lines: within a lane section the verge width is constant while the kerb distance varies
   (median p10-p90 spread 0.60 m, London). Width records varying along the section would follow it;
   Jev 0.52 (not decided), parked at medium priority.
+- Separate sidewalks, lane edges that start/end at section boundaries (LA 36 with the option vs 13
+  without): mostly roads tagged sidewalk:both=separate where one segment's measurement was rejected
+  or found nothing. Tried (diff parked in build/tmp/sidewalk_continuity_parked.diff): rejected
+  measurement counts as none so continuity applies; verge-less sections take the nearest measured
+  verge; sections differing only in verge widths merge and are re-measured. LA 36 -> 24, London
+  13 -> 12, Munich 15 -> 13, moved curbs closer to OSM kerb lines (within 0.2 m 18.6 % -> 35.9 %),
+  folds London 31 -> 29; costs London lane_count +1, Munich G2 +4. Jev 0.68 (parts: 0.50 / 0.69) -
+  below 0.8, not committed. Needs your view.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

@@ -521,6 +521,29 @@ std::optional<double> sidewalkCurbOffset(const CrossSection &x, bool leftSide) {
   return std::abs(t);
 }
 
+bool sameSide(const SideSpec &a, const SideSpec &b) {
+  if (a.lanes.size() != b.lanes.size() || a.speed != b.speed || a.forward != b.forward) return false;
+  for (size_t i = 0; i < a.lanes.size(); ++i)
+    if (a.lanes[i].kind != b.lanes[i].kind || a.lanes[i].width != b.lanes[i].width || a.lanes[i].turns != b.lanes[i].turns)
+      return false;
+  return true;
+}
+
+// Re-placing the sections on the trimmed road (end sections stretched, tiny ones dropped) can leave
+// two neighbouring sections equal by the rule that merges OSM segments into one section (one lane
+// layout, laneOffset within 5 cm, the same speeds) and with the same widths. OpenDRIVE 1.8 §11.3
+// needs a new lane section only where lanes change; such a boundary is removable (NAT-2) and the
+// second section is dropped, the first continuing.
+void mergeEqualSections(std::vector<SectionInfo> &secs) {
+  auto equal = [](const CrossSection &a, const CrossSection &b) {
+    return a.oneway == b.oneway && std::abs(a.laneOffset - b.laneOffset) <= 0.05 && a.roundabout == b.roundabout &&
+           a.holdOffset == b.holdOffset && sameSide(a.left, b.left) && sameSide(a.right, b.right);
+  };
+  for (size_t k = 1; k < secs.size();)
+    if (equal(secs[k - 1].xs, secs[k].xs)) secs.erase(secs.begin() + k);
+    else ++k;
+}
+
 }  // namespace
 
 // ASAM Junction Guideline §6: each arm is cut where its curb return starts. At a corner whose facing
@@ -638,6 +661,7 @@ void Builder::buildRoads() {
         if (secs[k].s - secs[k - 1].s < 1.0) secs.erase(secs.begin() + k);
         else ++k;
     }
+    mergeEqualSections(secs);
     remeasureSidewalks(m, r.planView, secs);
     for (size_t k = 0; k < secs.size(); ++k)
       keepVergeFoldSafe(secs[k].xs, r.planView, secs[k].s, k + 1 < secs.size() ? secs[k + 1].s : len);

@@ -74,6 +74,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Removable lane-section boundaries**: placing the sections on the trimmed road (end sections
+  stretched, tiny ones dropped) could leave two equal neighbouring sections; the second is now
+  dropped (OpenDRIVE 1.8 §11.3 needs a new section only where lanes change). London 8 -> 6, Munich
+  10 -> 8 removable boundaries, nothing else changes. Kept with Jev 0.87.
 - **Unmeasured road ends** (a tunnel or covered way running to the road end, an unmeasured deck): the
   profile continued at the smoother's end slope, which the last one or two samples set - in LA a 0.4 m
   outlier lifted an 80 m tunnel and its underground junction by 6.7 m, 1.8 m under the street above
