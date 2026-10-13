@@ -2,6 +2,7 @@
 // rule for sharp turns. Spec basis: spec 4.4 lane sections / 4.5 widths (branch lanes on the trunk),
 // spec 5 linkage (every lane of a connecting road links to existing lanes on both sides), plus the
 // visual quality rule quality.road_overlap.
+#include <algorithm>
 #include <cstdio>
 
 #include "odrforge/network.hpp"
@@ -78,33 +79,66 @@ TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfa
   // the exit leaves on the right at a shallow angle (OSM draws it from the same node)
   b.way({n, b.node(80, -3), b.node(160, -9), b.node(240, -20), b.node(330, -42)},
         {{"highway", "motorway_link"}, {"lanes", "1"}, {"oneway", "yes"}});
-  BuildOptions o = opts();
-  BuildReport rep;
-  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
-  const ValidationReport v = validate(od, o.target);
-  printErrors(v);
-  CHECK(rep.gores == 1);
-  CHECK(v.errors == 0);
-  CHECK(v.count("quality.road_overlap") == 0);
-  // the trunk carries 3 + 1 lanes before the junction; the junction is short
-  const odr::Road *trunk = roadNear(od, -300, 0);
-  CHECK(trunk && drivingLanes(trunk->lanes.back()) == 4 && drivingLanes(trunk->lanes.front()) == 3);
-  int connectingLanes = 0, toRamp = 0;
-  const odr::Road *ramp = roadNear(od, 300, -35);
-  for (const auto &r : od.roads) {
-    if (r.junction == "-1") continue;
-    connectingLanes += drivingLanes(r.lanes.front());
-    CHECK(r.length() < 10.0);
-    if (r.successor && ramp && r.successor->elementId == ramp->id) toRamp += drivingLanes(r.lanes.front());
-  }
-  CHECK(connectingLanes == 4);  // 3 main lanes straight on, 1 branch lane into the ramp
-  CHECK(toRamp == 1);
-  // the branch lane is the outermost (right) lane of the trunk
-  for (const auto &r : od.roads)
-    if (r.junction != "-1" && ramp && r.successor && r.successor->elementId == ramp->id) {
-      const auto &l = r.lanes.front().right.empty() ? r.lanes.front().left.front() : r.lanes.front().right.front();
-      CHECK(l.link.predecessor && std::abs(*l.link.predecessor) == 4);
+  for (const char *target : {"carla", "standard"}) {
+    BuildOptions o = opts();
+    o.target = TargetProfile::byName(target);
+    BuildReport rep;
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+    const ValidationReport v = validate(od, o.target);
+    printErrors(v);
+    CHECK(rep.gores == 1);
+    CHECK(v.errors == 0 && v.warnings == 0);
+    CHECK(v.count("quality.road_overlap") == 0);
+    // the trunk carries 3 + 1 lanes before the junction
+    const odr::Road *trunk = roadNear(od, -300, 0);
+    CHECK(trunk && drivingLanes(trunk->lanes.back()) == 4 && drivingLanes(trunk->lanes.front()) == 3);
+    const odr::Road *ramp = roadNear(od, 300, -35);
+    CHECK(ramp && od.junctions.size() == 1);
+    if (!trunk || !ramp || od.junctions.size() != 1) continue;
+    const odr::Junction &J = od.junctions.front();
+    if (std::string(target) == "standard") {
+      // OpenDRIVE 1.9 §12.6 / Junction Guideline §7.2: a direct junction - no connecting roads, the
+      // trunk linked to the main road (3 lanes on) and to the ramp (its outermost lane)
+      CHECK(rep.directJunctions == 1 && J.type == "direct" && J.connections.size() == 2);
+      CHECK(std::none_of(od.roads.begin(), od.roads.end(), [](const odr::Road &r) { return r.junction != "-1"; }));
+      for (const auto &cn : J.connections) {
+        CHECK(cn.incomingRoad == trunk->id);
+        if (cn.connectingRoad == ramp->id) CHECK(cn.laneLinks.size() == 1 && std::abs(cn.laneLinks[0].from) == 4);
+        else CHECK(cn.laneLinks.size() == 3);
+      }
+      // one cut: the ramp starts at the trunk's end in its heading (rule junctions.direct.road_ramp_heading)
+      // and the linked lanes meet edge to edge (junctions.direct.linked_lane_smoothness)
+      const Pose a = trunk->planView.eval(trunk->length()), z = ramp->planView.eval(0.0);
+      CHECK(std::abs(normalizeAngle(a.hdg - z.hdg)) < 1e-3);
+      for (const auto &cn : J.connections)
+        for (const auto &ll : cn.laneLinks) {
+          const odr::Road *to = cn.connectingRoad == ramp->id ? ramp : roadNear(od, 300, 0);
+          if (!to) continue;
+          double t0, t1, u0, u1;
+          CHECK(odr::laneBorders(*trunk, trunk->length(), ll.from, t0, t1));
+          CHECK(odr::laneBorders(*to, 0.0, ll.to, u0, u1));
+          const Pose b0 = to->planView.eval(0.0);
+          CHECK((a.offset(t0) - b0.offset(u0)).norm() < 0.05 && (a.offset(t1) - b0.offset(u1)).norm() < 0.05);
+        }
+      continue;
     }
+    // carla (1.4, no direct junctions): a short common junction with the same lane mapping
+    int connectingLanes = 0, toRamp = 0;
+    for (const auto &r : od.roads) {
+      if (r.junction == "-1") continue;
+      connectingLanes += drivingLanes(r.lanes.front());
+      CHECK(r.length() < 10.0);
+      if (r.successor && r.successor->elementId == ramp->id) toRamp += drivingLanes(r.lanes.front());
+    }
+    CHECK(connectingLanes == 4);  // 3 main lanes straight on, 1 branch lane into the ramp
+    CHECK(toRamp == 1);
+    // the branch lane is the outermost (right) lane of the trunk
+    for (const auto &r : od.roads)
+      if (r.junction != "-1" && r.successor && r.successor->elementId == ramp->id) {
+        const auto &l = r.lanes.front().right.empty() ? r.lanes.front().left.front() : r.lanes.front().right.front();
+        CHECK(l.link.predecessor && std::abs(*l.link.predecessor) == 4);
+      }
+  }
 }
 
 TEST_CASE("gore: a freeway entrance is a lane-level merge") {

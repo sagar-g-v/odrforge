@@ -20,6 +20,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 3.1 | Overlap shifts level at road ends (Annex D.1.3 no kinks) | lane-edge heading breaks 263 -> 0 |
 | 3.2 | Annex D.1.4 vertical check (`annex_d_vertical.py`): z and roll at every lane link | 0 gaps, 0 roll mismatches in all six areas |
 | 2.4 | Lane lines start / end with the taper (sOffset mark records) | 311 lanes over five areas |
+| 1.5 | Direct junctions at freeway gores (standard; committed at Jev 0.79 by user decision) | 54 of 113 gores |
 | 4.4 | Header `<license>` ODbL-1.0 with OSM attribution (standard) | - |
 | 4.3 | Signal phases by traffic axis (parallel approaches share a phase) | split parallel approaches 23 -> 0 junctions |
 | 4.2 | Lights only on approaches OSM signalises; driveways yield; own signs not doubled with a light | lights 1,518 -> 1,350, give-way +129 |
@@ -85,12 +86,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   11 repeated relations but some matches are doubtful (a -5 deg service-road "turn", a street onto
   itself); Jev 0.70 - parked (`build/tmp/slip_relation_parked.diff`). slipLane lane type, entry/exit
   lanes and direct junctions with overlapZone are 1.8-only (medium priority), not started.
-- Direct junctions at freeway gores (1.5, standard profile): joining each gore's 4 m connecting road
-  into the ramp / main road converts 54 of 113 gores (28 kept: an arm reached by several connecting
-  roads; 28: carried shoulders would fold on the connecting road's bend; 3: unexpected road end);
-  all flow / continuity checks clean, XSD / Annex F / ASAM qc / esmini clean; 5 OSM-distance findings
-  on the joined first metres. Jev 0.76-0.79 - parked (`build/tmp/direct_parked/`: direct_junctions.cpp
-  + wiring.diff). Lane types onRamp / offRamp / entry / exit not started.
+- Direct junctions (1.5): 59 of 113 gores stay common junctions (28 arm reached by several connecting
+  roads, 28 fold risk for carried lanes, 3 unexpected end); 5 OSM-distance findings on the joined first
+  metres. Lane types onRamp / offRamp / entry / exit not started.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

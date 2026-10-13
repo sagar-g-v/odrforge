@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Direct junctions at freeway splits and merges** (standard profile, OpenDRIVE 1.9 §12.6, Junction
+  Guideline §7.2): each gore's 4 m connecting road is joined into the ramp / main road it leads to or
+  comes from, the arm's unreached lanes (shoulders, sidewalks) opening over >= 3 m per m of width, and
+  the junction becomes type="direct". 54 of 113 gores (an arm reached by several connecting roads, a
+  fold risk for carried lanes, or an unexpected road end keep the common junction). The carla (1.4)
+  profile is unchanged. Jev 0.79; committed on the user's decision.
 - **Header licence** (standard profile, OpenDRIVE 1.9 §6.4.2, introduced 1.8.0): the ODbL 1.0 licence
   of the OpenStreetMap data with its attribution. Kept with Jev 0.89.
 - **Stop lines** (standard profile, ASAM Junction Guideline §9.2, OpenDRIVE 1.9 §14.3 / §14.4): every

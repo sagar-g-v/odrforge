@@ -185,6 +185,7 @@ struct Builder {
   void clusterJunctions();
   void buildRoadGeometry();
   void buildGores();         // gore.cpp
+  void directJunctions();    // direct_junctions.cpp
   void trimRoads();
   bool joinSqueezedJunctions();
   void makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap);

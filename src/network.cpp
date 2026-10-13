@@ -1057,6 +1057,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("elevation profiles", &detail::Builder::fitRoadElevation);
   stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
   stage("junctions", &detail::Builder::buildJunctions);
+  stage("direct junctions", &detail::Builder::directJunctions);
   stage("signals", &detail::Builder::buildSignals);
   stage("objects", &detail::Builder::buildObjects);
   stage("finish", &detail::Builder::finish);

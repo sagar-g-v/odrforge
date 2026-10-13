@@ -134,7 +134,9 @@ int main(int argc, char **argv) {
       std::printf("  topology: %d OSM way ends joined to the road they stop short of, %d missing crossing nodes added, "
                   "%d parking-lot aisles connect streets\n",
                   rep.snappedEnds, rep.joinedCrossings, rep.parkingAisles);
-    if (rep.gores) std::printf("  gores: %d freeway splits / merges modelled at lane level\n", rep.gores);
+    if (rep.gores)
+      std::printf("  gores: %d freeway splits / merges modelled at lane level, %d as direct junctions\n", rep.gores,
+                  rep.directJunctions);
     if (rep.separateSidewalks)
       std::printf("  cross-section: %d road sides extended to their separately mapped sidewalk\n", rep.separateSidewalks);
     if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)

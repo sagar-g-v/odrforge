@@ -54,6 +54,10 @@ struct SpecRevision {
   // OpenDRIVE 1.9 §13.2 <outlines> wrapper with outline / corner ids; 1.4 has a bare <outline>.
   bool hasOutlinesWrapper() const { return minor >= 5; }
 
+  // OpenDRIVE 1.9 §12.6 direct junctions (<junction type="direct">, <connection linkedRoad>);
+  // introduced 1.7.0.
+  bool hasDirectJunctions() const { return minor >= 7; }
+
   // OpenDRIVE 1.7 §10 junction@type: optional with default "default", mandatory for direct and
   // virtual junctions. Before 1.7 only non-default types are written.
   bool writesDefaultJunctionType() const { return minor >= 7; }
