@@ -110,6 +110,11 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Direct junctions: exit lanes typed from the road start, not where the lane begins (no spec rule);
   motorway_link roads whose origin lies outside the area keep driving. (Two "ramp -> shoulder" lane links
   reported earlier were an artifact of the counting script - it took lane types from the wrong section.)
+- Free road ends after a junction-plane refit: the refit's smoother extrapolates the last slope beyond the
+  last measurement instead of 236aa76's 20 m least-squares grade. Applying the extension there too changed 18
+  LA roads (max 0.42 m) but a hold-out on 672 road ends (last 25 m hidden) did not show it more accurate
+  (worse in 429; the test's truth is our smoothed output, raw samples are not in the output) - Jev 0.77,
+  parked in build/tmp/end_extension_refit_parked.diff.
 - Not changed, with reason: redundant lane-section boundaries where only laneOffset differs (LA 218 / 275 /
   298) break no verified rule (1.8.0 §11.3 requires a new section only when the lane count changes; the
   atlas' 1.8.1 performance.avoid_redundant_info cannot be checked locally); bus lanes as access deny vs the
