@@ -323,13 +323,14 @@ TEST_CASE("cross paths (standard): a mid-block crossing is a virtual junction wi
     if (!(x->lanes.size() == 1 && x->lanes[0].right.size() == 1 && x->lanes[0].left.empty())) return;
     CHECK(x->lanes[0].right[0].type == "sidewalk");
     CHECK(cp.start.to == -1 && cp.end.to == -1);
-    // straight across, between the sidewalks' inner edges
+    // straight across, sidewalk centre to sidewalk centre (OpenDRIVE 1.9 section 12.5 rule
+    // junctions.cross_path.start_end_contained: its ends inside the linked lanes)
     double lIn, lOut, rIn, rOut;
     CHECK(odr::laneBorders(*main, cp.start.s, cp.end.from, lIn, lOut));
     if (!(odr::laneBorders(*main, cp.start.s, cp.end.from, lIn, lOut))) return;
     CHECK(odr::laneBorders(*main, cp.start.s, cp.start.from, rIn, rOut));
     if (!(odr::laneBorders(*main, cp.start.s, cp.start.from, rIn, rOut))) return;
-    CHECK_NEAR(x->length(), lIn - rIn, 1e-6);
+    CHECK_NEAR(x->length(), 0.5 * (lIn + lOut) - 0.5 * (rIn + rOut), 1e-6);
   }
 }
 

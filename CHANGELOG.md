@@ -4,6 +4,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Fixed
+- **Cross paths now hold the rules of OpenDRIVE 1.9 §12.5 / §12.7.1** (rule ids of 1.8.0): measured, the
+  first version broke junctions.cross_path.start_end_contained (crossing road ends on the sidewalk's
+  border), junctions.cross_path.lane_linkage (ends up to 0.16 m outside the sidewalk on curves) and
+  junctions.cross_path.within_junction_area (footprint beyond sStart..sEnd). The crossing road now runs
+  sidewalk centre to sidewalk centre, its footprint checked inside the linked sidewalk lanes, sStart..sEnd
+  spanning the footprint; a crosswalk where that cannot hold keeps only its object (London 2). New
+  `tools/inspect/crosspath_audit.py` measures the rules: 0 failures in all six areas. Jev 0.88.
+
 ### Added
 - **Junction approach crosswalks as cross paths** (standard profile, OpenDRIVE 1.9 §12.5 / §12.7): the
   crosswalks on the approaches of signalised and crossing junctions lie on the approach road, short of
