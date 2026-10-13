@@ -189,8 +189,8 @@ struct Builder {
   void curbLanes();          // curbs.cpp
   void lowerCurbsAtCrosswalks();  // curbs.cpp
   void crossPaths();         // cross_paths.cpp
-  /// crosswalks that become cross paths, mid-block or on a junction approach: (road index, object id)
-  std::vector<std::pair<size_t, std::string>> crosswalkRefs;
+  /// crosswalks at OSM crossing nodes on a road (not in a junction): (road index, object id)
+  std::vector<std::pair<size_t, std::string>> midBlockCrosswalks;
   void trimRoads();
   bool joinSqueezedJunctions();
   void makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap);

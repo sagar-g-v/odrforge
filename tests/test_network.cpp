@@ -112,8 +112,7 @@ OsmBuilder crossroads(bool signals) {
 TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
   const Result r = build(crossroads(true));
   CHECK(r.val.errors == 0);
-  // the crossroads junction, then a virtual one round each approach crosswalk (OpenDRIVE 1.9 section 12.7)
-  CHECK(r.od.junctions.size() == 5 && r.od.junctions[0].type == "default");
+  CHECK(r.od.junctions.size() == 1);
   CHECK(count(r.od, false) == 4);
   // 4 approaches x (left, straight, right), one lane each, and the sidewalk round each of the 4 corners
   CHECK(count(r.od, true) == 16);
@@ -255,33 +254,32 @@ TEST_CASE("lowered curbs: over each crosswalk the curb and the sidewalk's inner 
   }
 }
 
-TEST_CASE("cross paths (standard): each approach crosswalk of a signalised junction, in a virtual junction on the approach") {
+TEST_CASE("cross paths (standard): none on a road that is not flat (OpenDRIVE 1.8 section 12.7: only flat virtual junctions)") {
+  OsmBuilder b;
+  const OsmId x = b.node(0, 0, {{"highway", "crossing"}});
+  b.way({b.node(-100, 0), x, b.node(100, 0)}, {{"highway", "residential"}, {"lanes", "2"}, {"sidewalk", "both"}});
+  BuildOptions o;
+  o.country = CountryProfile::load("US");
+  o.target = TargetProfile::byName("asam");
+  o.streetFurniture = false;
+  for (const double grade : {0.0, 0.06}) {
+    // a 6 % grade: the road rises 0.24 m over the 4 m of the junction
+    o.elevation = [grade](double x, double) { return grade * x; };
+    BuildReport rep;
+    odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+    od.header.revMinor = o.target.revMinor;
+    CHECK(validate(od, o.target).errors == 0);
+    CHECK(rep.crossPaths == (grade == 0.0 ? 1 : 0));
+  }
+}
+
+TEST_CASE("cross paths (standard): approach crosswalks of a junction are no virtual junctions") {
+  // Junction Guideline 1.0.0 section 6.3.3 / 6.4.3: crossings at a junction lie inside the common junction's
+  // area - not modelled as cross paths yet; their crosswalk objects stay
   const Result r = build(crossroads(true), "US", "asam");
   CHECK(r.val.errors == 0);
-  // the crossroads junction and, OpenDRIVE 1.9 section 12.7, one virtual junction per approach
-  CHECK(r.od.junctions.size() == 5);
-  CHECK(r.rep.crossPaths == 4);
-  for (const auto &j : r.od.junctions) {
-    if (j.type != "virtual") {
-      CHECK(j.crossPaths.empty());
-      continue;
-    }
-    // section 12.5: its cross path's crossing road lies on the approach, within sStart .. sEnd
-    CHECK(j.crossPaths.size() == 1);
-    if (j.crossPaths.size() != 1) return;
-    const odr::CrossPath &cp = j.crossPaths[0];
-    const odr::Road *x = roadById(r.od, cp.crossingRoad);
-    CHECK(x != nullptr);
-    if (!x) return;
-    CHECK(x->junction == j.id);
-    CHECK(!x->predecessor && !x->successor);
-    CHECK(cp.roadAtStart == j.mainRoad && cp.roadAtEnd == j.mainRoad);
-    CHECK(j.sStart <= cp.start.s && cp.start.s <= j.sEnd);
-  }
-  // carla: the crosswalk objects only
-  const Result c = build(crossroads(true), "US", "carla");
-  CHECK(c.rep.crossPaths == 0);
-  CHECK(c.od.junctions.size() == 1);
+  CHECK(r.rep.crossPaths == 0);
+  CHECK(r.od.junctions.size() == 1 && r.od.junctions[0].crossPaths.empty());
 }
 
 TEST_CASE("cross paths (standard): a mid-block crossing is a virtual junction with one cross path, none in carla") {
@@ -312,6 +310,10 @@ TEST_CASE("cross paths (standard): a mid-block crossing is a virtual junction wi
     if (!(j.crossPaths.size() == 1)) return;
     const odr::CrossPath &cp = j.crossPaths[0];
     CHECK(cp.roadAtStart == main->id && cp.roadAtEnd == main->id);
+    // Junction Guideline 1.0.0 section 10.3.3: the road for general traffic has the high priority; sStart / sEnd
+    // clearly outside the crossing (3 m crosswalk, 0.5 m clear on each side)
+    CHECK(j.priorities.size() == 1 && j.priorities[0].high == main->id && j.priorities[0].low == cp.crossingRoad);
+    CHECK_NEAR(j.sEnd - j.sStart, 4.0, 1e-6);
     const odr::LaneSection &sec = odr::sectionAt(*main, cp.start.s);
     CHECK(cp.start.from == sec.right.back().id);
     CHECK(cp.end.from == sec.left.back().id);

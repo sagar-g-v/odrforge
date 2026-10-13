@@ -1,23 +1,28 @@
-// OdrForge - pedestrian crossings as cross paths (standard profile).
+// OdrForge - mid-block pedestrian crossings as cross paths (standard profile).
 //
-// OpenDRIVE 1.9 §12.5 cross paths (introduced 1.8.0), §12.7.1 cross paths with virtual junctions; ASAM
-// Junction Guideline §10.3. Every crosswalk lies on a road, not in a junction's area: mid-block at an OSM
-// crossing node, or on the approach of a signalised / crossing junction just short of its end. A junction
-// of type virtual on that road holds its <crossPath> (§12.7.1: "the value of the @mainRoad attribute
-// defines the crossed road and the values of the @sStart and @sEnd attributes define the section with the
-// cross path"). The crossing road - a separate road of that junction (§12.5), one walking lane the
-// crosswalk's length wide - runs straight across the carriageway from the centre of the right outermost
-// sidewalk to the centre of the left one, linked to them by startLaneLink / endLaneLink at the crosswalk's
-// s. Rules held (rule ids of 1.8.0):
+// OpenDRIVE 1.8.0 / 1.9 §12.5 cross paths (introduced 1.8.0), §12.7.1 cross paths with virtual junctions;
+// ASAM Junction Guideline 1.0.0 §10.3.3 (pedestrian crossing, modelling approach). A crosswalk at an OSM
+// crossing node on a road that is not cut becomes a junction of type virtual on that road holding a
+// <crossPath>, built by the guideline's steps:
+//  - the crossing road (a separate road of the junction, §12.5) has one walking lane, the crosswalk's
+//    length wide; its reference line runs straight across "in the middle of the lanes with
+//    @type="walking" that will be connected" - the outermost sidewalks;
+//  - mainRoad = the road for general traffic, sStart / sEnd "clearly outside of the area of crossing
+//    traffic" (kClear beyond the crossing road's footprint);
+//  - startLaneLink / endLaneLink link those sidewalk lanes, at the crosswalk's s, to the walking lane;
+//  - <priority high=road for general traffic low=crossing road>.
+// Rules held (rule ids of 1.8.0; tools/inspect/crosspath_audit.py measures them):
 //  - junctions.cross_path.lane_linkage, junctions.cross_path.start_end_contained: each end of the crossing
 //    road, over its full width, lies inside the linked sidewalk lane (kInside from its borders);
-//  - junctions.cross_path.within_junction_area, junctions.virtual.crossPath.cross_road_check_s_t: sStart
-//    .. sEnd spans the crossing road's footprint on the main road, inside the road's s range;
+//  - junctions.cross_path.within_junction_area, junctions.virtual.crossPath.cross_road_check_s_t: the
+//    footprint inside sStart .. sEnd, inside the road's s range;
 //  - junctions.cross_path.only_connect_correct_type: sidewalk lanes, written as walking (1.8);
-//  - junctions.cross_path.correct_junction_id: the crossing road's @junction is the virtual junction.
-// A crosswalk where these cannot hold (no sidewalk on a side, the sidewalk lane changing within the
-// crosswalk, a curve bending the footprint out of the sidewalk) keeps the crosswalk object only - as the
-// carla profile (1.4, no cross paths) does everywhere.
+//  - junctions.cross_path.correct_junction_id: the crossing road's @junction is the virtual junction;
+//  - §12.7 "Currently only flat virtual junctions can be modeled" (1.8.0 table 12.1: virtual "if constant
+//    elevation"): the road surface over sStart .. sEnd and across the crossing varies by at most kFlat.
+// A crosswalk where these cannot hold keeps the crosswalk object only - as the carla profile (1.4, no
+// cross paths) does everywhere. Crosswalks at junctions are not cross paths here: Junction Guideline
+// §6.3.3 / §6.4.3 puts them inside the common junction's area, the incoming roads ending before them.
 
 #include <algorithm>
 #include <cmath>
@@ -30,6 +35,8 @@ namespace detail {
 namespace {
 
 constexpr double kInside = 0.05;  // m, least distance of the crossing road's ends from the sidewalk's borders
+constexpr double kClear = 0.5;    // m, sStart / sEnd beyond the crossing road's footprint
+constexpr double kFlat = 0.02;    // m, largest surface height difference of a flat virtual junction
 
 /// the outermost lane of a side when it is a sidewalk: its id, else 0
 int sidewalkOf(const std::vector<odr::Lane> &side) {
@@ -43,6 +50,18 @@ bool insideSidewalk(const odr::Road &r, double s, double t, int walk) {
   if (sidewalkOf(walk > 0 ? sec.left : sec.right) != walk) return false;
   double a, b;
   return odr::laneBorders(r, s, walk, a, b) && t > std::min(a, b) + kInside && t < std::max(a, b) - kInside;
+}
+
+/// is the road surface flat (within kFlat) over s0 .. s1 and t0 .. t1?
+bool flat(const odr::Road &r, double s0, double s1, double t0, double t1) {
+  constexpr int n = 6;
+  double lo = 1e300, hi = -1e300;
+  for (int i = 0; i <= n; ++i)
+    for (int k = 0; k <= n; ++k) {
+      const double z = odr::surfaceZ(r, s0 + (s1 - s0) * i / n, t0 + (t1 - t0) * k / n);
+      lo = std::min(lo, z), hi = std::max(hi, z);
+    }
+  return hi - lo <= kFlat;
 }
 
 long numericId(const std::string &id) {
@@ -61,7 +80,7 @@ void Builder::crossPaths() {
   for (const odr::Road &r : od.roads) nextRoad = std::max(nextRoad, numericId(r.id));
   for (const odr::Junction &j : od.junctions) nextJunction = std::max(nextJunction, numericId(j.id));
   std::vector<odr::Road> crossing;  // appended after the loop: the roads must not move while referenced
-  for (const auto &[ri, objectId] : crosswalkRefs) {
+  for (const auto &[ri, objectId] : midBlockCrosswalks) {
     const odr::Road &r = od.roads[ri];
     const auto o = std::find_if(r.objects.begin(), r.objects.end(), [&](const odr::Object &x) { return x.id == objectId; });
     if (o == r.objects.end()) continue;
@@ -69,7 +88,7 @@ void Builder::crossPaths() {
     const odr::LaneSection &sec = odr::sectionAt(r, s);
     const int walkL = sidewalkOf(sec.left), walkR = sidewalkOf(sec.right);
     if (!walkL || !walkR) continue;  // a sidewalk on both sides to link
-    // the crossing road's ends: the centre of each sidewalk at s
+    // the crossing road's ends: the middle of each sidewalk at s
     double a0, a1, b0, b1;
     if (!odr::laneBorders(r, s, walkR, a0, a1) || !odr::laneBorders(r, s, walkL, b0, b1)) continue;
     const double tR = 0.5 * (a0 + a1), tL = 0.5 * (b0 + b1);
@@ -87,14 +106,16 @@ void Builder::crossPaths() {
         sMin = std::min(sMin, sc), sMax = std::max(sMax, sc);
       }
     if (!inside) continue;
-    // §12.7.1: the virtual junction on the uncut road, over the crossing road's footprint
+    const double sStart = std::max(0.0, sMin - kClear), sEnd = std::min(r.length(), sMax + kClear);
+    if (!flat(r, sStart, sEnd, tR, tL)) continue;
+    // §12.7.1: the virtual junction on the uncut road
     odr::Junction J;
     J.id = std::to_string(++nextJunction);
     J.name = "crossing";
     J.type = "virtual";
     J.mainRoad = r.id;
-    J.sStart = sMin;
-    J.sEnd = sMax;
+    J.sStart = sStart;
+    J.sEnd = sEnd;
     J.orientation = "none";
     // the crossing road: straight across, perpendicular to the road at s
     odr::Road x;
@@ -107,10 +128,8 @@ void Builder::crossPaths() {
     x.planView.elements = {e};
     x.planView.finalize();
     x.types = {odr::Road::Type{0.0, "pedestrian", "", std::nullopt, "km/h"}};
-    // across a banked road the surface rises with t: z(u) = z(t_right + u) (disregarded by §12.5, written
-    // for readers that place the road)
-    const double bank = std::tan(odr::superelevationAt(r, s));
-    x.elevation = {{0.0, odr::surfaceZ(r, s, tR), bank, 0.0, 0.0}};
+    // the road surface's height (disregarded by §12.5, written for readers that place the road; flat)
+    x.elevation = {{0.0, odr::surfaceZ(r, s, tR), 0.0, 0.0, 0.0}};
     // one walking lane, the crosswalk's length wide, centred on the line
     x.laneOffset = {{0.0, h, 0.0, 0.0, 0.0}};
     odr::LaneSection ls;
@@ -122,6 +141,7 @@ void Builder::crossPaths() {
     walk.roadMarks = {odr::RoadMark{}};
     ls.right = {walk};
     x.lanes = {ls};
+    J.priorities = {{r.id, x.id}};
     J.crossPaths = {odr::CrossPath{"0", x.id, r.id, r.id, {walkR, s, -1}, {walkL, s, -1}}};
     od.junctions.push_back(J);
     crossing.push_back(std::move(x));

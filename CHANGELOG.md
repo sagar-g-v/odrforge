@@ -5,6 +5,16 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Cross paths follow OpenDRIVE 1.8.0 and the Junction Guideline** (checked against 1.8.0 §12.1 / §12.5 /
+  §12.7, XSD 1.8.1, Junction Guideline 1.0.0 §6.3.3, §6.4.3, §10.3.3 and the spec atlas):
+  - crosswalks on junction approaches are no longer virtual junctions on the approach road: the guideline
+    puts crossings at a junction inside the common junction's area (`f761a2a` reverted; their crosswalk
+    objects stay; modelling them inside the junction is open);
+  - "Currently only flat virtual junctions can be modeled" (1.8.0 §12.7): a mid-block cross path only where
+    the road surface over the junction and across the crossing varies by at most 0.02 m (LA, whose roads
+    carry superelevation, keeps none; Munich 76, London 37, Frankfurt Kreuz 11, Stelvio 4, Tokyo 315);
+  - guideline §10.3.3: `<priority high=road for general traffic low=crossing road>`, sStart / sEnd 0.5 m
+    clear of the crossing. Jev 0.80 (reading "flat" along s only: 0.43); revert 0.88.
 - **Cross paths now hold the rules of OpenDRIVE 1.9 §12.5 / §12.7.1** (rule ids of 1.8.0): measured, the
   first version broke junctions.cross_path.start_end_contained (crossing road ends on the sidewalk's
   border), junctions.cross_path.lane_linkage (ends up to 0.16 m outside the sidewalk on curves) and
