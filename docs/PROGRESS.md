@@ -64,6 +64,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   13 -> 12, Munich 15 -> 13, moved curbs closer to OSM kerb lines (within 0.2 m 18.6 % -> 35.9 %),
   folds London 31 -> 29; costs London lane_count +1, Munich G2 +4. Jev 0.68 (parts: 0.50 / 0.69) -
   below 0.8, not committed. Needs your view.
+- Edge line next to a shoulder off motorways (driving lane edge and a one-way's left edge): solid per
+  MUTCD 3B.06 / StVO Z.295; changes one place in the six areas (Munich Frauenstrasse); Jev 0.74 - not
+  committed.
 - Pre-existing plain-road overlaps: Munich 2, Tokyo 3 (`quality.road_overlap`).
 - Official checker bugs: `road.geometry.contact_point` skips only junction id 1; crashes on roads
   without `<link>`.

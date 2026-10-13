@@ -167,7 +167,8 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     attrN(s, c, "max", *l.speedMax);
     attr(s, "unit", l.speedUnit);
   }
-  if (!l.accessDeny.empty()) {
+  // a bus lane denies other vehicle classes; a revision without them (1.4) writes a plain lane
+  if (!l.accessDeny.empty() && c.spec.hasVehicleAccessRestrictions()) {
     if (c.spec.hasAccessRestrictionElements()) {
       auto a = n.append_child("access");
       attrN(a, c, "sOffset", 0.0);

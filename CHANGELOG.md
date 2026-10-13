@@ -74,6 +74,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   meet); curvature continuity is not required by Annex D and is left for phase 3.
 
 ### Fixed
+- **Bus lanes in the carla (1.4) profile**: the access restrictions passengerCar / truck / motorcycle
+  are not in the 1.4 vocabulary (simulator, autonomous traffic, pedestrian, none) and were schema
+  errors; vehicle classes are written from 1.6 on with access@rule, a 1.4 bus lane is a plain driving
+  lane. Kept with Jev 0.89.
 - **Road mark laneChange** (OpenDRIVE 1.9 §11.9 Table 48 / 173, same in 1.4): derived from the final
   mark type - solid lines are not crossed, a double line only from its broken side. The center line
   next to a US two-way left-turn lane was written laneChange none (its type was overridden after the

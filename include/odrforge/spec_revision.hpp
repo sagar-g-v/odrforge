@@ -27,6 +27,11 @@ struct SpecRevision {
   // OpenDRIVE 1.9 §11.8 lane <access @rule allow|deny>; introduced 1.6 (1.4: deny implied).
   bool hasAccessRule() const { return minor >= 6; }
 
+  // OpenDRIVE 1.9 §11.8 / Annex A.3.5 e_accessRestrictionType with vehicle classes (passengerCar,
+  // truck, bus, ...): listed in 1.7 (Table 109); 1.4 knows only simulator, autonomous traffic,
+  // pedestrian and none (1.4H XSD). Written from 1.6 on, with the access@rule they come with.
+  bool hasVehicleAccessRestrictions() const { return minor >= 6; }
+
   // OpenDRIVE 1.9 §11.8 <access><restriction type/></access>; 1.8.0 Table 227 deprecates
   // access@restriction in favour of these child elements.
   bool hasAccessRestrictionElements() const { return minor >= 8; }

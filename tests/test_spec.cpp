@@ -337,6 +337,9 @@ TEST_CASE("writer 1.4 (carla profile): pre-1.8 vocabulary, bare <outline>, cente
   }
   CHECK(types.count("sidewalk") && types.count("bidirectional") && !types.count("walking"));
   CHECK(!direction && !restrictionChild && centerType);
+  // 1.4 access restrictions name no vehicle classes (simulator, autonomous traffic, pedestrian, none):
+  // the bus lane's deny list is not written
+  CHECK(d.select_nodes("//access").empty());
   const auto obj = d.select_node("//object").node();
   CHECK(obj.child("outline") && !obj.child("outlines"));
 }
