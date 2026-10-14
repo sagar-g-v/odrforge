@@ -138,6 +138,22 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Overlap resolution (2 x 5 s on LA) is an order-dependent sweep; making it parallel needs a redesign.
 - CARLA height steps on LA (LibCarla ignores superelevation) and `jumps2.py` sampling every third
   waypoint (counts shift when roads are added).
+- Gap-closing plan (user, 2026-10-14), worked one by one in this order; each with measured before / after
+  evidence on all six areas, both profiles, Jev >= 0.8:
+  1. Official ASAM checker (asam-qc-opendrive) added to the checks; its findings triaged and fixed.
+  2. Same-level road overlaps (quality.road_overlap: Munich 2, Tokyo 3) fixed.
+  3. Review flags: Munich flag 7 rework (the corner sidewalk built along the adjacent driving lane's edge,
+     no wedge; the straight-on curve rule is uncommitted); LA flags 1 - 5 (lanes added before ramp splits
+     against OSM lanes=, a ramp with 2 lanes where OSM says 1, an unmodelled restricted area, a road meeting
+     South Figueroa not connected).
+  4. Spec coverage: the 279 rule ids of 1.9 (174 listed as not mechanically checked, list partly stale)
+     reviewed one by one: not applicable / checked by an existing tool / check added.
+  5. Design choices that are not spec text, each justified with evidence or replaced by OSM / measured data:
+     the 0.25 m Douglas-Peucker thinning of OSM geometry and the corner fillets (fit to OSM nodes: p95
+     0.9 - 1.9 m, max up to 10 m); minimum road radii per class (15 m primary, 60 m motorway); curb radius 6 m;
+     the 35 degree straight-on threshold; barrier sizes.
+  6. Junction Guideline 1.0.0 completed: every section checked against the implementation, the missing
+     parts implemented.
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
   atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:

@@ -1057,6 +1057,93 @@ OsmData clipOsm(const OsmData &in, const Projection &proj, const std::array<doub
   }
   return out;
 }
+
+/// OSM wiki Key:lanes: "The actual number of lanes should always be tagged" - an untagged count is a guess. An untagged
+/// *_link piece that continues a tagged piece of the same class one to one (the node joins exactly these two highway
+/// ways, one ending and the other starting there) takes that piece's lanes. Measured in the six test areas: 166 of 199
+/// such pairs with both pieces tagged (83 %) have the same lane count, while the best single default is right for at most
+/// 44 % of tagged one-way motorway_links (117 x 1, 111 x 2, 39 x 3 of 268). Repeated along chains; a piece between two
+/// tagged pieces that disagree keeps the default. LA review flags 2 and 3: a ramp's untagged pieces got the motorway's 2
+/// lanes beside its piece tagged lanes=1.
+int inheritLinkLanes(OsmData &osm) {
+  auto isLink = [](const OsmWay &w) {
+    const auto hw = tag(w.tags, "highway");
+    return hw && hw->size() > 5 && hw->compare(hw->size() - 5, 5, "_link") == 0;
+  };
+  std::unordered_map<OsmId, std::vector<std::pair<OsmId, bool>>> at;  // node -> (way, the way starts there)
+  for (const auto &[id, w] : osm.ways)
+    if (tag(w.tags, "highway") && w.nodes.size() >= 2) {
+      at[w.nodes.front()].push_back({id, true});
+      at[w.nodes.back()].push_back({id, false});
+    }
+  std::vector<OsmId> ids;  // way id order: the same result whatever the hash order
+  for (const auto &[id, w] : osm.ways)
+    if (isLink(w)) ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  int inherited = 0;
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (OsmId id : ids) {
+      OsmWay &w = osm.ways.at(id);
+      if (tag(w.tags, "lanes")) continue;
+      std::optional<std::string> found;
+      bool conflict = false;
+      for (const bool atStart : {true, false}) {
+        const auto it = at.find(atStart ? w.nodes.front() : w.nodes.back());
+        if (it == at.end() || it->second.size() != 2) continue;  // a split or merge: no one-to-one continuation
+        for (const auto &[oid, starts] : it->second) {
+          // at w's first node the other piece must end there, at w's last node start there
+          if (oid == id || starts == atStart) continue;
+          const OsmWay &o = osm.ways.at(oid);
+          if (tag(o.tags, "highway") != tag(w.tags, "highway")) continue;
+          if (const auto lanes = tag(o.tags, "lanes")) {
+            conflict |= found && *found != *lanes;
+            found = lanes;
+          }
+        }
+      }
+      // an untagged branch of a split: the trunk's lanes whose turn:lanes bear toward the branch's side lead into it
+      // (OSM wiki Key:turn:lanes, lanes listed left to right; LA review flag 1: a ramp tagged lanes=2,
+      // turn:lanes=none|slight_right splits, the right-hand branch untagged - it takes the one right lane)
+      if (!found && !conflict)
+        if (const auto it = at.find(w.nodes.front()); it != at.end() && it->second.size() == 3) {
+          const OsmWay *trunk = nullptr, *sibling = nullptr;
+          for (const auto &[oid, starts] : it->second) {
+            const OsmWay &o = osm.ways.at(oid);
+            if (oid == id || tag(o.tags, "highway") != tag(w.tags, "highway")) continue;
+            if (!starts) trunk = &o;
+            else sibling = &o;
+          }
+          const auto turns = trunk ? tag(trunk->tags, "turn:lanes") : std::nullopt;
+          if (trunk && sibling && turns && sibling->nodes.size() >= 2 && trunk->nodes.size() >= 2) {
+            const OsmNode *n0 = osm.node(w.nodes.front()), *nw = osm.node(w.nodes[1]), *ns = osm.node(sibling->nodes[1]),
+                          *nt = osm.node(trunk->nodes[trunk->nodes.size() - 2]);
+            if (n0 && nw && ns && nt) {
+              // side of this branch relative to its sibling, seen along the trunk (local east / north degrees)
+              const double c = std::cos(n0->lat * kPi / 180.0);
+              const Vec2 d{(n0->lon - nt->lon) * c, n0->lat - nt->lat}, vw{(nw->lon - n0->lon) * c, nw->lat - n0->lat},
+                  vs{(ns->lon - n0->lon) * c, ns->lat - n0->lat};
+              const bool right = d.cross(vw) < d.cross(vs);
+              const std::vector<std::string> per = splitLanes(*turns);
+              int count = 0;
+              for (size_t k = 0; k < per.size(); ++k) {
+                const std::string &lane = per[right ? per.size() - 1 - k : k];
+                if (lane.find(right ? "right" : "left") == std::string::npos) break;
+                ++count;
+              }
+              if (count > 0) found = std::to_string(count);
+            }
+          }
+        }
+      if (found && !conflict) {
+        w.tags["lanes"] = *found;
+        ++inherited;
+        changed = true;
+      }
+    }
+  }
+  return inherited;
+}
 }  // namespace
 
 odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, const BuildOptions &opt,
@@ -1068,8 +1155,10 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   if (o.connectParkingLots)
     for (OsmId w : detail::throughParkingAisles(src, o)) o.includeWays.insert(w);
   int snapped = 0, crossings = 0;
-  const OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped, &crossings);
+  OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped, &crossings);
+  const int inheritedLanes = inheritLinkLanes(osm);
   detail::Builder b(osm, proj, o);
+  b.rep.inheritedLinkLanes = inheritedLanes;
   b.rep.snappedEnds = snapped;
   b.rep.joinedCrossings = crossings;
   b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());

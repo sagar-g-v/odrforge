@@ -4,6 +4,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Fixed
+- **Lane counts of untagged ramp pieces** (LA review flags 1 - 3): an untagged `*_link` piece takes the lanes of the
+  tagged piece of the same class it continues one to one (83 % of tagged continuations in the test areas agree), and an
+  untagged branch of a split the trunk lanes whose `turn:lanes` bear toward it (95 % of tagged branches agree), instead of
+  the motorway class default of 2. LA: a ramp tagged `lanes=1` no longer has 2 lanes on its untagged pieces; a `lanes=3`
+  ramp no longer 4; a split ramp 2 -> 3 lanes instead of 2 -> 4. 17 pieces in the six areas; Tokyo overlaps 3 -> 2.
+
 ### Added
 - **Road barriers** (standard, OpenDRIVE 1.8.0 §13.14.1 Table 108): OSM guard rails, jersey barriers and cable
   barriers become `<object type="barrier">` (guardRail / jerseyBarrier / other) on the plain road they line, sized

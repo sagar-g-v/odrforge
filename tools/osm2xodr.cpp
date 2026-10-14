@@ -134,6 +134,8 @@ int main(int argc, char **argv) {
       std::printf("  topology: %d OSM way ends joined to the road they stop short of, %d missing crossing nodes added, "
                   "%d parking-lot aisles connect streets\n",
                   rep.snappedEnds, rep.joinedCrossings, rep.parkingAisles);
+    if (rep.inheritedLinkLanes)
+      std::printf("  lanes: %d untagged link pieces take the lanes of the tagged piece they continue\n", rep.inheritedLinkLanes);
     if (rep.gores)
       std::printf("  gores: %d freeway splits / merges modelled at lane level, %d as direct junctions\n", rep.gores,
                   rep.directJunctions);

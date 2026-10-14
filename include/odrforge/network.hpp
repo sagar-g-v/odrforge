@@ -88,6 +88,7 @@ struct BuildReport {
   double elevMeanDev = 0.0, elevP95Dev = 0.0, elevMaxDev = 0.0;
   int elevSamples = 0;
   int snappedEnds = 0;
+  int inheritedLinkLanes = 0;  ///< untagged *_link pieces given the lanes of the tagged piece they continue one to one
   int parkingAisles = 0;
   int separateSidewalks = 0;  ///< road sides extended to a separately mapped sidewalk
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added

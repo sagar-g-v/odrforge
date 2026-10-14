@@ -1288,3 +1288,56 @@ TEST_CASE("cross-section: a road reaches out to its separately mapped sidewalks 
     }
   }
 }
+
+namespace {
+/// driving lanes (any vehicle ramp type) of every section of the plain roads built from OSM way `way`
+std::vector<int> drivingLanesOfWay(const odr::OpenDrive &od, OsmId way) {
+  std::vector<int> out;
+  const std::string id = std::to_string(way);
+  for (const auto &r : od.roads) {
+    if (r.junction != "-1") continue;
+    const auto ud = r.userData.find("osmWays");
+    if (ud == r.userData.end() || ("," + ud->second + ",").find("," + id + ",") == std::string::npos) continue;
+    for (const auto &sec : r.lanes) {
+      int n = 0;
+      for (const auto *side : {&sec.left, &sec.right})
+        for (const auto &l : *side) n += l.type == "driving" || l.type == "onRamp" || l.type == "offRamp" || l.type == "connectingRamp";
+      out.push_back(n);
+    }
+  }
+  return out;
+}
+}  // namespace
+
+TEST_CASE("lanes: an untagged link piece takes the lanes of the tagged link piece it continues") {
+  // OSM wiki Key:lanes: an untagged count is a guess; a ramp piece continuing a tagged piece one to one keeps its lanes
+  // (83 % of tagged continuations in the test areas) instead of the motorway class default of 2 (LA review flag 2)
+  OsmBuilder b;
+  const OsmId n0 = b.node(0, 0), n1 = b.node(150, 0), n2 = b.node(300, 0);
+  b.way({n0, n1}, {{"highway", "motorway_link"}, {"oneway", "yes"}, {"lanes", "1"}});
+  const OsmId untagged = b.way({n1, n2}, {{"highway", "motorway_link"}, {"oneway", "yes"}});
+  const Result r = build(b);
+  CHECK(r.val.errors == 0);
+  CHECK(r.rep.inheritedLinkLanes == 1);
+  const std::vector<int> lanes = drivingLanesOfWay(r.od, untagged);
+  CHECK(!lanes.empty());
+  for (int n : lanes) CHECK(n == 1);
+}
+
+TEST_CASE("lanes: an untagged branch of a link split takes the trunk lanes whose turn:lanes bear toward it") {
+  // trunk lanes=2 turn:lanes=none|slight_right splits into a left branch lanes=2 and an untagged right branch: the right
+  // lane bears right, so the right branch is one lane (OSM wiki Key:turn:lanes; LA review flag 1)
+  OsmBuilder b;
+  const OsmId n0 = b.node(0, 0), split = b.node(200, 0);
+  b.way({n0, split}, {{"highway", "motorway_link"}, {"oneway", "yes"}, {"lanes", "2"}, {"turn:lanes", "none|slight_right"}});
+  b.way({split, b.node(300, 25), b.node(400, 60)}, {{"highway", "motorway_link"}, {"oneway", "yes"}, {"lanes", "2"}});
+  const OsmId right = b.way({split, b.node(300, -25), b.node(400, -60)}, {{"highway", "motorway_link"}, {"oneway", "yes"}});
+  // carla profile: the lane rule does not depend on the profile, and the standard profile would model this split as a
+  // direct junction (1.7+), which the harness's 1.4 copy of every scenario cannot carry
+  const Result r = build(b, "US", "carla");
+  CHECK(r.val.errors == 0);
+  CHECK(r.rep.inheritedLinkLanes == 1);
+  const std::vector<int> lanes = drivingLanesOfWay(r.od, right);
+  CHECK(!lanes.empty());
+  if (!lanes.empty()) CHECK(lanes.back() == 1);
+}
