@@ -80,9 +80,13 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
   std::map<std::string, const odr::Road *> roads;
   std::map<std::string, const odr::Junction *> junctions;
   std::set<std::string> crossingRoads;  // OpenDRIVE 1.9 §12.5: a cross path's road, linked by its lane links
+  std::set<std::string> boundaryRoads;  // roads a junction boundary runs along by their reference line
   for (const auto &j : od.junctions) {
     if (!junctions.emplace(j.id, &j).second) err("ids.id_unique_in_class", "duplicate junction id " + j.id);
     for (const auto &cp : j.crossPaths) crossingRoads.insert(cp.crossingRoad);
+    // OpenDRIVE 1.8.0 §12.10: roads added to close a junction boundary "are not required to have any lanes"
+    for (const auto &sg : j.boundary)
+      if (sg.type == "lane" && sg.boundaryLane == 0) boundaryRoads.insert(sg.roadId);
   }
   for (const auto &r : od.roads) {
     if (!roads.emplace(r.id, &r).second) err("ids.id_unique_in_class", "duplicate road id " + r.id);
@@ -149,7 +153,8 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       if (sec.center.id != 0) err("road.lane.center_lane_singular", S_ + "center lane id is not 0");
       if (!sec.center.widths.empty() || sec.center.speedMax || !sec.center.accessDeny.empty())
         err("spec4.1.center_lane_properties", S_ + "center lane carries width / speed / access");
-      if (sec.left.empty() && sec.right.empty()) err("road.lane.lane_section_drivable", S_ + "no lanes besides the center lane");
+      if (sec.left.empty() && sec.right.empty() && !(boundaryRoads.count(r.id) && r.junction != "-1"))
+        err("road.lane.lane_section_drivable", S_ + "no lanes besides the center lane");
       for (int sign : {1, -1}) {
         const auto &side = sign > 0 ? sec.left : sec.right;
         for (size_t k = 0; k < side.size(); ++k) {

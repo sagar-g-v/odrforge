@@ -1114,6 +1114,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("curb lanes", &detail::Builder::curbLanes);
   stage("cross paths", &detail::Builder::crossPaths);  // before the lowered curbs: it adds lowered spans
   stage("lowered curbs", &detail::Builder::lowerCurbsAtCrosswalks);
+  stage("junction boundaries", &detail::Builder::junctionBoundaries);  // helper roads first: the grid covers them
   stage("junction grids", &detail::Builder::junctionGrids);
   stage("finish", &detail::Builder::finish);
   if (verbose)

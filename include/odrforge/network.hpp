@@ -93,7 +93,10 @@ struct BuildReport {
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added
   int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int directJunctions = 0;  ///< gores written as direct junctions (OpenDRIVE 1.7+)
-  int junctionGrids = 0;     ///< junctions with a reference line and elevation grid (OpenDRIVE 1.8+)
+  int junctionGrids = 0;        ///< junctions with a reference line and elevation grid (OpenDRIVE 1.8+)
+  int junctionBoundaries = 0;   ///< junctions with a boundary (OpenDRIVE 1.8+)
+  int boundaryHelperRoads = 0;  ///< roads added only to close a junction boundary (1.8.0 §12.10)
+  int boundariesLeftOut = 0;    ///< junctions whose outline would not enclose all their lanes: no boundary written
   int crossPaths = 0;
   int junctionCrossPaths = 0;  ///< of those, crossings inside common junctions (Junction Guideline §6.3.3)       ///< mid-block crossings written as cross paths (OpenDRIVE 1.8+)
   int curbLanes = 0;        ///< sidewalk lane sections given a curb lane (OpenDRIVE 1.6+)

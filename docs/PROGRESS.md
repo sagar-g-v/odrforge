@@ -26,7 +26,8 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.3f | Cross paths fixed to the §12.5 / §12.7.1 rules, `crosspath_audit.py` (Jev 0.88) | 0 rule failures, 6 areas |
 | 1.3g | Cross paths to 1.8.0 + Junction Guideline: flat only, priority, approach ones reverted (Jev 0.80 / 0.88) | Tokyo 315, LA 0 (banked) |
 | 1.3h | Crosswalks at junctions as cross paths inside the junction (standard; Jev 0.82) | LA 28 / Tokyo 164 junction cross paths |
-| 1.7 | Junction reference line + elevation grid from the junction plane (standard; Jev 0.76, user decision); boundary open | 2463 junctions, 0 audit failures |
+| 1.7 | Junction reference line + elevation grid from the junction plane (standard; Jev 0.76, user decision) | 2463 junctions, 0 audit failures |
+| 1.7b | Junction boundary (standard, 1.8.0 §12.10; Jev 0.85): joints, lane edges, helper roads, self-checked | 2087 of 2463 junctions, 0 failures in two independent audits |
 | 4.4 | Signal control fixes from the spec review: no lights in direct junctions, ramp approaches lit, stop lines clear of crosswalks (Jev 0.82) | 0 audit failures |
 | 1.5b | Motorway lane types re-derived per 1.8.0 §11.7.1 / Guideline §7; validator overlap over all vehicle lanes (Jev 0.85) | ramp types only on motorway_link |
 | 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
@@ -66,16 +67,14 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 
 ## Known open items
 
-- Junction boundary (1.8.0 §12.10, standard), parked for your decision (Jev 0.70 to keep; rules 0.88):
-  build/tmp/junction_boundary_parked.diff. Joints at every arm; corners along an existing lane edge, else a
-  helper road ("JunctionBoundary", centre lane only) copying the connecting road between the two arms and
-  following its outer edge, else a corner curve; helpers pushed out past lanes beyond them; the outline is
-  written only when it is closed, counter-clockwise, simple, fold-free and holds every lane border. Written:
-  LA 822 / 921, Munich 324 / 389, London 268 / 325, Frankfurt 153 / 211, Stelvio 21 / 26, Tokyo 499 / 591;
-  `boundary_audit.py` 0 failures (incl. helper linkage and direction), XSD 1.8.1 valid, carla identical;
-  G2_ref_junction +45 - +1078 per area, all on helper roads (76 - 92 % duplicates of the connecting roads'
-  own). Left out (376): helper crosses a joint 133, no corner curve 87, lanes beyond a joint 81 (partial
-  joints would fix these), other 75. The standard viewer pages show the boundaries for review.
+- Junction boundary (committed, Jev 0.85): left out where the outline fails its checks - 376 of 2463 grid
+  junctions in the six areas (helper crosses a joint 133, no corner curve or radius < 0.25 m 87, lanes beyond
+  an arm's joint 81, other 75), 31 of 216 in 300 fuzz networks (all 15 motorway gores). Acute arms (30 deg)
+  whose ends overlap come from the arm trimming, not the boundary. G2_ref_junction +45 - +1078 per area,
+  all on helper roads (76 - 92 % repeat the connecting road's own step). Parked for separate review
+  (build/tmp/junction_boundary_tools_parked.diff): `boundary_audit.py` (Jev 0.59), the laneflow change that
+  stops counting lane-less roads as road surface (0.69; without it LA osm.way_dropped reads 2 instead of 3,
+  a checker artefact) and the viewer's boundary layer (0.69).
 
 - Folds on loop streets kept as roads (Munich 6), lane-edge breaks LA +6 since phase 1.1.
 - Munich `pairs.missing` 118 is two boundary artefacts counted per pair: the entry on road 743 (a 2 m

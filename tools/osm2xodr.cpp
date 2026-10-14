@@ -142,6 +142,9 @@ int main(int argc, char **argv) {
     if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
       std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk, %d acute (nose)\n",
                   rep.cornerSidewalks, rep.cornerSidewalksTooTight, rep.cornerNoses);
+    if (rep.junctionGrids || rep.junctionBoundaries || rep.boundariesLeftOut)
+      std::printf("  junction surfaces: %d elevation grids, %d boundaries (%d helper roads), %d left without a boundary\n",
+                  rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesLeftOut);
     std::printf("  validation: %d errors, %d warnings\n", vr.errors, vr.warnings);
     for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
     if (std::getenv("ODRFORGE_VERBOSE"))

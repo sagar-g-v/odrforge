@@ -507,6 +507,8 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
   }
 }
 
+ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted) { return curbReturn(a, b, wanted); }
+
 // OSM turn restriction (from, via node, to) inside a junction: does it name the movement into
 // `exit`? Its "to" way is either an arm of the junction, or - where nearby intersections were built
 // as one junction - a way absorbed into it. Entering an absorbed way leads to the arms at its far

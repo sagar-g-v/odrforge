@@ -53,6 +53,9 @@ constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
 /// how much further an approach ends when its crosswalk lies inside the junction (the crosswalk's far edge)
 constexpr double kCrosswalkJunctionDepth = kCrosswalkCentreBack + 0.5 * kCrosswalkLength;
 
+/// a corner curve from pose a to pose b: arc tangent to both, radius up to `wanted` (network_junctions.cpp)
+ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted);
+
 struct RoadMeta {
   int chain = -1;
   ReferenceLine full;  ///< untrimmed reference line
@@ -203,6 +206,7 @@ struct Builder {
   /// the corner sidewalks (connecting roads of curb / walking lanes) leaving road end e of a junction:
   /// indices into od.roads, with whether each leaves from it (else arrives at it) (cross_paths.cpp)
   std::vector<std::pair<size_t, bool>> cornerSidewalksAt(const odr::Junction &J, const RoadEnd &e) const;
+  void junctionBoundaries(); // junction_surface.cpp
   void junctionGrids();      // junction_surface.cpp
   /// crosswalks at OSM crossing nodes on a road (not in a junction): (road index, object id)
   std::vector<std::pair<size_t, std::string>> midBlockCrosswalks;

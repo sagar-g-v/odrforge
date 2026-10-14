@@ -5,6 +5,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Junction boundary** (standard, OpenDRIVE 1.8.0 §12.10): a counter-clockwise `<boundary>` for common junctions
+  with an elevation grid - a joint across every arm end, corners along an existing lane edge, else a helper road
+  (`JunctionBoundary`, centre lane only, the junction's id) copying the connecting road between the two arms along
+  its outer edge, else a corner curve. Written only when closed, simple, fold-free and around every lane border
+  of the junction's roads (helpers pushed out past lanes beyond them); otherwise none (optional element). Six
+  areas: 2087 of 2463 grid junctions; 0 audit failures, XSD 1.8.1 valid, carla identical; 300 fuzz networks: 185
+  of 216, 0 failures. The validator exempts lane-less boundary roads from `lane_section_drivable` (1.9.0
+  `lane_sect_first`). Jev 0.85.
 - **Review flags in the viewer**: press M (or ⚑) and click the map to flag something wrong, with a category
   and a note; the flag records the OpenDRIVE x / y and the road, lane, junction and s under it.
   `tools/inspect/viz_server.py` serves the pages and keeps each page's flags in `<page>.flags.json`;

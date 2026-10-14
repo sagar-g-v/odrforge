@@ -193,6 +193,13 @@ struct JunctionGrid {
   std::vector<Row> rows;  ///< at s = sStart + k gridSpacing
 };
 
+/// OpenDRIVE 1.8.0 §12.10 junction boundary segment: type "lane" (roadId, boundaryLane, sStart, sEnd as a number or
+/// "start" / "end") or "joint" (roadId, contactPoint; all lanes)
+struct BoundarySegment {
+  std::string type, roadId, sStart, sEnd, contactPoint;
+  int boundaryLane = 0;
+};
+
 struct Junction {
   std::string id, name;
   std::string type = "default";  ///< default, direct (1.7+), virtual, crossing (1.8)
@@ -207,6 +214,7 @@ struct Junction {
   };
   std::vector<Priority> priorities;
   std::optional<JunctionGrid> grid;  ///< common junctions, 1.8+
+  std::vector<BoundarySegment> boundary;  ///< counter-clockwise, common junctions, 1.8+
 };
 
 struct Controller {

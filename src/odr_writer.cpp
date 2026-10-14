@@ -550,6 +550,22 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
       attrN(g, c, "hdg", j.grid->hdg);
       attrN(g, c, "length", j.grid->length);
       g.append_child("line");
+      // §12.10 boundary (XSD 1.8.1: after planView / objects, before elevationGrid)
+      if (!j.boundary.empty()) {
+        auto bd = e.append_child("boundary");
+        for (const auto &sg : j.boundary) {
+          auto x = bd.append_child("segment");
+          attr(x, "type", sg.type);
+          attr(x, "roadId", sg.roadId);
+          if (sg.type == "lane") {
+            attr(x, "boundaryLane", std::to_string(sg.boundaryLane));
+            attr(x, "sStart", sg.sStart);
+            attr(x, "sEnd", sg.sEnd);
+          } else {
+            attr(x, "contactPoint", sg.contactPoint);
+          }
+        }
+      }
       auto eg = e.append_child("elevationGrid");
       attrN(eg, c, "gridSpacing", j.grid->gridSpacing);
       attrN(eg, c, "sStart", j.grid->sStart);

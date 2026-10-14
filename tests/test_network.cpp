@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 
@@ -321,6 +323,403 @@ TEST_CASE("junction grid (standard): reference line and elevation grid reproduce
   // carla (1.4): no junction grid
   o.target = TargetProfile::byName("carla");
   CHECK(buildOpenDrive(b.d, b.proj, o, &rep).junctions[0].grid.has_value() == false);
+}
+
+// OpenDRIVE 1.8.0 §12.10 on every written junction boundary; returns how many were checked. Rules: segments reach the
+// start or end of all roads connected to the junction (a joint per plain road end), close the boundary (each segment
+// starts within 0.10 m of where the last ends), counter clockwise; the boundary encloses the area intended for traffic
+// (both borders and the centre of every lane of the junction's roads inside or within 0.10 m), as a simple polygon;
+// additional roads carry the junction's id, have no lanes besides the centre lane, are linked to roads and start and
+// end pointing from those roads into the junction.
+int checkBoundaries(const odr::OpenDrive &od) {
+  constexpr double kTol = 0.10;
+  std::map<std::string, const odr::Road *> byId;
+  for (const auto &r : od.roads) byId[r.id] = &r;
+  int n = 0;
+  for (const auto &J : od.junctions) {
+    if (J.boundary.empty()) continue;
+    ++n;
+    std::set<std::pair<std::string, std::string>> joints;
+    for (const auto &sg : J.boundary)
+      if (sg.type == "joint") joints.insert({sg.roadId, sg.contactPoint});
+    for (const auto &r : od.roads) {
+      if (r.junction != "-1") continue;
+      if (r.predecessor && r.predecessor->elementType == "junction" && r.predecessor->elementId == J.id) CHECK(joints.count({r.id, "start"}) == 1);
+      if (r.successor && r.successor->elementType == "junction" && r.successor->elementId == J.id) CHECK(joints.count({r.id, "end"}) == 1);
+    }
+    // the outline from the first lane segment on; a joint runs from the end nearer the outline so far
+    std::vector<odr::BoundarySegment> segs = J.boundary;
+    std::rotate(segs.begin(), std::find_if(segs.begin(), segs.end(), [](const auto &sg) { return sg.type == "lane"; }), segs.end());
+    std::vector<Vec2> P;
+    for (const auto &sg : segs) {
+      CHECK(byId.count(sg.roadId) == 1);
+      if (!byId.count(sg.roadId)) return n;
+      const odr::Road &r = *byId[sg.roadId];
+      std::vector<Vec2> pts;
+      if (sg.type == "joint") {
+        const double s = sg.contactPoint == "start" ? 0.0 : r.length();
+        double lo = 1e9, hi = -1e9;
+        for (const auto *side : {&odr::sectionAt(r, s).left, &odr::sectionAt(r, s).right})
+          for (const odr::Lane &l : *side) {
+            double x, y;
+            if (odr::laneBorders(r, s, l.id, x, y)) lo = std::min({lo, x, y}), hi = std::max({hi, x, y});
+          }
+        pts = {r.planView.eval(s).offset(lo), r.planView.eval(s).offset(hi)};
+        if (!P.empty() && (pts[1] - P.back()).norm() < (pts[0] - P.back()).norm()) std::swap(pts[0], pts[1]);
+      } else {
+        const double s0 = sg.sStart == "start" ? 0.0 : r.length(), s1 = sg.sEnd == "start" ? 0.0 : r.length();
+        const int m = std::max(2, static_cast<int>(std::ceil(std::abs(s1 - s0) / 0.25)) + 1);
+        for (int i = 0; i < m; ++i) {
+          const double s = s0 + (s1 - s0) * i / (m - 1);
+          double in = 0.0, t = odr::laneOffsetAt(r, s);
+          if (sg.boundaryLane != 0) odr::laneBorders(r, s, sg.boundaryLane, in, t);
+          pts.push_back(r.planView.eval(s).offset(t));
+        }
+      }
+      if (!P.empty()) {
+        CHECK((pts.front() - P.back()).norm() < kTol);
+        P.pop_back();  // the join is one corner
+      }
+      P.insert(P.end(), pts.begin(), pts.end());
+    }
+    CHECK((P.front() - P.back()).norm() < kTol);
+    P.pop_back();
+    double area = 0.0;
+    for (size_t i = 0, j = P.size() - 1; i < P.size(); j = i++) area += P[j].x * P[i].y - P[i].x * P[j].y;
+    CHECK(area > 0.0);
+    const auto cr = [](const Vec2 &o, const Vec2 &u, const Vec2 &v) { return (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x); };
+    int crossings = 0;
+    for (size_t i = 0; i < P.size(); ++i)
+      for (size_t k = i + 2; k < P.size(); ++k) {
+        if (i == 0 && k == P.size() - 1) continue;
+        const Vec2 &a1 = P[i], &a2 = P[i + 1], &b1 = P[k], &b2 = P[(k + 1) % P.size()];
+        crossings += cr(a1, a2, b1) * cr(a1, a2, b2) < 0.0 && cr(b1, b2, a1) * cr(b1, b2, a2) < 0.0;
+      }
+    CHECK(crossings == 0);
+    const auto encloses = [&](const Vec2 &q) {
+      bool in = false;
+      double d = 1e300;
+      for (size_t i = 0, j = P.size() - 1; i < P.size(); j = i++) {
+        if ((P[i].y > q.y) != (P[j].y > q.y) && q.x < P[i].x + (q.y - P[i].y) * (P[j].x - P[i].x) / (P[j].y - P[i].y)) in = !in;
+        const Vec2 e = P[i] - P[j];
+        const double u = std::clamp((q - P[j]).dot(e) / std::max(e.dot(e), 1e-12), 0.0, 1.0);
+        d = std::min(d, (P[j] + e * u - q).norm());
+      }
+      return in || d <= kTol;
+    };
+    int outside = 0, points = 0;
+    for (const auto &r : od.roads) {
+      if (r.junction != J.id || r.name == "JunctionBoundary") continue;
+      for (double s = 0.0; s <= r.length(); s += 0.5)
+        for (const auto *side : {&odr::sectionAt(r, s).left, &odr::sectionAt(r, s).right})
+          for (const odr::Lane &l : *side) {
+            double x, y;
+            if (!odr::laneBorders(r, s, l.id, x, y)) continue;
+            for (const double t : {x, 0.5 * (x + y), y}) outside += !encloses(r.planView.eval(s).offset(t)), ++points;
+          }
+    }
+    CHECK(outside == 0);
+    CHECK(points > 0);
+    for (const auto &sg : J.boundary) {
+      if (sg.type != "lane" || sg.boundaryLane != 0 || !byId.count(sg.roadId)) continue;
+      const odr::Road &h = *byId[sg.roadId];
+      CHECK(h.name == "JunctionBoundary" && h.junction == J.id);
+      CHECK(h.lanes.size() == 1 && h.lanes[0].left.empty() && h.lanes[0].right.empty());
+      for (const bool atEnd : {false, true}) {
+        const auto &lk = atEnd ? h.successor : h.predecessor;
+        CHECK(lk && lk->elementType == "road" && byId.count(lk->elementId) == 1);
+        if (!lk || !byId.count(lk->elementId)) continue;
+        const odr::Road &o = *byId[lk->elementId];
+        const Vec2 into = o.planView.eval(lk->contactPoint == "start" ? 0.0 : o.length()).dir() * (lk->contactPoint == "end" ? 1.0 : -1.0);
+        const Vec2 dir = h.planView.eval(atEnd ? h.length() : 0.0).dir() * (atEnd ? -1.0 : 1.0);
+        CHECK(dir.dot(into) > 0.0);  // from the linked road into the junction
+      }
+    }
+  }
+  return n;
+}
+
+BuildOptions boundaryOptions(const char *country) {
+  BuildOptions o;
+  o.country = CountryProfile::load(country);
+  o.target = TargetProfile::byName("standard");
+  o.streetFurniture = false;
+  return o;
+}
+
+/// a junction of `angles` (degrees) arms of two-lane residential streets meeting at the origin
+OsmBuilder star(const std::vector<double> &angles, Tags centre = {}) {
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0, centre);
+  for (const double a : angles) {
+    const double r = a * kPi / 180.0;
+    b.way({c, b.node(60 * std::cos(r), 60 * std::sin(r)), b.node(120 * std::cos(r), 120 * std::sin(r))},
+          {{"highway", "residential"}, {"lanes", "2"}});
+  }
+  return b;
+}
+
+/// a T junction whose stem has no sidewalks: no corner sidewalk joins the stem's edges to the street's, so two corners
+/// are closed by helper roads
+OsmBuilder teeMixedSidewalks() {
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0);
+  b.way({c, b.node(60, 0), b.node(120, 0)}, {{"highway", "residential"}, {"lanes", "2"}, {"sidewalk", "both"}});
+  b.way({c, b.node(-60, 0), b.node(-120, 0)}, {{"highway", "residential"}, {"lanes", "2"}, {"sidewalk", "both"}});
+  b.way({c, b.node(0, 60), b.node(0, 120)}, {{"highway", "residential"}, {"lanes", "2"}, {"sidewalk", "no"}});
+  return b;
+}
+
+TEST_CASE("junction boundary (standard): crossroads closed, counter-clockwise, a joint at every arm, around every lane") {
+  BuildOptions o = boundaryOptions("US");
+  const OsmBuilder b = crossroads(false);
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.junctionBoundaries == 1 && rep.boundariesLeftOut == 0);
+  CHECK(checkBoundaries(od) == 1);
+  // carla (1.4): no boundary
+  o.target = TargetProfile::byName("carla");
+  CHECK(buildOpenDrive(b.d, b.proj, o, &rep).junctions[0].boundary.empty());
+}
+
+TEST_CASE("junction boundary (standard): T, skewed Y and 5-way junctions, right- and left-hand traffic") {
+  const std::vector<std::vector<double>> shapes = {{0, 90, 180}, {0, 150, 235}, {0, 72, 144, 216, 288}, {10, 95, 200, 290}};
+  for (const char *country : {"US", "GB"})
+    for (const auto &angles : shapes) {
+      const BuildOptions o = boundaryOptions(country);
+      const OsmBuilder b = star(angles);
+      BuildReport rep;
+      const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+      CHECK(validate(od, o.target).errors == 0);
+      CHECK(rep.junctionBoundaries + rep.boundariesLeftOut == rep.junctionGrids);
+      CHECK(rep.junctionBoundaries == 1);
+      CHECK(checkBoundaries(od) == rep.junctionBoundaries);
+    }
+}
+
+TEST_CASE("junction boundary (standard): a signalised junction's crossings lie inside its boundary") {
+  // Junction Guideline 1.0.0 section 6.3.3: crossings at a junction are roads inside the junction area
+  const BuildOptions o = boundaryOptions("US");
+  const OsmBuilder b = crossroads(true);
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.junctionCrossPaths == 4);
+  CHECK(rep.junctionBoundaries == 1);
+  CHECK(checkBoundaries(od) == 1);  // the crossing roads are junction roads: their lanes are checked too
+}
+
+TEST_CASE("junction boundary (standard): helper roads close the corners no junction road runs along") {
+  // 1.8.0 §12.10 "If the existing roads are not sufficient to define a closed junction boundary, additional roads shall
+  // be defined for the missing segments"
+  for (const char *country : {"US", "GB"}) {
+    const BuildOptions o = boundaryOptions(country);
+    BuildReport rep;
+    const odr::OpenDrive od = buildOpenDrive(teeMixedSidewalks().d, teeMixedSidewalks().proj, o, &rep);
+    CHECK(validate(od, o.target).errors == 0);
+    CHECK(rep.junctionBoundaries == 1 && rep.boundaryHelperRoads == 2);
+    CHECK(checkBoundaries(od) == 1);
+  }
+}
+
+TEST_CASE("junction boundary (standard): helper roads lie on the junction surface of a sloped junction") {
+  // 1.8.0 §12.11: the elevation grid holds inside the boundary; the helpers copy the planar connecting roads' heights
+  BuildOptions o = boundaryOptions("US");
+  o.elevation = [](double x, double y) { return 0.04 * x + 0.02 * y; };
+  const OsmBuilder b = teeMixedSidewalks();
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(checkBoundaries(od) == 1);
+  int helpers = 0;
+  for (const auto &r : od.roads) {
+    if (r.name != "JunctionBoundary") continue;
+    ++helpers;
+    for (double s = 0.0; s <= r.length(); s += 0.5) {
+      const double t = odr::laneOffsetAt(r, s);
+      const Vec2 q = r.planView.eval(s).offset(t);
+      CHECK_NEAR(odr::surfaceZ(r, s, t), 0.04 * q.x + 0.02 * q.y, 0.02);
+    }
+  }
+  CHECK(helpers > 0);
+}
+
+TEST_CASE("junction boundary (standard): no boundary where the arm ends overlap; the output stays valid") {
+  // arms 30 degrees apart: the second arm's outer corner lies beyond the first arm's end line, no corner joins them inside
+  // the junction, so no closed counter-clockwise outline exists; <boundary> is optional (XSD 1.8.1 minOccurs 0)
+  const BuildOptions o = boundaryOptions("US");
+  const OsmBuilder b = star({0, 30, 180});
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.junctionGrids == 1 && rep.junctionBoundaries == 0 && rep.boundariesLeftOut == 1);
+  CHECK(checkBoundaries(od) == 0);
+  CHECK(std::none_of(od.roads.begin(), od.roads.end(), [](const odr::Road &r) { return r.name == "JunctionBoundary"; }));
+}
+
+/// a skewed junction from the synthetic fuzzer (tools/inspect/fuzz.py seed 7, case 0277)
+OsmBuilder skewFuzz0277() {
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0);
+  b.way({b.node(-103.76, -60.17), b.node(-69.18, -40.11), b.node(-34.59, -20.06), c, b.node(28.31, 16.42), b.node(56.63, 32.84),
+         b.node(84.94, 49.25)},
+        {{"highway", "secondary"}, {"lanes", "2"}, {"lanes:backward", "1"}, {"lanes:forward", "1"}});
+  b.way({c, b.node(34.45, -13.07), b.node(68.9, -26.15), b.node(103.36, -39.22), b.node(137.81, -52.3)},
+        {{"highway", "primary"}, {"lanes", "2"}, {"oneway", "yes"}});
+  b.way({c, b.node(-35.23, 13.37), b.node(-70.45, 26.74), b.node(-105.68, 40.1)}, {{"highway", "residential"}, {"lanes", "5"}});
+  return b;
+}
+
+TEST_CASE("junction boundary (standard): a helper road is pushed out past lanes that swing beyond it") {
+  // a connecting road between two arms that are not neighbours runs outside the corner's helper road, which is pushed out
+  // past it (laneOffset records on a 1 m grid); the boundary then encloses every lane
+  const OsmBuilder b = skewFuzz0277();
+  const BuildOptions o = boundaryOptions("US");
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.junctionBoundaries == 1);
+  CHECK(checkBoundaries(od) == 1);
+  size_t records = 0;
+  for (const auto &r : od.roads)
+    if (r.name == "JunctionBoundary") records = std::max(records, r.laneOffset.size());
+  CHECK(records > 4);  // the pushed stretch: one record per metre
+}
+
+TEST_CASE("junction boundary (standard): a helper copying a connecting road follows its side edge exactly") {
+  // the helper's laneOffset is the connecting road's outer side edge plus one level cubic shift to the arm edges, so
+  // laneOffset - edge is a single cubic over the whole helper (records are exact, not sampled); helpers traversed from
+  // end to start (sStart="end") occur and pass the boundary checker
+  int copies = 0, reversed = 0;
+  for (const OsmBuilder &b : {teeMixedSidewalks(), skewFuzz0277(), star({0, 72, 144, 216, 288}), star({10, 95, 200, 290})}) {
+    BuildReport rep;
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, boundaryOptions("US"), &rep);
+    CHECK(checkBoundaries(od) == rep.junctionBoundaries);
+    for (const auto &J : od.junctions)
+      for (const auto &sg : J.boundary) reversed += sg.type == "lane" && sg.sStart == "end";
+    for (const auto &h : od.roads) {
+      if (h.name != "JunctionBoundary" || h.laneOffset.size() > 4) continue;  // pushed helpers: their records follow the push
+      for (const auto &r : od.roads) {
+        if (&r == &h || r.junction != h.junction || r.lanes.empty() || r.planView.elements.size() != h.planView.elements.size()) continue;
+        const auto &g = r.planView.elements.front(), &k = h.planView.elements.front();
+        if (std::abs(g.x - k.x) > 1e-9 || std::abs(g.y - k.y) > 1e-9 || std::abs(g.length - k.length) > 1e-9) continue;
+        // the copied road: laneOffset - its outer side edge must be one cubic on [0, L] (least squares, 41 samples)
+        double best = 1e9;
+        for (const int side : {1, -1}) {
+          std::vector<double> ss, dv;
+          for (int i = 0; i <= 40; ++i) {
+            const double sv = r.length() * i / 40.0;
+            const auto &sec = odr::sectionAt(r, sv);
+            double edge = odr::laneOffsetAt(r, sv);
+            for (const odr::Lane &l : side > 0 ? sec.left : sec.right) {
+              double in, out;
+              if (odr::laneBorders(r, sv, l.id, in, out)) edge = side > 0 ? std::max(edge, out) : std::min(edge, out);
+            }
+            ss.push_back(sv / r.length()), dv.push_back(odr::laneOffsetAt(h, sv) - edge);
+          }
+          // cubic fit by normal equations (4 x 4, Gaussian elimination)
+          double A[4][5] = {};
+          for (size_t i = 0; i < ss.size(); ++i) {
+            const double pw[4] = {1, ss[i], ss[i] * ss[i], ss[i] * ss[i] * ss[i]};
+            for (int a = 0; a < 4; ++a) {
+              for (int c = 0; c < 4; ++c) A[a][c] += pw[a] * pw[c];
+              A[a][4] += pw[a] * dv[i];
+            }
+          }
+          for (int a = 0; a < 4; ++a)
+            for (int c = a + 1; c < 4; ++c) {
+              const double f = A[c][a] / A[a][a];
+              for (int e = a; e < 5; ++e) A[c][e] -= f * A[a][e];
+            }
+          double co[4];
+          for (int a = 3; a >= 0; --a) {
+            co[a] = A[a][4];
+            for (int c = a + 1; c < 4; ++c) co[a] -= A[a][c] * co[c];
+            co[a] /= A[a][a];
+          }
+          double worst = 0.0;
+          for (size_t i = 0; i < ss.size(); ++i)
+            worst = std::max(worst, std::abs(co[0] + ss[i] * (co[1] + ss[i] * (co[2] + ss[i] * co[3])) - dv[i]));
+          best = std::min(best, worst);
+        }
+        CHECK(best < 1e-6);
+        ++copies;
+        break;
+      }
+    }
+  }
+  CHECK(copies > 0);
+  CHECK(reversed > 0);
+}
+
+TEST_CASE("junction boundary (standard): written XML in XSD 1.8.1 order with start / end contact values") {
+  // XSD 1.8.1 t_junction: <planView>, <boundary>, <elevationGrid> in this order; t_grEqZeroOrContactPoint: "start" / "end"
+  // (the spec examples' "begin" is not in e_contactPoint); joints carry contactPoint, lane segments boundaryLane
+  BuildReport rep;
+  odr::OpenDrive od = buildOpenDrive(teeMixedSidewalks().d, teeMixedSidewalks().proj, boundaryOptions("US"), &rep);
+  od.header.revMinor = 8;
+  const std::string path = (std::filesystem::temp_directory_path() / "odrforge_boundary_test.xodr").string();
+  odr::write(od, path, {8, 12});
+  std::ifstream in(path);
+  const std::string xml((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  in.close();
+  std::filesystem::remove(path);
+  const size_t j = xml.find("<junction "), pv = xml.find("<planView>", j), bd = xml.find("<boundary>", j),
+               eg = xml.find("<elevationGrid", j);
+  CHECK(j != std::string::npos && pv != std::string::npos && bd != std::string::npos && eg != std::string::npos);
+  CHECK(pv < bd && bd < eg);
+  CHECK(xml.find("\"begin\"") == std::string::npos);
+  int lanes = 0, joints = 0;
+  for (size_t at = xml.find("<segment ", bd); at != std::string::npos && at < eg; at = xml.find("<segment ", at + 1)) {
+    const std::string seg = xml.substr(at, xml.find("/>", at) - at);
+    if (seg.find("type=\"lane\"") != std::string::npos) {
+      ++lanes;
+      CHECK(seg.find("boundaryLane=\"") != std::string::npos);
+      CHECK(seg.find("sStart=\"start\"") != std::string::npos || seg.find("sStart=\"end\"") != std::string::npos);
+      CHECK(seg.find("sEnd=\"start\"") != std::string::npos || seg.find("sEnd=\"end\"") != std::string::npos);
+    } else {
+      ++joints;
+      CHECK(seg.find("type=\"joint\"") != std::string::npos);
+      CHECK(seg.find("contactPoint=\"start\"") != std::string::npos || seg.find("contactPoint=\"end\"") != std::string::npos);
+    }
+  }
+  CHECK(joints == 3 && lanes == 3);
+  // the 1.4 writer (carla) has no boundary
+  odr::write(od, path, {4, 12});
+  std::ifstream in4(path);
+  const std::string xml4((std::istreambuf_iterator<char>(in4)), std::istreambuf_iterator<char>());
+  in4.close();
+  std::filesystem::remove(path);
+  CHECK(xml4.find("<boundary>") == std::string::npos);
+}
+
+TEST_CASE("junction boundary (standard): lane-less helper roads pass the validator only as boundary roads") {
+  // Annex F road.lane.lane_section_drivable (1.9.0, should) asks every lane section of a drivable road for a left or right
+  // lane; 1.8.0 §12.10 additional roads "are not required to have any lanes" (1.9.0 lane_sect_first: boundary roads "do
+  // not need an extra lane"). The exemption holds only for roads a boundary runs along.
+  const BuildOptions o = boundaryOptions("US");
+  BuildReport rep;
+  odr::OpenDrive od = buildOpenDrive(teeMixedSidewalks().d, teeMixedSidewalks().proj, o, &rep);
+  CHECK(rep.boundaryHelperRoads == 2);
+  CHECK(validate(od, o.target).count("road.lane.lane_section_drivable") == 0);
+  for (auto &J : od.junctions) J.boundary.clear();
+  CHECK(validate(od, o.target).count("road.lane.lane_section_drivable") == 2);
+}
+
+TEST_CASE("junction boundary (standard): no helper road shorter than 1 m") {
+  // arms 45 degrees apart leave a 0.45 m gap at their acute corner; a helper there would be shorter than 1.0 m (our
+  // floor: invariant SIM-5, esmini / CARLA mishandle shorter roads; OpenDRIVE only requires length > 0) -> no boundary.
+  // 60 degrees apart: a boundary.
+  for (const double a : {45.0, 60.0}) {
+    BuildReport rep;
+    const OsmBuilder b = star({0, a, 180});
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, boundaryOptions("US"), &rep);
+    CHECK(rep.junctionBoundaries == (a == 60.0 ? 1 : 0));
+    CHECK(checkBoundaries(od) == rep.junctionBoundaries);
+    for (const auto &r : od.roads)
+      if (r.name == "JunctionBoundary") CHECK(r.length() >= 1.0);
+  }
 }
 
 TEST_CASE("cross paths (standard): the crosswalks of a signalised junction are cross paths inside it") {
