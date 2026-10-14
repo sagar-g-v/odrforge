@@ -71,10 +71,9 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   junctions in the six areas (helper crosses a joint 133, no corner curve or radius < 0.25 m 87, lanes beyond
   an arm's joint 81, other 75), 31 of 216 in 300 fuzz networks (all 15 motorway gores). Acute arms (30 deg)
   whose ends overlap come from the arm trimming, not the boundary. G2_ref_junction +45 - +1078 per area,
-  all on helper roads (76 - 92 % repeat the connecting road's own step). Parked for separate review
-  (build/tmp/junction_boundary_tools_parked.diff): `boundary_audit.py` (Jev 0.59), the laneflow change that
-  stops counting lane-less roads as road surface (0.69; without it LA osm.way_dropped reads 2 instead of 3,
-  a checker artefact) and the viewer's boundary layer (0.69).
+  all on helper roads (76 - 92 % repeat the connecting road's own step). The boundary tools followed once
+  each had evidence of its own: `boundary_audit.py` + planted-defect self-test (Jev 0.24 -> 0.81), the laneflow
+  lane-less-road fix + plant (0.43 -> 0.88), the viewer's boundary layer + drawn = written check (0.47 -> 0.87).
 
 - Folds on loop streets kept as roads (Munich 6), lane-edge breaks LA +6 since phase 1.1.
 - Munich `pairs.missing` 118 is two boundary artefacts counted per pair: the entry on road 743 (a 2 m

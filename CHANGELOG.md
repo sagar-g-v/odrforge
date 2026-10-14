@@ -13,6 +13,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   areas: 2087 of 2463 grid junctions; 0 audit failures, XSD 1.8.1 valid, carla identical; 300 fuzz networks: 185
   of 216, 0 failures. The validator exempts lane-less boundary roads from `lane_section_drivable` (1.9.0
   `lane_sect_first`). Jev 0.85.
+- **`boundary_audit.py`** with a planted-defect self-test (`boundary_audit_selftest.py`): checks every written
+  junction boundary against the §12.10 rules (closed, counter-clockwise, a joint per connected road end, all lanes
+  enclosed, simple, no fold, helper road id / linkage / direction) and the §12.9 / §12.11 rules (reference line
+  crosses it, grid covers it); `grid_audit.py` also compares helper surfaces with the grid. 12 planted defects
+  detected at the planted junction and nowhere else in Munich, LA and Tokyo. Jev 0.81.
+- **Junction boundaries in the viewer**: the standard pages carry the written boundaries (curvature-adaptive
+  samples; within 0.17 m of the written outline, p99 0.06 m), drawn as a dashed layer; the rest of every page
+  is byte-identical to before. Jev 0.87.
 - **Review flags in the viewer**: press M (or ⚑) and click the map to flag something wrong, with a category
   and a note; the flag records the OpenDRIVE x / y and the road, lane, junction and s under it.
   `tools/inspect/viz_server.py` serves the pages and keeps each page's flags in `<page>.flags.json`;
@@ -21,6 +29,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   junction boundaries when the data carries them. Jev 0.80.
 
 ### Fixed
+- **laneflow: lane-less roads are no road surface** (`osm.way_dropped`): a junction boundary helper road's line
+  had hidden one LA finding (3 -> 2); now 3 again. Unchanged on 12 outputs without lane-less roads; new plant
+  `road_del_laneless` in `laneflow_plant.py` fails with the old version, passes with the new. Jev 0.88.
 - **No second marking for a crossing at a junction mouth** (standard): an OSM crossing node within 3 m of an
   approach end whose crosswalk is a junction cross path is that cross path - it no longer also becomes an
   approach crosswalk (and a mid-block cross path). LA 16, Tokyo 83 duplicates removed, each within 4.3 m of

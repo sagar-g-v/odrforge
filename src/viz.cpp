@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -222,10 +223,55 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
           << ",\"" << esc(type) << "\",\"" << esc(speed) << "\",\"" << esc(link(r.predecessor)) << "\",\"" << esc(link(r.successor))
           << "\"," << r.lanes.size() << "," << r.planView.elements.size() << "]";
   }
+  std::ostringstream bounds;
   for (size_t i = 0; i < od.junctions.size(); ++i) {
     const auto &j = od.junctions[i];
     juncs << (i ? "," : "") << "[\"" << esc(j.id) << "\"," << j.connections.size() << "," << j.controllers.size() << ",\""
           << esc(j.type) << "\"]";
+    // OpenDRIVE 1.8 §12.10 boundary as a closed outline: lane segments along the outer edge of boundaryLane (the centre
+    // lane's line for 0) from sStart to sEnd, joints across all lanes of the road end, run from the end nearer the next
+    // segment's start
+    std::vector<std::vector<Vec2>> parts;
+    for (const auto &sg : j.boundary) {
+      const auto it = roadIdx.find(sg.roadId);
+      if (it == roadIdx.end()) continue;
+      const odr::Road &r = od.roads[it->second];
+      const auto sOf = [&](const std::string &v) { return v == "start" ? 0.0 : v == "end" ? r.length() : std::atof(v.c_str()); };
+      std::vector<Vec2> pts;
+      if (sg.type == "joint") {
+        const double s = sg.contactPoint == "start" ? 0.0 : r.length();
+        double lo = odr::laneOffsetAt(r, s), hi = lo;
+        for (const auto *side : {&odr::sectionAt(r, s).left, &odr::sectionAt(r, s).right})
+          for (const odr::Lane &l : *side) {
+            double a, b;
+            if (odr::laneBorders(r, s, l.id, a, b)) lo = std::min({lo, a, b}), hi = std::max({hi, a, b});
+          }
+        pts = {r.planView.eval(s).offset(lo), r.planView.eval(s).offset(hi)};
+      } else {
+        const double s0 = sOf(sg.sStart), s1 = sOf(sg.sEnd);
+        // samples as for the reference lines: chord sag within opt.chordError on the tightest element, at most 1 m apart
+        double kMax = 0.0;
+        for (const auto &e : r.planView.elements) kMax = std::max({kMax, std::abs(e.k0), std::abs(e.k1)});
+        const double step = std::clamp(std::sqrt(8.0 * opt.chordError / std::max(kMax, 1e-6)), 0.1, 1.0);
+        const int n = std::max(2, static_cast<int>(std::ceil(std::abs(s1 - s0) / step)) + 1);
+        for (int k = 0; k < n; ++k) {
+          const double s = s0 + (s1 - s0) * k / (n - 1);
+          double in = 0.0, t = odr::laneOffsetAt(r, s);
+          if (sg.boundaryLane != 0) odr::laneBorders(r, s, sg.boundaryLane, in, t);
+          pts.push_back(r.planView.eval(s).offset(t));
+        }
+      }
+      parts.push_back(pts);
+    }
+    std::vector<Vec2> outline;
+    for (size_t k = 0; k < parts.size(); ++k) {
+      auto &pts = parts[k];
+      const auto &next = parts[(k + 1) % parts.size()];
+      if (pts.size() == 2 && next.size() > 2 && (pts[0] - next.front()).norm() < (pts[1] - next.front()).norm())
+        std::swap(pts[0], pts[1]);
+      outline.insert(outline.end(), pts.begin(), pts.end());
+    }
+    if (outline.size() >= 3) bounds << (bounds.tellp() ? "," : "") << "[\"" << esc(j.id) << "\",[" << enc.poly(outline) << "]]";
   }
   // geometry statistics
   int nLine = 0, nArc = 0, nSpiral = 0, nPoly = 0;
@@ -249,7 +295,7 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
          << ",\"maxLinkGap\":" << opt.validation->maxLinkGap;
   data << "},\"roads\":[" << roads.str() << "],\"junctions\":[" << juncs.str() << "],\"lanes\":[" << lanes.str()
        << "],\"marks\":[" << marks.str() << "],\"refs\":[" << refs.str() << "],\"signals\":[" << sigs.str()
-       << "],\"objects\":[" << objs.str() << "]";
+       << "],\"objects\":[" << objs.str() << "],\"boundaries\":[" << bounds.str() << "]";
   if (!opt.basemapDir.empty()) {
     namespace fs = std::filesystem;
     std::ifstream bm(fs::path(opt.basemapDir) / "basemap.json", std::ios::binary);
