@@ -217,12 +217,13 @@ const LANE_VARS = ["--lane-driving", "--lane-sidewalk", "--lane-biking", "--lane
 const SIG_NAMES = ["sign", "traffic light", "stop", "give way", "speed limit"];
 
 // ---------- decode
-function decode(arr) { // delta-encoded decimetres -> Float64Array metres
+const U = DATA.units === "cm" ? 100 : 10; // page coordinate unit per metre (older pages: decimetres)
+function decode(arr) { // delta-encoded page units -> Float64Array metres
   const out = new Float64Array(arr.length);
   let x = 0, y = 0;
   for (let i = 0; i < arr.length; i += 2) {
     if (i === 0) { x = arr[0]; y = arr[1]; } else { x += arr[i]; y += arr[i + 1]; }
-    out[i] = x / 10; out[i + 1] = y / 10;
+    out[i] = x / U; out[i + 1] = y / U;
   }
   return out;
 }
@@ -257,9 +258,9 @@ const refs = DATA.refs.map((r) => {
   }
   return { road: r[0], p, bb: bbox(p), path: path(p), buckets };
 });
-const W = DATA.bbox[2] / 10, H = DATA.bbox[3] / 10;
-const sigs = DATA.signals.map((s) => ({ x: s[0] / 10, y: s[1] / 10, h: s[2] / 1000, kind: s[3], road: s[4], id: s[5], text: s[6], ctrl: s[7] }));
-const objs = DATA.objects.map((o) => ({ kind: o[0], x: o[1] / 10, y: o[2] / 10, p: o[3].length ? decode(o[3]) : null, type: o[4] }));
+const W = DATA.bbox[2] / U, H = DATA.bbox[3] / U;
+const sigs = DATA.signals.map((s) => ({ x: s[0] / U, y: s[1] / U, h: s[2] / 1000, kind: s[3], road: s[4], id: s[5], text: s[6], ctrl: s[7] }));
+const objs = DATA.objects.map((o) => ({ kind: o[0], x: o[1] / U, y: o[2] / U, p: o[3].length ? decode(o[3]) : null, type: o[4] }));
 for (const o of objs) if (o.p) o.path = path(o.p, true);
 const bounds = (DATA.boundaries || []).map((b) => { const p = decode(b[1]); return { junction: b[0], p, bb: bbox(p), path: path(p, true) }; });
 

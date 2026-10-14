@@ -52,8 +52,12 @@ def merge(old, new):
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
-        if self.path.split("?")[0].endswith(".flags.json"):
+        path = self.path.split("?")[0]
+        if path.endswith(".flags.json"):
             self.send_header("Cache-Control", "no-store")
+        elif path.endswith(".html") or path.endswith("/"):
+            # regenerated pages show at once: the browser revalidates (304 while unchanged) instead of reusing its copy
+            self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
     def _json(self, code, obj):

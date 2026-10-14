@@ -1,6 +1,7 @@
 #include "odrforge/viz.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -64,14 +65,17 @@ int signalKind(const odr::Signal &s) {  // 0 other sign, 1 traffic light, 2 stop
   return 0;
 }
 
-/// delta-encoded decimetre polyline: "x0,y0,dx1,dy1,..."
+/// page coordinate unit: centimetres (DATA.units "cm"; pages before carry decimetres)
+constexpr double kUnit = 100.0;
+
+/// delta-encoded polyline in kUnit: "x0,y0,dx1,dy1,..."
 struct Enc {
   double ox, oy;
   std::string poly(const std::vector<Vec2> &pts) const {
     std::string o;
     long px = 0, py = 0;
     for (size_t i = 0; i < pts.size(); ++i) {
-      const long x = std::lround((pts[i].x - ox) * 10.0), y = std::lround((pts[i].y - oy) * 10.0);
+      const long x = std::lround((pts[i].x - ox) * kUnit), y = std::lround((pts[i].y - oy) * kUnit);
       if (i && x == px && y == py) continue;
       if (!o.empty()) o += ',';
       o += std::to_string(i ? x - px : x) + ',' + std::to_string(i ? y - py : y);
@@ -80,6 +84,15 @@ struct Enc {
     return o;
   }
 };
+
+/// largest |curvature| of the reference line on [a, b]: curvature is linear along each element (line, arc, spiral), so
+/// the element ends bound it
+double maxKappa(const ReferenceLine &line, double a, double b) {
+  double k = 0.0;
+  for (const auto &e : line.elements)
+    if (e.s < b && e.s + e.length > a) k = std::max({k, std::abs(e.k0), std::abs(e.k1)});
+  return k;
+}
 
 bool constantProfile(const odr::Road &r, const odr::LaneSection &sec, double s0, double s1) {
   for (const auto &o : r.laneOffset)
@@ -139,15 +152,68 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
       const odr::LaneSection &sec = r.lanes[si];
       const double s0 = sec.s, s1 = si + 1 < r.lanes.size() ? r.lanes[si + 1].s : L;
       if (s1 - s0 < 1e-3) continue;
-      // stations: curvature-adaptive, dense where widths / offsets vary
+      // stations: curvature-adaptive, dense where widths / offsets vary. The chord sag of a border at offset t on a line
+      // of curvature k is step^2 k_t / 8 with k_t = k / (1 - k t) (the inner side of a bend curves more): the step uses
+      // the largest curvature over the whole step ahead (not just at its start, which can lie on a short straight before
+      // an arc) and the outermost border of the section
       const bool constant = constantProfile(r, sec, s0, s1);
+      double tMax = 0.0;
+      for (double s : {s0, 0.5 * (s0 + s1), s1}) {
+        double a, b;
+        for (const auto *side : {&sec.left, &sec.right})
+          for (const auto &l : *side)
+            if (odr::laneBorders(r, std::min(s, s1 - 1e-6), l.id, a, b)) tMax = std::max({tMax, std::abs(a), std::abs(b)});
+      }
       std::vector<double> st{s0};
       while (st.back() < s1 - 1e-6) {
-        const double k = std::abs(r.planView.eval(st.back()).kappa);
-        double step = std::min(constant ? opt.maxStep : 2.0, std::sqrt(8.0 * opt.chordError / std::max(k, 1e-6)));
+        double step = constant ? opt.maxStep : 2.0;
+        for (int it = 0; it < 4; ++it) {  // shrink until the curvature ahead allows the step
+          const double k = maxKappa(r.planView, st.back(), st.back() + step);
+          const double kt = k / std::max(1.0 - k * tMax, 0.1);
+          const double allowed = std::sqrt(8.0 * opt.chordError / std::max(kt, 1e-9));
+          if (allowed >= step) break;
+          step = allowed;
+        }
         step = std::max(step, 0.25);
         st.push_back(std::min(s1 - 1e-6, st.back() + step));
       }
+      // then bisect every interval in which a lane border (or the lane offset line) leaves the chord between its two
+      // stations by more than opt.chordError at the midpoint: lane offsets and widths can change sideways faster than
+      // the curvature-based step allows for (a laneOffset blend over a few metres)
+      auto borderPts = [&](double s) {
+        std::vector<Vec2> pts;
+        const Pose p = r.planView.eval(s);
+        pts.push_back(p.offset(odr::laneOffsetAt(r, s)));
+        double a, b;
+        for (const auto *side : {&sec.left, &sec.right})
+          for (const auto &l : *side)
+            if (odr::laneBorders(r, s, l.id, a, b)) pts.push_back(p.offset(b));
+        return pts;
+      };
+      std::vector<double> fine{st.front()};
+      std::function<void(double, double, const std::vector<Vec2> &, const std::vector<Vec2> &, int)> refine =
+          [&](double a, double b, const std::vector<Vec2> &pa, const std::vector<Vec2> &pb, int depth) {
+            const double m = 0.5 * (a + b);
+            const std::vector<Vec2> pm = borderPts(m);
+            bool split = false;
+            for (size_t i = 0; i < pm.size() && i < pa.size() && i < pb.size() && !split; ++i)
+              split = (pm[i] - (pa[i] + pb[i]) * 0.5).norm() > opt.chordError;
+            if (split && depth < 8 && b - a > 0.05) {
+              refine(a, m, pa, pm, depth + 1);
+              refine(m, b, pm, pb, depth + 1);
+            } else {
+              fine.push_back(b);
+            }
+          };
+      {
+        std::vector<Vec2> prev = borderPts(st.front());
+        for (size_t i = 1; i < st.size(); ++i) {
+          const std::vector<Vec2> next = borderPts(st[i]);
+          refine(st[i - 1], st[i], prev, next, 0);
+          prev = next;
+        }
+      }
+      st = fine;
       std::vector<Pose> poses;
       for (double s : st) poses.push_back(r.planView.eval(s));
       auto border = [&](int laneId, bool outer, std::vector<Vec2> &out) {
@@ -194,7 +260,7 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
       const double h = p.hdg + (s.orientation == "-" ? kPi : 0.0);
       std::string text = s.type;
       if (s.value) text += " " + std::to_string(static_cast<int>(std::lround(*s.value))) + (s.unit.empty() ? "" : " " + s.unit);
-      sigs << (sigs.tellp() ? "," : "") << "[" << std::lround((q.x - minX) * 10) << "," << std::lround((q.y - minY) * 10) << ","
+      sigs << (sigs.tellp() ? "," : "") << "[" << std::lround((q.x - minX) * kUnit) << "," << std::lround((q.y - minY) * kUnit) << ","
            << std::lround(h * 1000) << "," << signalKind(s) << "," << ri << ",\"" << esc(s.id) << "\",\"" << esc(text) << "\","
            << (controlled.count(s.id) ? 1 : 0) << "]";
     }
@@ -206,7 +272,7 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
       const double h = p.hdg + o.hdg, ch = std::cos(h), sh = std::sin(h);
       for (const auto &k : o.outline) outline.push_back({c.x + k.u * ch - k.v * sh, c.y + k.u * sh + k.v * ch});
       const int kind = o.type == "crosswalk" ? 1 : (o.type == "streetLamp" || o.subtype == "streetLamp") ? 2 : o.type == "tree" ? 3 : 0;
-      objs << (objs.tellp() ? "," : "") << "[" << kind << "," << std::lround((c.x - minX) * 10) << "," << std::lround((c.y - minY) * 10)
+      objs << (objs.tellp() ? "," : "") << "[" << kind << "," << std::lround((c.x - minX) * kUnit) << "," << std::lround((c.y - minY) * kUnit)
            << ",[" << (outline.empty() ? "" : enc.poly(outline)) << "],\"" << esc(o.type) << "\"]";
     }
     // road record: id, name, junction, length, type, speed, pred, succ, sections
@@ -249,10 +315,17 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
         pts = {r.planView.eval(s).offset(lo), r.planView.eval(s).offset(hi)};
       } else {
         const double s0 = sOf(sg.sStart), s1 = sOf(sg.sEnd);
-        // samples as for the reference lines: chord sag within opt.chordError on the tightest element, at most 1 m apart
-        double kMax = 0.0;
-        for (const auto &e : r.planView.elements) kMax = std::max({kMax, std::abs(e.k0), std::abs(e.k1)});
-        const double step = std::clamp(std::sqrt(8.0 * opt.chordError / std::max(kMax, 1e-6)), 0.1, 1.0);
+        // samples as for the lanes: chord sag within opt.chordError on the tightest element at the border's offset
+        // (k_t = k / (1 - k t)), at most 1 m apart
+        const double kRef = maxKappa(r.planView, 0.0, r.length());
+        double tMax = 0.0;
+        for (double s : {sOf(sg.sStart), sOf(sg.sEnd)}) {
+          double in = 0.0, t = odr::laneOffsetAt(r, s);
+          if (sg.boundaryLane != 0) odr::laneBorders(r, s, sg.boundaryLane, in, t);
+          tMax = std::max(tMax, std::abs(t));
+        }
+        const double kt = kRef / std::max(1.0 - kRef * tMax, 0.1);
+        const double step = std::clamp(std::sqrt(8.0 * opt.chordError / std::max(kt, 1e-6)), 0.1, 1.0);
         const int n = std::max(2, static_cast<int>(std::ceil(std::abs(s1 - s0) / step)) + 1);
         for (int k = 0; k < n; ++k) {
           const double s = s0 + (s1 - s0) * k / (n - 1);
@@ -285,7 +358,7 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
   std::ostringstream data;
   data.precision(15);  // the origin places the optional map tiles: full precision
   data << "{\"title\":\"" << esc(opt.title) << "\",\"generator\":\"OdrForge " << ODRFORGE_VERSION << "\",\"rev\":\"1."
-       << od.header.revMinor << "\",\"bbox\":[0,0," << std::lround((maxX - minX) * 10) << "," << std::lround((maxY - minY) * 10)
+       << od.header.revMinor << "\",\"units\":\"cm\",\"bbox\":[0,0," << std::lround((maxX - minX) * kUnit) << "," << std::lround((maxY - minY) * kUnit)
        << "],\"origin\":[" << minX << "," << minY << "],\"geo\":\"" << esc(od.header.geoReference) << "\""
        << ",\"stats\":{\"roads\":" << od.roads.size() << ",\"junctions\":" << od.junctions.size()
        << ",\"controllers\":" << od.controllers.size() << ",\"lengthKm\":" << std::lround(totalLen / 100.0) / 10.0
