@@ -83,6 +83,32 @@ canvas.drag { cursor: grabbing; }
 #mapctl input[type=text] { width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--panel); color: var(--text); font: 11px ui-monospace, monospace; margin-top: 4px; }
 #mapctl .note { color: var(--muted); font-size: 11px; margin-top: 4px; }
+canvas.flagging { cursor: crosshair; }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  font: inherit; font-size: 12px; cursor: pointer; }
+.btn.on { background: var(--warn); border-color: var(--warn); color: #1b1b1b; font-weight: 600; }
+.btn.danger { color: var(--err); }
+#flagstore { color: var(--muted); font-size: 11px; margin: 6px 0 4px; }
+#flaglist { display: flex; flex-direction: column; gap: 6px; }
+.flag { background: var(--panel-2); border-radius: 8px; padding: 7px 9px; cursor: pointer; border: 1px solid transparent; }
+.flag.sel { border-color: var(--accent); }
+.flag .hd { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; }
+.flag .where { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.flag .note { margin-top: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.flag .reply { margin-top: 4px; padding-left: 7px; border-left: 2px solid var(--ok); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.st { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 99px; }
+.st.open { background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); }
+.st.fixed { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+.st.question { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.st.wontfix { background: var(--line); color: var(--muted); }
+#flagform { position: absolute; z-index: 4; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 7px; }
+#flagform select, #flagform textarea { width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); font: inherit; }
+#flagform textarea { resize: vertical; min-height: 64px; }
+#flagwhere { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+#flagform .btnrow { justify-content: flex-end; }
 @media (max-width: 760px) {
   #side { position: absolute; z-index: 5; left: 0; top: 0; bottom: 0; width: min(300px, 86vw); transform: translateX(-100%); transition: transform .2s; }
   #side.open { transform: none; box-shadow: 0 0 30px rgba(0,0,0,.4); }
@@ -133,6 +159,16 @@ canvas.drag { cursor: grabbing; }
         <h2>Selection</h2>
         <div id="info"><span class="empty">Hover a lane for details, click to pin a road.</span></div>
       </section>
+      <section>
+        <h2>Review flags</h2>
+        <div class="btnrow">
+          <button class="btn" id="flagmode" title="Click the map to flag something wrong (key M)">⚑ Mark (M)</button>
+          <button class="btn" id="flagcopy" title="Copy all flags as JSON">Copy JSON</button>
+          <button class="btn" id="flagshow" title="Show or hide the flags on the map">Hide</button>
+        </div>
+        <div id="flagstore"></div>
+        <div id="flaglist"></div>
+      </section>
     </div>
   </aside>
   <div id="mapwrap">
@@ -143,10 +179,30 @@ canvas.drag { cursor: grabbing; }
       <button id="zout" title="Zoom out">−</button>
       <button id="fit" title="Fit network">⤢</button>
       <button id="theme" title="Toggle theme">◐</button>
+      <button id="flagtool" title="Mark something wrong (M)">⚑</button>
     </div>
     <div id="scale"></div>
     <div id="attrib"></div>
     <div id="tip"></div>
+    <form id="flagform" hidden>
+      <div id="flagwhere"></div>
+      <select id="flagcat">
+        <option value="geometry">Wrong geometry / shape</option>
+        <option value="lanes">Wrong lanes (count, type, width)</option>
+        <option value="connection">Wrong or missing connection / turn</option>
+        <option value="junction">Junction area / boundary</option>
+        <option value="missing">Something missing</option>
+        <option value="signal">Signal, sign or marking</option>
+        <option value="elevation">Elevation / slope</option>
+        <option value="other">Other</option>
+      </select>
+      <textarea id="flagnote" placeholder="What is wrong here?"></textarea>
+      <div class="btnrow">
+        <button type="button" class="btn danger" id="flagdel" hidden>Delete</button>
+        <button type="button" class="btn" id="flagcancel">Cancel</button>
+        <button type="submit" class="btn on">Save</button>
+      </div>
+    </form>
   </div>
 </div>
 <script>
@@ -205,6 +261,7 @@ const W = DATA.bbox[2] / 10, H = DATA.bbox[3] / 10;
 const sigs = DATA.signals.map((s) => ({ x: s[0] / 10, y: s[1] / 10, h: s[2] / 1000, kind: s[3], road: s[4], id: s[5], text: s[6], ctrl: s[7] }));
 const objs = DATA.objects.map((o) => ({ kind: o[0], x: o[1] / 10, y: o[2] / 10, p: o[3].length ? decode(o[3]) : null, type: o[4] }));
 for (const o of objs) if (o.p) o.path = path(o.p, true);
+const bounds = (DATA.boundaries || []).map((b) => { const p = decode(b[1]); return { junction: b[0], p, bb: bbox(p), path: path(p, true) }; });
 
 // spatial grid for picking
 const CELL = 40, GW = Math.ceil(W / CELL) + 1, grid = new Map();
@@ -246,6 +303,7 @@ if (S.valErrors !== undefined)
 const layers = { lanes: true, junctions: true, marks: true, ref: false, heat: false, signals: true, objects: true };
 const layerNames = { lanes: "Lanes", junctions: "Junction areas", marks: "Road marks", ref: "Reference lines",
   heat: "Curvature heat map", signals: "Signals and signs", objects: "Objects (crosswalks, lamps, trees)" };
+if (bounds.length) { layers.bounds = true; layerNames.bounds = `Junction boundaries (${bounds.length})`; }
 $("layers").innerHTML = Object.keys(layers).map((k) =>
   `<label class="tog"><input type="checkbox" data-k="${k}" ${layers[k] ? "checked" : ""}>${layerNames[k]}</label>`).join("");
 $("layers").addEventListener("change", (e) => { layers[e.target.dataset.k] = e.target.checked; draw(); });
@@ -441,6 +499,11 @@ function render() {
       } else { ctx.strokeStyle = C["--ref"]; ctx.lineWidth = px * 1.2; ctx.stroke(r.path); }
     }
   }
+  if (layers.bounds) {
+    ctx.strokeStyle = css("--warn"); ctx.lineWidth = px * 1.6; ctx.setLineDash([px * 6, px * 4]);
+    for (const b of bounds) if (visible(b.bb, view)) ctx.stroke(b.path);
+    ctx.setLineDash([]);
+  }
   const hl = (l, col, w) => { ctx.strokeStyle = col; ctx.lineWidth = px * w; ctx.stroke(l.path); };
   if (pinned !== null) for (const l of roads[pinned].lanes) hl(l, C["--accent"], 2.5);
   if (hover) hl(hover, C["--text"], 2);
@@ -462,6 +525,7 @@ function render() {
       ctx.restore();
     }
   }
+  drawFlags();
   // scale bar
   const target = 120 / scale, pow = Math.pow(10, Math.floor(Math.log10(target)));
   const nice = [1, 2, 5, 10].map((k) => k * pow).find((v) => v >= target) || target;
@@ -490,6 +554,151 @@ function sigAt(x, y) {
   return null;
 }
 
+// ---------- review flags: the user marks what is wrong; served by tools/inspect/viz_server.py they are kept in
+// <page>.flags.json next to this page (fields the viewer owns: where and what; status / reply are written back by
+// tools/inspect/flags.py and shown here), else only in this browser
+const FLAG_FIELDS = ["id", "x", "y", "road", "lane", "laneType", "junction", "s", "category", "note", "created", "deleted"];
+const PAGE = decodeURIComponent((location.pathname.split("/").pop() || DATA.title).replace(/\.html?$/i, "")) || DATA.title;
+const FLAG_URL = encodeURIComponent(PAGE) + ".flags.json";
+const flagState = { list: [], mode: false, show: true, server: false, sel: null, edit: null, pending: null };
+function approxS(roadIdx, wx, wy) { // s of the nearest point on the reference-line polyline drawn for that road
+  const r = refs.find((q) => q.road === roadIdx);
+  if (!r) return null;
+  let best = Infinity, s = 0, acc = 0;
+  for (let i = 2; i < r.p.length; i += 2) {
+    const ax = r.p[i - 2], ay = r.p[i - 1], dx = r.p[i] - ax, dy = r.p[i + 1] - ay, L = Math.hypot(dx, dy);
+    const u = L > 0 ? Math.max(0, Math.min(1, ((wx - ax) * dx + (wy - ay) * dy) / (L * L))) : 0;
+    const d = Math.hypot(ax + u * dx - wx, ay + u * dy - wy);
+    if (d < best) { best = d; s = acc + u * L; }
+    acc += L;
+  }
+  return Math.round(s * 10) / 10;
+}
+const visibleFlags = () => flagState.list.filter((f) => !f.deleted);
+function flagWhere(f) {
+  const loc = f.road ? `road ${esc(f.road)}${f.lane !== null && f.lane !== undefined ? " lane " + f.lane : ""}${f.s !== null ? " · s≈" + f.s + " m" : ""}` +
+    (f.junction && f.junction !== "-1" ? ` · junction ${esc(f.junction)}` : "") : "no road here";
+  return `${loc} · x ${f.x.toFixed(1)} y ${f.y.toFixed(1)}`;
+}
+function flagStoreText(msg) {
+  $("flagstore").textContent = msg || (flagState.server ? `Saved to ${PAGE}.flags.json on the review server.`
+    : "Saved in this browser only (open the page through tools/inspect/viz_server.py to share them), or Copy JSON.");
+}
+function renderFlagList() {
+  const L = visibleFlags();
+  $("flaglist").innerHTML = L.length ? L.map((f) => `<div class="flag${flagState.sel === f.id ? " sel" : ""}" data-id="${f.id}">
+      <div class="hd"><b>#${f.id} · ${esc(f.category)}</b><span class="st ${esc(f.status || "open")}">${esc(f.status || "open")}</span></div>
+      <div class="where">${flagWhere(f)}</div>
+      ${f.note ? `<div class="note">${esc(f.note)}</div>` : ""}
+      ${f.reply ? `<div class="reply">${esc(f.reply)}</div>` : ""}</div>`).join("")
+    : '<span class="empty sub">No flags yet. Press M (or ⚑), then click where something is wrong.</span>';
+}
+async function loadFlags() {
+  try {
+    const probe = await fetch("__odrforge_flags", { cache: "no-store" });
+    flagState.server = probe.ok && (await probe.json()).ok === true;
+  } catch (e) { flagState.server = false; }
+  let list = null;
+  if (flagState.server) {
+    try { const r = await fetch(FLAG_URL, { cache: "no-store" }); if (r.ok) list = (await r.json()).flags; } catch (e) { /* none yet */ }
+  } else {
+    try { list = JSON.parse(store.get("odrforge.flags." + PAGE) || "null"); } catch (e) { list = null; }
+  }
+  flagState.list = Array.isArray(list) ? list : [];
+  flagStoreText(); renderFlagList(); draw();
+}
+async function saveFlags() {
+  const body = JSON.stringify({ page: PAGE, file: DATA.title, origin: ORIGIN, generator: DATA.generator,
+    flags: flagState.list.map((f) => Object.fromEntries(FLAG_FIELDS.filter((k) => k in f).map((k) => [k, f[k]]))) });
+  store.set("odrforge.flags." + PAGE, JSON.stringify(flagState.list));
+  if (!flagState.server) { flagStoreText(); return; }
+  try {
+    const r = await fetch(FLAG_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (!r.ok) throw new Error(r.status);
+    flagState.list = (await r.json()).flags;  // merged with the status / replies already on the server
+    flagStoreText();
+  } catch (e) { flagStoreText(`Could not save to the server (${e.message}); kept in this browser.`); }
+  renderFlagList(); draw();
+}
+function setFlagMode(on) {
+  flagState.mode = on;
+  $("flagmode").classList.toggle("on", on); $("flagtool").style.background = on ? "var(--warn)" : "";
+  cv.classList.toggle("flagging", on);
+  if (!on) closeFlagForm();
+}
+function openFlagForm(sx, sy, f, pending) {
+  flagState.edit = f; flagState.pending = pending;
+  const src = f || pending;
+  $("flagwhere").innerHTML = (f ? `#${f.id} · ` : "New flag · ") + flagWhere(src);
+  $("flagcat").value = f ? f.category : "geometry";
+  $("flagnote").value = f ? f.note : "";
+  $("flagdel").hidden = !f;
+  const form = $("flagform");
+  form.hidden = false;
+  form.style.left = Math.max(8, Math.min(sx + 12, vw - 290)) + "px";
+  form.style.top = Math.max(8, Math.min(sy + 12, vh - form.offsetHeight - 8)) + "px";
+  $("flagnote").focus();
+}
+function closeFlagForm() { $("flagform").hidden = true; flagState.edit = null; flagState.pending = null; }
+function flagAt(sx, sy) {
+  for (const f of visibleFlags()) { const [px, py] = toScreen(f.x - ORIGIN[0], f.y - ORIGIN[1]); if (Math.hypot(px - sx, py - sy) < 12) return f; }
+  return null;
+}
+function newFlag(wx, wy) {
+  const l = pick(wx, wy), r = l ? roads[l.road] : null;
+  return { x: wx + ORIGIN[0], y: wy + ORIGIN[1], road: r ? r.id : null, lane: l ? l.id : null, laneType: l ? LANE_TYPES[l.type] : null,
+    junction: r ? r.junction : null, s: r ? approxS(r.i, wx, wy) : null };
+}
+$("flagform").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const cat = $("flagcat").value, note = $("flagnote").value.trim();
+  if (flagState.edit) Object.assign(flagState.edit, { category: cat, note });
+  else if (flagState.pending) {
+    const id = flagState.list.reduce((m, f) => Math.max(m, f.id), 0) + 1;
+    flagState.list.push(Object.assign({ id, category: cat, note, created: new Date().toISOString(), status: "open" }, flagState.pending));
+    flagState.sel = id;
+  }
+  closeFlagForm(); renderFlagList(); draw(); saveFlags();
+});
+$("flagcancel").onclick = closeFlagForm;
+$("flagdel").onclick = () => { if (flagState.edit) flagState.edit.deleted = true; closeFlagForm(); renderFlagList(); draw(); saveFlags(); };
+$("flagmode").onclick = () => setFlagMode(!flagState.mode);
+$("flagtool").onclick = () => setFlagMode(!flagState.mode);
+$("flagshow").onclick = () => { flagState.show = !flagState.show; $("flagshow").textContent = flagState.show ? "Hide" : "Show"; draw(); };
+$("flagcopy").onclick = async () => {
+  const text = JSON.stringify({ page: PAGE, file: DATA.title, flags: visibleFlags() }, null, 1);
+  try { await navigator.clipboard.writeText(text); flagStoreText("Copied " + visibleFlags().length + " flags as JSON."); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand("copy"); flagStoreText("Copied."); } catch (e2) { flagStoreText("Copy blocked: select the JSON in the text box."); } }
+};
+$("flaglist").addEventListener("click", (e) => {
+  const el = e.target.closest(".flag"); if (!el) return;
+  const f = flagState.list.find((q) => q.id === +el.dataset.id); if (!f) return;
+  flagState.sel = f.id; cx = f.x - ORIGIN[0]; cy = f.y - ORIGIN[1]; scale = Math.max(scale, 6);
+  renderFlagList(); draw();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("input, textarea, select")) return;
+  if (e.key === "m" || e.key === "M") setFlagMode(!flagState.mode);
+  else if (e.key === "Escape") { if (!$("flagform").hidden) closeFlagForm(); else setFlagMode(false); }
+});
+function drawFlags() {
+  if (!flagState.show) return;
+  const col = { open: css("--warn"), fixed: css("--ok"), question: css("--accent"), wontfix: css("--muted") };
+  ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = "bold 10px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const f of visibleFlags()) {
+    const [px, py] = toScreen(f.x - ORIGIN[0], f.y - ORIGIN[1]);
+    if (px < -20 || py < -20 || px > vw + 20 || py > vh + 20) continue;
+    ctx.fillStyle = col[f.status || "open"] || col.open;
+    ctx.strokeStyle = flagState.sel === f.id ? css("--text") : "#0b0e12"; ctx.lineWidth = flagState.sel === f.id ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.arc(px, py, 9, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#111"; ctx.fillText(String(f.id), px, py + 0.5);
+  }
+  ctx.restore();
+}
+setInterval(() => { if (flagState.server && !document.hidden && $("flagform").hidden) loadFlags(); }, 20000);
+
 // ---------- interaction
 let drag = null;
 cv.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, cx, cy, moved: false }; cv.setPointerCapture(e.pointerId); cv.classList.add("drag"); });
@@ -516,8 +725,13 @@ cv.addEventListener("pointermove", (e) => {
 cv.addEventListener("pointerup", (e) => {
   cv.classList.remove("drag");
   if (drag && !drag.moved) {
-    const rect = cv.getBoundingClientRect();
-    const [wx, wy] = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const rect = cv.getBoundingClientRect(), sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const [wx, wy] = toWorld(sx, sy);
+    const hit = flagState.show ? flagAt(sx, sy) : null;
+    if (hit) {  // a flag: select it and open it for editing
+      flagState.sel = hit.id; renderFlagList(); openFlagForm(sx, sy, hit, null); draw(); drag = null; return;
+    }
+    if (flagState.mode) { openFlagForm(sx, sy, null, newFlag(wx, wy)); drag = null; return; }
     const l = pick(wx, wy);
     pinned = l ? l.road : null;
     $("info").innerHTML = l ? laneInfo(l) : '<span class="empty">Hover a lane for details, click to pin a road.</span>';
@@ -553,6 +767,7 @@ $("search").addEventListener("keydown", (e) => {
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { legend(); draw(); });
 window.addEventListener("resize", resize);
 resize(); fit();
+loadFlags();
 })();
 </script>
 </body>

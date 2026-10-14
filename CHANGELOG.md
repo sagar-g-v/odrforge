@@ -4,6 +4,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+- **Review flags in the viewer**: press M (or ⚑) and click the map to flag something wrong, with a category
+  and a note; the flag records the OpenDRIVE x / y and the road, lane, junction and s under it.
+  `tools/inspect/viz_server.py` serves the pages and keeps each page's flags in `<page>.flags.json`;
+  `tools/inspect/flags.py` lists them and writes a status (fixed / question / wontfix) and a reply, shown
+  back in the viewer. Without the server, flags stay in the browser (Copy JSON). The viewer also draws
+  junction boundaries when the data carries them. Jev 0.80.
+
 ### Fixed
 - **No second marking for a crossing at a junction mouth** (standard): an OSM crossing node within 3 m of an
   approach end whose crosswalk is a junction cross path is that cross path - it no longer also becomes an

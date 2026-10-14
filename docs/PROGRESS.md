@@ -1,6 +1,6 @@
 # Progress and open decisions
 
-Branch `geometry-quality` (not pushed). Plan: `docs/reference/spec_atlas.plan.html`. Rule coverage:
+Branch `geometry-quality` (pushed). Plan: `docs/reference/spec_atlas.plan.html`. Rule coverage:
 `docs/RULES.md`. Every step was checked on the six test areas (LA, Munich, London, Frankfurter Kreuz,
 Stelvio, Tokyo) with the exact checkers (`tools/inspect/exact_diff.py`), the junction audit, the
 Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
@@ -39,6 +39,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 2.3 | Road mark laneChange from the final mark type (double lines crossable from the broken side) | LA trapped flows 1 -> 0, missing-link islands 17 -> 2 |
 | 6 | Stage timing; arm trimming in parallel | LA trimming 9.4 s -> 0.9 s per pass |
 | tools | `jev_judge.py` (Jev reviews whole junctions, calibrated against planted defects) | Jev trusted on spec validity only |
+| tools | Review flags in the viewer (mark what is wrong, `viz_server.py` keeps them, `flags.py` answers; Jev 0.80) | closed review loop with the user |
 
 ## Decisions (2026-10-13)
 
@@ -64,6 +65,17 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
    carriageway edges where mapped?
 
 ## Known open items
+
+- Junction boundary (1.8.0 §12.10, standard), parked for your decision (Jev 0.70 to keep; rules 0.88):
+  build/tmp/junction_boundary_parked.diff. Joints at every arm; corners along an existing lane edge, else a
+  helper road ("JunctionBoundary", centre lane only) copying the connecting road between the two arms and
+  following its outer edge, else a corner curve; helpers pushed out past lanes beyond them; the outline is
+  written only when it is closed, counter-clockwise, simple, fold-free and holds every lane border. Written:
+  LA 822 / 921, Munich 324 / 389, London 268 / 325, Frankfurt 153 / 211, Stelvio 21 / 26, Tokyo 499 / 591;
+  `boundary_audit.py` 0 failures (incl. helper linkage and direction), XSD 1.8.1 valid, carla identical;
+  G2_ref_junction +45 - +1078 per area, all on helper roads (76 - 92 % duplicates of the connecting roads'
+  own). Left out (376): helper crosses a joint 133, no corner curve 87, lanes beyond a joint 81 (partial
+  joints would fix these), other 75. The standard viewer pages show the boundaries for review.
 
 - Folds on loop streets kept as roads (Munich 6), lane-edge breaks LA +6 since phase 1.1.
 - Munich `pairs.missing` 118 is two boundary artefacts counted per pair: the entry on road 743 (a 2 m
