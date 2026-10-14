@@ -14,7 +14,8 @@ successor link removed, lane successor link removed (section boundary), lane wid
 at a section start (geometry: laneflow must stay silent), spiral curvature jump (geometry: silent),
 sidewalk cut out of a middle section, connecting-road lane id sign flipped, laneLink 'from' sign
 flipped, road split needlessly (contact start) and split + second half reversed (contact end), a
-driving lane set to zero width, a lane narrowed below any car, a plain road deleted.
+driving lane set to zero width, a lane narrowed below any car, a plain road deleted, and the same with a
+lane-less road (no surface) left on its reference line.
 """
 import argparse
 import copy
@@ -476,6 +477,46 @@ def plant(base, name, tgt, lf):
         p = Plant(name, f"road {rid} ({R[rid].osm_ways}) and its {len(gone) - 1} connecting roads deleted",
                   [("osm.way_dropped", None, None, None)],
                   allowed=("turn.", "motor.", "pairs.", "osm.flow.lost", "osm.direction"))
+    elif name == "road_del_laneless":
+        # road_del, plus a road without lanes (centre lane only, no OSM way, no links) along the deleted road's reference
+        # line, extended 60 m straight beyond both ends so that it runs over the whole OSM way into the junctions, and
+        # belonging to a junction -- as a junction boundary helper road (OpenDRIVE 1.8.0 §12.10). It has no surface, so
+        # the way stays dropped.
+        rid, ext = tgt, 60.0
+        r = R[rid]
+        bare = copy.deepcopy(RE[rid])
+        bare.set("id", str(max(int(i) for i in RE if i.isdigit()) + 1))
+        bare.set("name", "laneless")
+        jlink = [e for e in RE[rid].find("link") if e.get("elementType") == "junction"]
+        bare.set("junction", jlink[0].get("elementId"))
+        for tag in ("link", "objects", "signals", "userData"):
+            for e in bare.findall(tag):
+                bare.remove(e)
+        lanes = bare.find("lanes")
+        for e in lanes.findall("laneOffset"):
+            lanes.remove(e)
+        for sec in lanes.findall("laneSection"):
+            for side in ("left", "right"):
+                for e in sec.findall(side):
+                    sec.remove(e)
+        pv = bare.find("planView")
+        g0 = pv.find("geometry")
+        x0, y0, h0 = float(g0.get("x")), float(g0.get("y")), float(g0.get("hdg"))
+        xe, ye, he = (float(v[0]) for v in r.ref(np.array([r.length])))
+        for g in pv.findall("geometry"):
+            g.set("s", repr(float(g.get("s")) + ext))
+        before = ET.Element("geometry", {"s": "0", "x": repr(x0 - ext * math.cos(h0)), "y": repr(y0 - ext * math.sin(h0)),
+                                         "hdg": repr(h0), "length": repr(ext)})
+        ET.SubElement(before, "line")
+        after = ET.Element("geometry", {"s": repr(r.length + ext), "x": repr(xe), "y": repr(ye), "hdg": repr(he), "length": repr(ext)})
+        ET.SubElement(after, "line")
+        pv.insert(0, before)
+        pv.append(after)
+        bare.set("length", repr(r.length + 2 * ext))
+        tree, p = plant(base, "road_del", tgt, lf)
+        tree.getroot().append(bare)
+        p = Plant(name, f"road {rid} deleted, a lane-less junction road left along its reference line (+{ext:.0f} m each end)",
+                  p.expect, allowed=p.allowed)
     elif name in ("split", "split_rev"):
         rid, s0 = tgt
         p = _split(root, RE, JE, R, rid, s0, reverse=(name == "split_rev"))
@@ -697,13 +738,14 @@ def main(argv=None):
     lf0, d0 = LF.run(a.base, a.osm, box, rule=a.rule)
     tg = choose(lf0)
     names = ["laneLink_del", "conn_del", "succ_break", "lane_succ_break", "width_shift", "spiral_jump", "sidewalk_cut",
-             "edge_unlink", "sec_lane_flip", "lanechange_block", "conn_lane_flip", "from_flip", "zero_width", "narrow", "split", "split_rev", "road_del"]
+             "edge_unlink", "sec_lane_flip", "lanechange_block", "conn_lane_flip", "from_flip", "zero_width", "narrow", "split", "split_rev", "road_del",
+             "road_del_laneless"]
     if a.only:
         names = [n for n in names if n in a.only.split(",")]
     stem = os.path.splitext(os.path.basename(a.base))[0] + ("_" + a.rule if a.rule else "")
     report = {"base": a.base, "targets": {k: str(v) for k, v in tg.items()}, "results": []}
     for nm in names:
-        key = "split" if nm == "split_rev" else nm
+        key = "split" if nm == "split_rev" else "road_del" if nm == "road_del_laneless" else nm
         if key not in tg:
             report["results"].append({"plant": nm, "skipped": "no target found"})
             continue

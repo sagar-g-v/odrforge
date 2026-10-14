@@ -876,6 +876,8 @@ class Mapping:
                 miss = [m for m in range(n) if best[m] is None]
                 cov = np.zeros(len(miss), bool)
                 for r in sorted(near, key=lambda q: q.junction == "-1"):  # junction surfaces first
+                    if r.el.find("lanes/laneSection/left/lane") is None and r.el.find("lanes/laneSection/right/lane") is None:
+                        continue  # no surface: a junction boundary helper road (OpenDRIVE 1.8 §12.10) has no lanes
                     s, t, h = project_many(r, px[miss], py[miss])
                     lo, hi = extent_many(r, s)
                     out = np.maximum(lo - t, 0) + np.maximum(t - hi, 0)
