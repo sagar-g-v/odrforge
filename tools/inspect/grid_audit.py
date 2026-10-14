@@ -9,6 +9,7 @@ Rules measured (rule ids verbatim):
   "the grid shall override any elevation values derived from any roads that are part of the junction": the grid
   height (bilinear in each square; exact for bicubic §12.11.1 when the grid values are planar - checked) is compared
   with the connecting roads' own surface height (elevation + t tan superelevation) at their lane centres.
+  Also reported: the same comparison along the boundary line of §12.10 helper roads (JunctionBoundary).
 usage: python grid_audit.py file.xodr [...]
 """
 import math
@@ -33,6 +34,7 @@ def audit(path):
     od = G.OpenDrive(path)
     root = ET.parse(path).getroot()
     fails, dz_all, planar_res, n = Counter(), [], [], 0
+    dz_boundary = []  # |grid - boundary helper road surface| along the boundary
     for j in root.findall("junction"):
         pv, eg = j.findall("planView"), j.findall("elevationGrid")
         if not pv and not eg:
@@ -75,6 +77,16 @@ def audit(path):
             if r.junction != j.get("id") or r.el.find("lanes/laneSection") is None:
                 continue
             roll = superelevation(r)
+            if r.el.get("name") == "JunctionBoundary":  # §12.10 helper: its centre lane line is the boundary
+                for s in np.linspace(0.0, r.length, max(2, int(r.length) + 1)):
+                    lo = r.lane_offset(np.array([s]))
+                    t = float(lo[0]) if hasattr(lo, "__len__") else float(lo)
+                    x, y = r.point(np.array([s]), t)
+                    p = np.array([float(x[0]), float(y[0])]) - np.array([x0, y0])
+                    zg = zgrid(float(p @ d), float(p @ nl))
+                    if zg is not None:
+                        dz_boundary.append(abs(zg - (float(r.z(np.array([s]))[0]) + t * math.tan(roll(s)))))
+                continue
             for s in np.linspace(0.0, r.length, max(2, int(r.length) + 1)):
                 sec = r.section_at(s)
                 for lid, (tin, tout) in r.borders_at(s, sec).items():
@@ -94,8 +106,10 @@ def audit(path):
                             dz_all.append(abs(zg - zr))
     dz = np.array(dz_all) if dz_all else np.zeros(1)
     pr = np.array(planar_res) if planar_res else np.zeros(1)
+    db = np.array(dz_boundary) if dz_boundary else np.zeros(1)
     print(f"{path}: {n} junctions with grid; fails {dict(fails)}; grid planarity residual max {pr.max():.2e} m; "
-          f"|grid - connecting road| at lane centres: median {np.median(dz):.4f} p99 {np.percentile(dz, 99):.4f} max {dz.max():.4f} m")
+          f"|grid - connecting road| at lane centres: median {np.median(dz):.4f} p99 {np.percentile(dz, 99):.4f} max {dz.max():.4f} m; "
+          f"|grid - boundary helper| on the boundary: median {np.median(db):.4f} p99 {np.percentile(db, 99):.4f} max {db.max():.4f} m")
 
 
 for p in sys.argv[1:]:
