@@ -55,6 +55,7 @@ add_library(odrforge
   src/direct_junctions.cpp
   src/curbs.cpp
   src/cross_paths.cpp
+  src/barriers.cpp
   src/junction_surface.cpp
   src/sidewalk.cpp
   src/viz.cpp

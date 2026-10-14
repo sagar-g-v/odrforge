@@ -77,6 +77,15 @@ struct SpecRevision {
 
   // 1.8.0 Table 261 deprecates object type streetLamp: a lamp is type pole, subtype streetLamp.
   bool hasStreetLampAsPoleSubtype() const { return minor >= 8; }
+
+  // object@subtype: listed for <object> in 1.6.0 and 1.7.0 (§13.1 attributes); XSD 1.4H t_road_objects_object has
+  // no subtype (1.5 not checked: OdrForge writes 1.4, 1.6 and 1.8 only).
+  bool hasObjectSubtype() const { return minor >= 6; }
+
+  // 1.8.0 §13.14.1 Table 108: barrier subtypes (guardRail, jerseyBarrier, ...), sized by a continuous
+  // <repeat distance="0">. 1.4H §6.6 has type barrier without subtypes; the 1.4 (CARLA) output carries no
+  // barriers (CARLA's OpenDRIVE object parser reads crosswalks only).
+  bool hasBarrierSubtypes() const { return minor >= 8; }
 };
 
 }  // namespace odrforge

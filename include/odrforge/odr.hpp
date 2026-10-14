@@ -115,11 +115,21 @@ struct ObjectCorner {
   double u = 0.0, v = 0.0, z = 0.0, height = 0.0;  ///< cornerLocal (object frame)
 };
 
+/// OpenDRIVE 1.8.0 §13.4 <repeat> (XSD 1.8.1 t_road_objects_object_repeat; 1.4H §5.3.8.1.1): the object
+/// along [s, s + length]; distance 0 = one continuous feature, t / zOffset / height / width interpolated
+/// linearly from their Start to their End value
+struct ObjectRepeat {
+  double s = 0.0, length = 0.0, distance = 0.0;
+  double tStart = 0.0, tEnd = 0.0, zOffsetStart = 0.0, zOffsetEnd = 0.0;
+  double heightStart = 0.0, heightEnd = 0.0, widthStart = 0.0, widthEnd = 0.0;
+};
+
 struct Object {
   std::string id, name, type, subtype;
   double s = 0.0, t = 0.0, zOffset = 0.0, hdg = 0.0, pitch = 0.0, roll = 0.0;
   double length = 0.0, width = 0.0, height = 0.0, radius = 0.0;
   std::string orientation = "none";
+  std::vector<ObjectRepeat> repeats;  ///< continuous features (barriers); the size is given per repeat
   std::vector<ObjectCorner> outline;  ///< closed local outline (crosswalks, islands)
   std::vector<ValidityRange> validity;
 };

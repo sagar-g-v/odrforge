@@ -105,6 +105,8 @@ struct Cluster {
   double plane[3] = {0, 0, 0};  ///< z = a + b (x - cx) + c (y - cy)
 };
 
+/// OSM layer of a road at s on its trimmed reference line (overlap.cpp)
+int layerAt(const RoadMeta &m, double s);
 /// minimum fillet radius of a road class (m)
 double classMinRadius(const std::string &hw);
 /// carriageway extents (left, right) of a cross section relative to the reference line (no sidewalks)
@@ -208,6 +210,7 @@ struct Builder {
   std::vector<std::pair<size_t, bool>> cornerSidewalksAt(const odr::Junction &J, const RoadEnd &e) const;
   void junctionBoundaries(); // junction_surface.cpp
   void junctionGrids();      // junction_surface.cpp
+  void roadBarriers();       // barriers.cpp
   /// crosswalks at OSM crossing nodes on a road (not in a junction): (road index, object id)
   std::vector<std::pair<size_t, std::string>> midBlockCrosswalks;
   /// s ranges of sidewalks lowered for a crossing that is not a crosswalk object of that road (a cross path

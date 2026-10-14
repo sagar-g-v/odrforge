@@ -321,7 +321,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     attr(e, "id", o.id);
     attr(e, "name", o.name);
     attr(e, "type", o.type);
-    if (!o.subtype.empty()) attr(e, "subtype", o.subtype);
+    if (!o.subtype.empty() && c.spec.hasObjectSubtype()) attr(e, "subtype", o.subtype);
     attrS(e, "s", o.s);
     attrN(e, c, "t", o.t);
     attrN(e, c, "zOffset", o.zOffset);
@@ -330,11 +330,27 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     attrN(e, c, "roll", o.roll);
     attr(e, "orientation", o.orientation);
     if (o.radius > 0) attrN(e, c, "radius", o.radius);
-    else {
+    else if (o.repeats.empty() || o.length > 0) {
       attrN(e, c, "length", o.length);
       attrN(e, c, "width", o.width);
     }
-    attrN(e, c, "height", o.height);
+    // 1.8.0 §13.14.1: a barrier's size is given in its <repeat> records, not on the object
+    if (o.repeats.empty() || o.height > 0) attrN(e, c, "height", o.height);
+    // XSD 1.8.1 t_road_objects_object / 1.4H §5.3.8.1: <repeat> first in the object's sequence
+    for (const ObjectRepeat &rp : o.repeats) {
+      auto re = e.append_child("repeat");
+      attrS(re, "s", rp.s);
+      attrS(re, "length", rp.length);
+      attrN(re, c, "distance", rp.distance);
+      attrN(re, c, "tStart", rp.tStart);
+      attrN(re, c, "tEnd", rp.tEnd);
+      attrN(re, c, "heightStart", rp.heightStart);
+      attrN(re, c, "heightEnd", rp.heightEnd);
+      attrN(re, c, "zOffsetStart", rp.zOffsetStart);
+      attrN(re, c, "zOffsetEnd", rp.zOffsetEnd);
+      attrN(re, c, "widthStart", rp.widthStart);
+      attrN(re, c, "widthEnd", rp.widthEnd);
+    }
     if (!o.outline.empty()) {
       auto ol = (c.spec.hasOutlinesWrapper() ? e.append_child("outlines").append_child("outline")
                                              : e.append_child("outline"));

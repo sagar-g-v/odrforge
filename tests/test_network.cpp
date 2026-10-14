@@ -47,12 +47,12 @@ struct Result {
 };
 
 Result build(const OsmBuilder &b, const std::string &country = "US", const std::string &target = "asam",
-             bool separateSidewalks = false) {
+             bool separateSidewalks = false, bool furniture = false) {
   BuildOptions o;
   o.separateSidewalks = separateSidewalks;
   o.country = CountryProfile::load(country);
   o.target = TargetProfile::byName(target);
-  o.streetFurniture = false;
+  o.streetFurniture = furniture;
   Result r;
   r.od = buildOpenDrive(b.d, b.proj, o, &r.rep);
   r.od.header.revMinor = o.target.revMinor;
@@ -791,6 +791,77 @@ TEST_CASE("pedestrian lights (standard): none where OSM does not signalise the c
   CHECK(carla.rep.pedestrianSignals == 0);
   for (const auto &road : carla.od.roads)
     for (const auto &sg : road.signals) CHECK(sg.type != "1000002");
+}
+
+/// a 200 m two-lane road (no sidewalks) along x with a guard rail 5.5 m to its right (bent out to 6 m half way)
+/// and a jersey barrier 5.5 m to its left tagged layer=1; railY moves the guard rail
+OsmBuilder roadWithBarriers(double railY = -5.5) {
+  OsmBuilder b;
+  b.way({b.node(0, 0), b.node(200, 0)}, {{"highway", "primary"}, {"lanes", "2"}, {"sidewalk", "no"}});
+  b.way({b.node(20, railY), b.node(100, railY - 0.5), b.node(180, railY)}, {{"barrier", "guard_rail"}});
+  b.way({b.node(30, 5.5), b.node(170, 5.5)}, {{"barrier", "jersey_barrier"}, {"layer", "1"}});
+  return b;
+}
+
+TEST_CASE("barriers (standard): OSM guard rails and jersey barriers become barrier objects with continuous repeats") {
+  // OpenDRIVE 1.8.0 §13.14.1 Table 108: type barrier, subtypes guardRail / jerseyBarrier, the size in a <repeat>
+  // with distance 0 (no bounding box on the object); §13.4: t, zOffset, width, height linear along each repeat;
+  // 1.9.0 road.object.repeating.valid_s_length
+  const Result r = build(roadWithBarriers(), "US", "asam", false, true);
+  CHECK(r.val.errors == 0);
+  CHECK(r.rep.barriers == 2 && r.rep.barrierSamplesOnLane == 0);
+  std::map<std::string, const odr::Object *> bySubtype;
+  const odr::Road *road = nullptr;
+  for (const auto &rd : r.od.roads)
+    for (const auto &o : rd.objects)
+      if (o.type == "barrier") bySubtype[o.subtype] = &o, road = &rd;
+  CHECK(bySubtype.size() == 2 && bySubtype.count("guardRail") && bySubtype.count("jerseyBarrier"));
+  if (bySubtype.size() != 2 || !road) return;
+  // the jersey barrier is tagged layer=1 beside a layer-0 road: the layer orders candidate roads, it does not
+  // exclude the only road alongside
+  for (const auto &[sub, o] : bySubtype) {
+    const bool rail = sub == "guardRail";
+    CHECK(o->orientation == "none" && o->length == 0 && o->width == 0 && o->height == 0 && !o->repeats.empty());
+    if (o->repeats.empty()) continue;
+    double length = 0;
+    for (size_t k = 0; k < o->repeats.size(); ++k) {
+      const odr::ObjectRepeat &rp = o->repeats[k];
+      CHECK(rp.distance == 0 && rp.length > 0 && rp.s >= 0 && rp.s + rp.length <= road->length() + 1e-9);
+      CHECK(rp.heightStart == (rail ? 0.31 : 0.81) && rp.widthStart == (rail ? 0.10 : 0.60));
+      // on the flat road: the guard rail's beam 0.44 m above the ground, the jersey barrier on it
+      CHECK(std::abs(rp.zOffsetStart - (rail ? 0.44 : 0.0)) < 1e-6);
+      if (k + 1 < o->repeats.size()) {
+        const odr::ObjectRepeat &nx = o->repeats[k + 1];
+        CHECK(std::abs(rp.s + rp.length - nx.s) < 1e-9 && rp.tEnd == nx.tStart && rp.zOffsetEnd == nx.zOffsetStart);
+      }
+      length += rp.length;
+    }
+    CHECK(o->s == o->repeats.front().s && o->t == o->repeats.front().tStart);
+    // the OSM line: 160 m (guard rail from x 20 to 180) and 140 m (jersey barrier from x 30 to 170)
+    CHECK(std::abs(length - (rail ? 160.0 : 140.0)) < 1.5);
+    CHECK(std::abs(o->repeats.front().tStart - (rail ? -5.5 : 5.5)) < 0.1);
+    if (rail) {
+      // the bend half way: t follows the OSM line to within the chord tolerance (0.05 m)
+      double tMid = 0;
+      for (const odr::ObjectRepeat &rp : o->repeats)
+        if (rp.s <= 100.0 && rp.s + rp.length >= 100.0) tMid = rp.tStart + (100.0 - rp.s) / rp.length * (rp.tEnd - rp.tStart);
+      CHECK(std::abs(tMid + 6.0) < 0.1);
+    }
+  }
+}
+
+TEST_CASE("barriers (standard): none on a lane in use, none without street furniture, none in carla") {
+  // a guard rail drawn over the right driving lane: a barrier never blocks a lane anyone travels on
+  const Result onLane = build(roadWithBarriers(-1.5), "US", "asam", false, true);
+  CHECK(onLane.val.errors == 0);
+  CHECK(onLane.rep.barriers == 1 && onLane.rep.barrierSamplesOnLane > 100);
+  const Result off = build(roadWithBarriers(), "US", "asam", false, false);
+  CHECK(off.rep.barriers == 0);
+  // 1.4H §6.6 has no barrier subtypes and CARLA reads crosswalk objects only
+  const Result carla = build(roadWithBarriers(), "US", "carla", false, true);
+  CHECK(carla.rep.barriers == 0);
+  for (const auto &road : carla.od.roads)
+    for (const auto &o : road.objects) CHECK(o.type != "barrier");
 }
 
 TEST_CASE("cross paths (standard): the crosswalks of a signalised junction are cross paths inside it") {

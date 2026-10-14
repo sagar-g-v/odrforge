@@ -327,6 +327,11 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       if (!o.type.empty() && !kObjectTypes.count(o.type)) err("spec8.1.type_enum", O_ + "type " + o.type);
       if (rev >= 8 && kObjectTypesDeprecated18.count(o.type)) warn("spec8.1.type_deprecated", O_ + "type " + o.type + " deprecated in 1.8");
       if (o.radius > 0 && o.length > 0) err("road.object.circular_vs_angular", O_ + "both radius and length");
+      // 1.9.0 road.object.repeating.valid_s_length: a repeat lies on its road
+      for (const auto &rp : o.repeats)
+        if (rp.s < -1e-6 || rp.length < 0 || rp.s + rp.length > r.length() + 1e-6)
+          err("road.object.repeating.valid_s_length", O_ + "repeat [" + std::to_string(rp.s) + ", " +
+                                                          std::to_string(rp.s + rp.length) + "] outside road " + r.id);
       if (!o.outline.empty()) {
         if (o.outline.size() < 2) err("road.corner_local.element_min_amount", O_ + "outline with fewer than 2 corners");
         double area = 0;

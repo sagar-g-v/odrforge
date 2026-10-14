@@ -151,6 +151,10 @@ OpenDrive read(const std::string &path) {
       ob.width = num(o, "width");
       ob.radius = num(o, "radius");
       ob.height = num(o, "height");
+      for (auto rp : o.children("repeat"))
+        ob.repeats.push_back({num(rp, "s"), num(rp, "length"), num(rp, "distance"), num(rp, "tStart"), num(rp, "tEnd"),
+                              num(rp, "zOffsetStart"), num(rp, "zOffsetEnd"), num(rp, "heightStart"),
+                              num(rp, "heightEnd"), num(rp, "widthStart"), num(rp, "widthEnd")});
       auto outline = o.child("outlines").child("outline");
       if (!outline) outline = o.child("outline");
       for (auto c : outline.children("cornerLocal"))

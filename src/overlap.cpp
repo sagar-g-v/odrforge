@@ -42,14 +42,14 @@ bool extent(const odr::Road &r, double s, double &lo, double &hi) {
   return lo < hi;
 }
 
+}  // namespace
+
 int layerAt(const RoadMeta &m, double s) {
   int layer = 0;
   for (const auto &lr : m.layers)
     if (s + m.trimStart >= lr.s0 - 1e-6 && s + m.trimStart <= lr.s1 + 1e-6) layer = lr.layer;
   return layer;
 }
-
-}  // namespace
 
 void Builder::resolveLevelOverlaps() {
   overlapLevelPass = true;

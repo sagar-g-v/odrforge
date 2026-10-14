@@ -100,6 +100,12 @@ struct BuildReport {
   int crossPaths = 0;          ///< crossings written as cross paths (OpenDRIVE 1.8+)
   int junctionCrossPaths = 0;  ///< of those, crossings inside common junctions (Junction Guideline §6.3.3)
   int pedestrianSignals = 0;   ///< of those, crossings with pedestrian traffic lights (OSM crossing=traffic_signals)
+  int barriers = 0;              ///< barrier objects from OSM guard rails, jersey / cable barriers (OpenDRIVE 1.8+)
+  double barrierLength = 0.0;    ///< m along the roads
+  int barrierSamples = 0;        ///< 1 m samples of those OSM ways, of which ...
+  int barrierSamplesUnmatched = 0;  ///< ... no road alongside within 5 m of its outer edge
+  int barrierSamplesOnLane = 0;     ///< ... would stand on a lane in use (left out)
+  int barrierSamplesShort = 0;      ///< ... in pieces shorter than 2 m on one road
   int curbLanes = 0;        ///< sidewalk lane sections given a curb lane (OpenDRIVE 1.6+)
   int overlapShifts = 0;
   int cornerSidewalks = 0;          ///< sidewalks continued round junction corners

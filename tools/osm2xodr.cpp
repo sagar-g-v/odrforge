@@ -148,6 +148,11 @@ int main(int argc, char **argv) {
     if (rep.junctionGrids || rep.junctionBoundaries || rep.boundariesLeftOut)
       std::printf("  junction surfaces: %d elevation grids, %d boundaries (%d helper roads), %d left without a boundary\n",
                   rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesLeftOut);
+    if (rep.barrierSamples)
+      std::printf("  barriers: %d objects, %.0f m; of %d samples (1 m) %d without a road alongside, %d on a lane in use, "
+                  "%d in pieces < 2 m\n",
+                  rep.barriers, rep.barrierLength, rep.barrierSamples, rep.barrierSamplesUnmatched,
+                  rep.barrierSamplesOnLane, rep.barrierSamplesShort);
     std::printf("  validation: %d errors, %d warnings\n", vr.errors, vr.warnings);
     for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
     if (std::getenv("ODRFORGE_VERBOSE"))
