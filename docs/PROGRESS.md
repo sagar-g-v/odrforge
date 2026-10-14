@@ -28,6 +28,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.3h | Crosswalks at junctions as cross paths inside the junction (standard; Jev 0.82) | LA 28 / Tokyo 164 junction cross paths |
 | 1.7 | Junction reference line + elevation grid from the junction plane (standard; Jev 0.76, user decision) | 2463 junctions, 0 audit failures |
 | 1.7b | Junction boundary (standard, 1.8.0 §12.10; Jev 0.85): joints, lane edges, helper roads, self-checked | 2087 of 2463 junctions, 0 failures in two independent audits |
+| 1.3i | Pedestrian lights on junction cross paths OSM signalises (Guideline §6.3.3 Codes 20 - 23; Jev 0.86), `ped_signal_audit.py` + self-test (0.80) | LA 16, Munich 1, Tokyo 47 crossings; 0 audit failures |
 | 4.4 | Signal control fixes from the spec review: no lights in direct junctions, ramp approaches lit, stop lines clear of crosswalks (Jev 0.82) | 0 audit failures |
 | 1.5b | Motorway lane types re-derived per 1.8.0 §11.7.1 / Guideline §7; validator overlap over all vehicle lanes (Jev 0.85) | ramp types only on motorway_link |
 | 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
@@ -139,8 +140,6 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
   atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:
-  - pedestrian lights, invisible stop lines and controllers on junction cross paths (Junction Guideline §6.3.3;
-    OSM has no pedestrian phases) - the cross paths themselves are done (1.3h);
   - road barriers from OSM guard_rail / jersey_barrier / cable_barrier ways (Frankfurt Kreuz 117, Tokyo 4,
     Munich 2) as barrier objects along the road: 0.66 (repeat segments, both profiles 0.48, standard only
     0.33, open outline 0.23 - 0.27); walls and fences as well: 0.35;

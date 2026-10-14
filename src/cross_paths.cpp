@@ -94,11 +94,22 @@ odr::Road crossingRoad(const std::string &id, const std::string &junction, const
   odr::Lane walk;
   walk.id = -1;
   walk.type = "sidewalk";  // written as walking (1.8)
+  walk.direction = "both";  // pedestrians cross either way (OpenDRIVE 1.8.0 §11.2: bi-directional, @direction=both)
   walk.widths = {{0.0, width, 0.0, 0.0, 0.0}};
   walk.roadMarks = {odr::RoadMark{}};
   ls.right = {walk};
   x.lanes = {ls};
   return x;
+}
+
+/// an OSM crossing node that says pedestrians have their own lights: crossing=traffic_signals, crossing:signals=yes, or a
+/// UK signalised crossing_ref (pelican, puffin, toucan, pegasus)
+bool signalisedCrossing(const Tags &t) {
+  if (!tagIs(t, "highway", "crossing") && !t.count("crossing")) return false;
+  if (tagIs(t, "crossing", "traffic_signals") || tagIs(t, "crossing:signals", "yes")) return true;
+  for (const char *ref : {"pelican", "puffin", "toucan", "pegasus"})
+    if (tagIs(t, "crossing_ref", ref)) return true;
+  return false;
 }
 
 long numericId(const std::string &id) {
@@ -214,6 +225,63 @@ void Builder::crossPaths() {
       }
       // a road of the junction: on its surface like the connecting roads (the grid overrides it anyway)
       if (cl.hasPlane) connectingElevation(x, cl, std::nullopt);
+      // pedestrian lights where OSM signalises this crossing: a crossing node of the arm's way at its end (the node
+      // that is this cross path, network_junctions.cpp) tagged as signalised. Junction Guideline 1.0.0 §6.3.3
+      // Codes 20 - 23: per walking direction an invisible stop line where pedestrians wait (Signal reference
+      // 1.0.0 §1.5 type 1100001 -- the guideline's "11000001" is not in the catalogue; semantics waitingLine) that
+      // depends on the pedestrian light (type 1000002, Table 5; zOffset 2.23, 0.53 x 0.27 m as in Code 21) which
+      // references it; one controller per crossing for its two lights, listed in the junction. No <validity>: the
+      // crossing road's one walking lane is used both ways (@direction both), and a signal without one applies to all
+      // lanes for traffic in its @orientation (1.8.0 §14.2) -- a validity on lane -1 with orientation "-" would break
+      // road.signal.validity.right_hand_traffic_lane_ids (1.7.0: "-" spans only positive ids in RHT).
+      bool lit = false;
+      for (const auto &[nid, sf] : m.nodeS) {
+        const OsmNode *nd = osm.node(nid);
+        const double raw = sf - m.trimStart;
+        if (nd && !clusterOf.count(nid) && (e.atEnd ? raw > od.roads[m.roadIndex].length() - kCrosswalkLength : raw < kCrosswalkLength))
+          lit = lit || signalisedCrossing(nd->tags);
+      }
+      if (lit && u1 - u0 > 0.5) {
+        odr::Controller ctrl;
+        ctrl.id = std::to_string(nextControllerId++);
+        ctrl.name = "junction" + J.id + "_crossing" + std::to_string(J.crossPaths.size());
+        // walking +s (from A): waits at the kerb at u0, its light stands at the far end (s = L, facing back along -s);
+        // walking -s: waits at u1, its light at s = 0
+        for (const bool forward : {true, false}) {
+          odr::Signal light;
+          light.id = std::to_string(nextSignalId++);
+          light.name = "PedestrianTrafficLight";
+          light.dynamic = true;
+          light.orientation = forward ? "+" : "-";
+          light.country = "OpenDRIVE";
+          light.type = "1000002";
+          light.s = forward ? L : 0.0;
+          light.t = forward ? -0.5 * width : 0.5 * width;  // at the walking lane's right edge for its walkers
+          light.zOffset = 2.23;
+          light.height = 0.53;
+          light.width = 0.27;
+          light.semanticsPriority = "trafficLight";
+          odr::Signal wait;
+          wait.id = std::to_string(nextSignalId++);
+          wait.name = "InvisibleStopLine";
+          wait.orientation = light.orientation;
+          wait.country = "OpenDRIVE";
+          wait.type = "1100001";
+          wait.s = forward ? u0 : u1;
+          wait.width = width;
+          wait.height = 0.03;
+          wait.semanticsPriority = "waitingLine";
+          wait.dependencies.push_back({light.id, "trafficLight"});
+          light.references.push_back({wait.id, "signal", "stopLine"});
+          ctrl.signalIds.push_back(light.id);
+          x.signals.push_back(wait);
+          x.signals.push_back(light);
+          rep.signals += 2;
+        }
+        J.controllers.push_back({ctrl.id, static_cast<int>(J.controllers.size())});
+        od.controllers.push_back(ctrl);
+        ++rep.controllers, ++rep.pedestrianSignals;
+      }
       J.crossPaths.push_back(odr::CrossPath{std::to_string(J.crossPaths.size()), x.id, od.roads[A.road].id, od.roads[B.road].id,
                                             {A.walk, A.s, -1}, {B.walk, B.s, -1}});
       for (int k = 0; k < 2; ++k) loweredSpans.push_back({k ? B.road : A.road, span[k][0], span[k][1]});
@@ -278,6 +346,7 @@ void Builder::crossPaths() {
     odr::Lane walk;
     walk.id = -1;
     walk.type = "sidewalk";  // written as walking (1.8)
+    walk.direction = "both";  // OpenDRIVE 1.8.0 §11.2 bi-directional
     walk.widths = {{0.0, o->length, 0.0, 0.0, 0.0}};
     walk.roadMarks = {odr::RoadMark{}};
     ls.right = {walk};

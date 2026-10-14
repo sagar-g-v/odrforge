@@ -97,8 +97,9 @@ struct BuildReport {
   int junctionBoundaries = 0;   ///< junctions with a boundary (OpenDRIVE 1.8+)
   int boundaryHelperRoads = 0;  ///< roads added only to close a junction boundary (1.8.0 §12.10)
   int boundariesLeftOut = 0;    ///< junctions whose outline would not enclose all their lanes: no boundary written
-  int crossPaths = 0;
-  int junctionCrossPaths = 0;  ///< of those, crossings inside common junctions (Junction Guideline §6.3.3)       ///< mid-block crossings written as cross paths (OpenDRIVE 1.8+)
+  int crossPaths = 0;          ///< crossings written as cross paths (OpenDRIVE 1.8+)
+  int junctionCrossPaths = 0;  ///< of those, crossings inside common junctions (Junction Guideline §6.3.3)
+  int pedestrianSignals = 0;   ///< of those, crossings with pedestrian traffic lights (OSM crossing=traffic_signals)
   int curbLanes = 0;        ///< sidewalk lane sections given a curb lane (OpenDRIVE 1.6+)
   int overlapShifts = 0;
   int cornerSidewalks = 0;          ///< sidewalks continued round junction corners

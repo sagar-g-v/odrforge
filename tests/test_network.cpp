@@ -722,6 +722,77 @@ TEST_CASE("junction boundary (standard): no helper road shorter than 1 m") {
   }
 }
 
+/// a signalised crossroads whose four arms carry an OSM crossing node 6 m from the centre, with the given crossing tags
+OsmBuilder crossroadsWithCrossings(const Tags &crossing) {
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0, {{"highway", "traffic_signals"}});
+  const Tags street{{"highway", "residential"}, {"lanes", "2"}};
+  b.way({b.node(-120, 0), b.node(-60, 0), b.node(-6, 0, crossing), c}, street);
+  b.way({c, b.node(6, 0, crossing), b.node(60, 0), b.node(120, 0)}, street);
+  b.way({b.node(0, -120), b.node(0, -60), b.node(0, -6, crossing), c}, street);
+  b.way({c, b.node(0, 6, crossing), b.node(0, 60), b.node(0, 120)}, street);
+  return b;
+}
+
+TEST_CASE("pedestrian lights (standard): a crossing OSM signalises gets two lights, two waiting lines, one controller") {
+  // Junction Guideline 1.0.0 §6.3.3 Codes 20 - 23; Signal reference 1.0.0: 1000002 pedestrian light, 1100001 invisible
+  // stop line; OpenDRIVE 1.8.0 §14.2 (no <validity>: the signal holds for all lanes in its orientation), §14.3 / §14.4
+  // dependency and reference, §14.6 controllers, §11.2 the walking lane used both ways (@direction both)
+  const Result r = build(crossroadsWithCrossings({{"highway", "crossing"}, {"crossing", "traffic_signals"}}), "US", "asam");
+  CHECK(r.val.errors == 0);
+  CHECK(r.rep.junctionCrossPaths == 4 && r.rep.pedestrianSignals == 4);
+  if (r.od.junctions.empty()) return;
+  const odr::Junction &J = r.od.junctions[0];
+  std::map<std::string, const odr::Signal *> byId;
+  for (const auto &road : r.od.roads)
+    for (const auto &sg : road.signals) byId[sg.id] = &sg;
+  std::set<std::string> listed;
+  for (const auto &c : J.controllers) listed.insert(c.id);
+  int lit = 0;
+  for (const auto &cp : J.crossPaths) {
+    const odr::Road *x = roadById(r.od, cp.crossingRoad);
+    CHECK(x != nullptr);
+    if (!x) return;
+    CHECK(x->lanes.front().right.size() == 1 && x->lanes.front().right.front().direction == "both");
+    std::vector<const odr::Signal *> lights;
+    for (const auto &sg : x->signals)
+      if (sg.type == "1000002") lights.push_back(&sg);
+    if (lights.empty()) continue;
+    ++lit;
+    CHECK(lights.size() == 2 && lights[0]->orientation != lights[1]->orientation);
+    for (const odr::Signal *l : lights) {
+      CHECK(l->dynamic && l->country == "OpenDRIVE" && l->semanticsPriority == "trafficLight");
+      CHECK(l->references.size() == 1);
+      if (l->references.empty() || !byId.count(l->references[0].elementId)) continue;
+      const odr::Signal *w = byId[l->references[0].elementId];
+      CHECK(w->type == "1100001" && w->orientation == l->orientation && w->semanticsPriority == "waitingLine" && w->validity.empty());
+      CHECK(w->dependencies.size() == 1 && w->dependencies[0].id == l->id);
+      // walkers wait at the kerb they start from: + in the first half of the crossing, - in the second; the light
+      // stands across, at the far end
+      const double L = x->length();
+      CHECK(l->orientation == "+" ? (w->s < 0.5 * L && l->s > 0.5 * L) : (w->s > 0.5 * L && l->s < 0.5 * L));
+    }
+    const auto ctrl = std::find_if(r.od.controllers.begin(), r.od.controllers.end(), [&](const odr::Controller &c) {
+      return std::find(c.signalIds.begin(), c.signalIds.end(), lights[0]->id) != c.signalIds.end();
+    });
+    CHECK(ctrl != r.od.controllers.end());
+    if (ctrl == r.od.controllers.end()) continue;
+    CHECK(ctrl->signalIds.size() == 2 && std::find(ctrl->signalIds.begin(), ctrl->signalIds.end(), lights[1]->id) != ctrl->signalIds.end());
+    CHECK(listed.count(ctrl->id) == 1);
+  }
+  CHECK(lit == 4);
+}
+
+TEST_CASE("pedestrian lights (standard): none where OSM does not signalise the crossing, none in carla") {
+  const Result marked = build(crossroadsWithCrossings({{"highway", "crossing"}, {"crossing", "marked"}}), "US", "asam");
+  CHECK(marked.val.errors == 0);
+  CHECK(marked.rep.junctionCrossPaths == 4 && marked.rep.pedestrianSignals == 0);
+  const Result carla = build(crossroadsWithCrossings({{"highway", "crossing"}, {"crossing", "traffic_signals"}}), "US", "carla");
+  CHECK(carla.rep.pedestrianSignals == 0);
+  for (const auto &road : carla.od.roads)
+    for (const auto &sg : road.signals) CHECK(sg.type != "1000002");
+}
+
 TEST_CASE("cross paths (standard): the crosswalks of a signalised junction are cross paths inside it") {
   // Junction Guideline 1.0.0 section 6.3.3 "Add roads for the pedestrian crossings inside of the junction area",
   // section 6.4.3 "Choose the road reference lines to stop before any cross path in the junction"; OpenDRIVE 1.8.0

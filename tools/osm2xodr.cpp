@@ -142,6 +142,9 @@ int main(int argc, char **argv) {
     if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
       std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk, %d acute (nose)\n",
                   rep.cornerSidewalks, rep.cornerSidewalksTooTight, rep.cornerNoses);
+    if (rep.crossPaths)
+      std::printf("  cross paths: %d (%d inside junctions, %d of those with pedestrian lights)\n", rep.crossPaths,
+                  rep.junctionCrossPaths, rep.pedestrianSignals);
     if (rep.junctionGrids || rep.junctionBoundaries || rep.boundariesLeftOut)
       std::printf("  junction surfaces: %d elevation grids, %d boundaries (%d helper roads), %d left without a boundary\n",
                   rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesLeftOut);

@@ -5,6 +5,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Pedestrian lights on junction cross paths** (standard): where an OSM crossing at the arm's end is
+  signalised (crossing=traffic_signals, crossing:signals=yes, UK signalised crossing_ref), the crossing road gets
+  per walking direction an invisible stop line (type 1100001, semantics waitingLine) at the kerb pedestrians start
+  from and a pedestrian light (type 1000002) across the road that it depends on and that references it, plus one
+  controller per crossing listed in the junction (Junction Guideline §6.3.3 Codes 20 - 23; Signal reference 1.0.0
+  types). No `<validity>` (1.8.0 §14.2 default; road.signal.validity.*_hand_traffic_lane_ids). Crossing roads'
+  walking lanes are bi-directional (`direction="both"`, 1.8.0 §11.2). LA 16, Munich 1, Tokyo 47 crossings; carla
+  identical. `ped_signal_audit.py` with a planted-defect self-test (12/12 in LA and Tokyo). Jev 0.86 / 0.80.
 - **Junction boundary** (standard, OpenDRIVE 1.8.0 §12.10): a counter-clockwise `<boundary>` for common junctions
   with an elevation grid - a joint across every arm end, corners along an existing lane edge, else a helper road
   (`JunctionBoundary`, centre lane only, the junction's id) copying the connecting road between the two arms along
