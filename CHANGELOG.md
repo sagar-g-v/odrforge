@@ -5,6 +5,16 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Road barriers** (standard, OpenDRIVE 1.8.0 §13.14.1 Table 108): OSM guard rails, jersey barriers and cable
+  barriers become `<object type="barrier">` (guardRail / jerseyBarrier / other) on the plain road they line, sized
+  by continuous `<repeat distance="0">` records that follow the OSM line to within 0.05 m (§13.4) and sit on the
+  ground to within 0.005 m (cross slope and lane height added to zOffset; the barrier breaks where the ground
+  steps). A barrier stays off lanes in use of its road and of every other road on the same level (dropped
+  there) and at most 5 m beyond the road edge; the OSM layer prefers a road but does not exclude one. Sizes are
+  assumed typical values (OSM carries none). New `odr::ObjectRepeat` (writer, reader), validator rule 1.9.0
+  `road.object.repeating.valid_s_length`; object@subtype is written from 1.6 on only (not in XSD 1.4H). Frankfurt
+  Kreuz: 226 barriers, 27.7 km; other areas and carla unchanged. Drawn barriers on the 300 fuzz networks and
+  beside 401 superelevated LA roads audit clean. `barrier_audit.py` with a planted-defect self-test.
 - **Pedestrian lights on junction cross paths** (standard): where an OSM crossing at the arm's end is
   signalised (crossing=traffic_signals, crossing:signals=yes, UK signalised crossing_ref), the crossing road gets
   per walking direction an invisible stop line (type 1100001, semantics waitingLine) at the kerb pedestrians start

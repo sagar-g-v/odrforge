@@ -29,6 +29,7 @@ Annex F checks, the 1.4H and 1.8.1 XSD, esmini and CARLA's parser.
 | 1.7 | Junction reference line + elevation grid from the junction plane (standard; Jev 0.76, user decision) | 2463 junctions, 0 audit failures |
 | 1.7b | Junction boundary (standard, 1.8.0 §12.10; Jev 0.85): joints, lane edges, helper roads, self-checked | 2087 of 2463 junctions, 0 failures in two independent audits |
 | 1.3i | Pedestrian lights on junction cross paths OSM signalises (Guideline §6.3.3 Codes 20 - 23; Jev 0.86), `ped_signal_audit.py` + self-test (0.80) | LA 16, Munich 1, Tokyo 47 crossings; 0 audit failures |
+| 1.8 | Road barriers from OSM guard rails / jersey / cable barriers (1.8.0 §13.14.1, continuous repeats; standard), `barrier_audit.py` + self-test | Frankfurt Kreuz 226 barriers, 27.7 km; 300 fuzz + LA drawn barriers; 0 audit failures |
 | 4.4 | Signal control fixes from the spec review: no lights in direct junctions, ramp approaches lit, stop lines clear of crosswalks (Jev 0.82) | 0 audit failures |
 | 1.5b | Motorway lane types re-derived per 1.8.0 §11.7.1 / Guideline §7; validator overlap over all vehicle lanes (Jev 0.85) | ramp types only on motorway_link |
 | 1.3b | Curb lanes before every sidewalk, round corners (standard; Jev 0.78, user decision) | Tokyo 2,841, Munich 793, LA 464 |
@@ -140,9 +141,11 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
   atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:
-  - road barriers from OSM guard_rail / jersey_barrier / cable_barrier ways (Frankfurt Kreuz 117, Tokyo 4,
-    Munich 2) as barrier objects along the road: 0.66 (repeat segments, both profiles 0.48, standard only
-    0.33, open outline 0.23 - 0.27); walls and fences as well: 0.35;
+  - walls and fences as barrier objects (the road barrier stage, 1.8, could carry them; most OSM walls and
+    fences bound properties, not roads): 0.35;
+  - barriers: samples on lanes in use are dropped (Frankfurt 1,806 of 31,400, a median 0.7 m deep - OSM line
+    vs estimated lane widths); moving them to the lane edge instead is a user decision. Barriers beside
+    junction connecting roads are not placed (18 samples in Frankfurt);
   - driveways as virtual junctions (standard; uncut street, turn roads linked with elementS / elementDir):
     0.64 (0.67 as an idea);
   - roundabout junction groups exist already; level crossings need railways, which are not converted
