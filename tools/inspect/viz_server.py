@@ -15,6 +15,7 @@ import functools
 import http.server
 import json
 import os
+import re
 import threading
 
 VIEWER_FIELDS = ("id", "x", "y", "road", "lane", "laneType", "junction", "s", "category", "note", "created", "deleted")
@@ -50,8 +51,17 @@ def merge(old, new):
     return out
 
 
+LOCAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$")
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
+        # the review app (odrforge-viewer) runs on its own local port: allow local origins only, so no web page can
+        # read the networks or write flags through this server
+        origin = self.headers.get("Origin", "")
+        if LOCAL_ORIGIN.match(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         path = self.path.split("?")[0]
         if path.endswith(".flags.json"):
             self.send_header("Cache-Control", "no-store")
@@ -67,6 +77,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):  # CORS preflight of the app's JSON POST
+        self.send_response(204 if LOCAL_ORIGIN.match(self.headers.get("Origin", "")) else 403)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
         url = self.path.split("?")[0]

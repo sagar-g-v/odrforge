@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Review server: local cross-origin access** (`tools/inspect/viz_server.py`): the new review app
+  ([odrforge-viewer](https://github.com/sagar-g-v/odrforge-viewer), React + deck.gl + MapLibre) runs on its own local
+  port; the server grants CORS to localhost / 127.0.0.1 / [::1] origins only, so no web page can read networks or
+  write flags through it. Jev 0.84.
 - **Viewer: popups and panel close; 3D view**: the flag popup closes on Cancel / Save / Delete (its CSS display
   overrode `hidden`); the side panel toggles at every width; new 3D view (button 3D / key V) of the lanes on screen at
   their OpenDRIVE heights (elevation, superelevation, curb / sidewalk lane height; page data gains per-point z, +17 %).
