@@ -83,6 +83,20 @@ struct Enc {
     }
     return o;
   }
+  /// heights of the same points (cm, delta-coded, the same duplicates skipped as poly()) for the 3D view
+  std::string heights(const std::vector<Vec2> &pts, const std::vector<double> &zs) const {
+    std::string o;
+    long px = 0, py = 0, pz = 0;
+    for (size_t i = 0; i < pts.size(); ++i) {
+      const long x = std::lround((pts[i].x - ox) * kUnit), y = std::lround((pts[i].y - oy) * kUnit);
+      if (i && x == px && y == py) continue;
+      const long z = std::lround(zs[i] * kUnit);
+      if (!o.empty()) o += ',';
+      o += std::to_string(i ? z - pz : z);
+      px = x, py = y, pz = z;
+    }
+    return o;
+  }
 };
 
 /// largest |curvature| of the reference line on [a, b]: curvature is linear along each element (line, arc, spiral), so
@@ -216,28 +230,36 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
       st = fine;
       std::vector<Pose> poses;
       for (double s : st) poses.push_back(r.planView.eval(s));
-      auto border = [&](int laneId, bool outer, std::vector<Vec2> &out) {
-        out.clear();
+      // border points and their surface height (OpenDRIVE 1.8.0 §10.5 elevation, §10.6 superelevation / shape, §11.10
+      // lane height: inner / outer raise of curbs and sidewalks) for the 3D view
+      auto border = [&](const odr::Lane &l, bool outer, std::vector<Vec2> &out, std::vector<double> &zs) {
+        out.clear(), zs.clear();
         for (size_t i = 0; i < st.size(); ++i) {
           double a, b;
-          if (!odr::laneBorders(r, st[i], laneId, a, b)) return false;
-          out.push_back(poses[i].offset(outer ? b : a));
+          if (!odr::laneBorders(r, st[i], l.id, a, b)) return false;
+          const double t = outer ? b : a;
+          out.push_back(poses[i].offset(t));
+          zs.push_back(odr::surfaceZ(r, st[i], t) + (outer ? l.heightOuter : l.heightInner).value_or(0.0));
         }
         return true;
       };
       std::vector<Vec2> in, out;
+      std::vector<double> zIn, zOut;
       for (const auto *side : {&sec.left, &sec.right})
         for (const auto &l : *side) {
-          if (!border(l.id, false, in) || !border(l.id, true, out)) continue;
+          if (!border(l, false, in, zIn) || !border(l, true, out, zOut)) continue;
           // skip zero-width lanes entirely
           double wmax = 0;
           for (size_t i = 0; i < in.size(); ++i) wmax = std::max(wmax, (in[i] - out[i]).norm());
           if (wmax < 0.05) continue;
           std::vector<Vec2> poly = in;
           poly.insert(poly.end(), out.rbegin(), out.rend());
+          std::vector<double> polyZ = zIn;
+          polyZ.insert(polyZ.end(), zOut.rbegin(), zOut.rend());
           const double spd = l.speedMax ? *l.speedMax : -1;
           lanes << (nLanes++ ? "," : "") << "[" << ri << "," << l.id << "," << laneTypeCode(l.type) << ","
-                << static_cast<int>(si) << "," << (spd >= 0 ? std::lround(spd * 10) : -1) << ",[" << enc.poly(poly) << "]]";
+                << static_cast<int>(si) << "," << (spd >= 0 ? std::lround(spd * 10) : -1) << ",[" << enc.poly(poly) << "],["
+                << enc.heights(poly, polyZ) << "]]";
           for (const auto &m : l.roadMarks) {
             const int style = markStyle(m.type);
             if (!style) continue;

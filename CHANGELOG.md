@@ -5,6 +5,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Viewer: popups and panel close; 3D view**: the flag popup closes on Cancel / Save / Delete (its CSS display
+  overrode `hidden`); the side panel toggles at every width; new 3D view (button 3D / key V) of the lanes on screen at
+  their OpenDRIVE heights (elevation, superelevation, curb / sidewalk lane height; page data gains per-point z, +17 %).
 - **Opposite carriageways drawn too close are pushed apart at junctions too**: the gore exemption of the overlap shift
   now requires the two roads' traffic to merge there (both into or both out of the junction); an arriving and a leaving
   carriageway of one street are a drawing offset. Tokyo roads 734 / 977 overlap fixed (validation 2 -> 1); G2 costs

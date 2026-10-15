@@ -71,7 +71,14 @@ canvas.drag { cursor: grabbing; }
   color: var(--text); font-size: 16px; cursor: pointer; }
 #scale { position: absolute; left: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--line);
   border-radius: 6px; padding: 3px 8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-#menu { position: absolute; left: 12px; top: 12px; display: none; }
+#menu { position: absolute; left: 12px; top: 12px; z-index: 6; }
+[hidden] { display: none !important; }  /* author display rules (#flagform is flex) must not override hidden */
+#side.collapsed { display: none; }
+#three { position: absolute; inset: 0; }
+#three3dbar { position: absolute; left: 56px; top: 12px; z-index: 6; display: flex; gap: 8px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; color: var(--text); font-size: 12px; }
+#three3dbar select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+#view3d { font-size: 11px; font-weight: 700; }
 #attrib { position: absolute; right: 0; bottom: 0; background: color-mix(in srgb, var(--panel) 85%, transparent);
   padding: 2px 6px; font-size: 11px; color: var(--muted); display: none; border-top-left-radius: 6px; }
 #attrib a { color: var(--accent); }
@@ -112,7 +119,7 @@ canvas.flagging { cursor: crosshair; }
 @media (max-width: 760px) {
   #side { position: absolute; z-index: 5; left: 0; top: 0; bottom: 0; width: min(300px, 86vw); transform: translateX(-100%); transition: transform .2s; }
   #side.open { transform: none; box-shadow: 0 0 30px rgba(0,0,0,.4); }
-  #menu { display: block; }
+  #side.collapsed { display: flex; }
 }
 </style>
 </head>
@@ -180,7 +187,11 @@ canvas.flagging { cursor: crosshair; }
       <button id="fit" title="Fit network">⤢</button>
       <button id="theme" title="Toggle theme">◐</button>
       <button id="flagtool" title="Mark something wrong (M)">⚑</button>
+      <button id="view3d" title="3D view of the area on screen (V)">3D</button>
     </div>
+    <div id="three" hidden></div>
+    <div id="three3dbar" hidden>3D · drag: orbit · right-drag: pan · wheel: zoom · V: back to 2D
+      <label>height × <select id="zexag"><option>1</option><option selected>2</option><option>5</option><option>10</option></select></label></div>
     <div id="scale"></div>
     <div id="attrib"></div>
     <div id="tip"></div>
@@ -242,7 +253,7 @@ const roads = DATA.roads.map((r, i) => ({ i, id: r[0], name: r[1], junction: r[2
   pred: r[6], succ: r[7], sections: r[8], geoms: r[9], lanes: [] }));
 const lanes = DATA.lanes.map((l) => {
   const p = decode(l[5]);
-  const o = { road: l[0], id: l[1], type: l[2], section: l[3], speed: l[4], p, bb: bbox(p), path: path(p, true) };
+  const o = { road: l[0], id: l[1], type: l[2], section: l[3], speed: l[4], p, bb: bbox(p), path: path(p, true), zc: l[6] };
   roads[o.road].lanes.push(o);
   return o;
 });
@@ -753,7 +764,13 @@ $("theme").onclick = () => {
   const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
   document.documentElement.dataset.theme = cur === "light" ? "dark" : "light"; legend(); draw();
 };
-$("menu").onclick = () => $("side").classList.toggle("open");
+// the panel: an overlay on narrow screens (open / closed), beside the map on wide ones (shown / collapsed)
+const narrow = () => matchMedia("(max-width: 760px)").matches;
+$("menu").onclick = () => {
+  if (narrow()) $("side").classList.toggle("open");
+  else { $("side").classList.toggle("collapsed"); resize(); resize3d(); }
+};
+cv.addEventListener("pointerdown", () => { if (narrow()) $("side").classList.remove("open"); });
 $("search").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   const q = e.target.value.trim().toLowerCase(); if (!q) return;
@@ -765,6 +782,89 @@ $("search").addEventListener("keydown", (e) => {
   scale = Math.min(60, Math.min(vw / (bb[2] - bb[0] + 40), vh / (bb[3] - bb[1] + 40)));
   pinned = r.i; $("info").innerHTML = laneInfo(r.lanes[0]); draw();
 });
+// ---- 3D view: the lanes on screen as a lit surface at their OpenDRIVE heights (elevation, superelevation, lane
+// height of curbs and sidewalks), for reviewing kerbs, slopes and overlaps a top view hides
+const v3 = { on: false, renderer: null, scene: null, camera: null, controls: null, group: null, loading: null };
+function loadScript(src) {
+  return new Promise((ok, fail) => { const e = document.createElement("script"); e.src = src; e.onload = ok; e.onerror = () => fail(new Error(src)); document.head.appendChild(e); });
+}
+function load3d() {
+  if (!v3.loading) v3.loading = loadScript("https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js")
+    .then(() => loadScript("https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"));
+  return v3.loading;
+}
+function decodeZ(arr) { const out = new Float64Array(arr.length); let z = 0; for (let i = 0; i < arr.length; ++i) { z = i ? z + arr[i] : arr[0]; out[i] = z / U; } return out; }
+function resize3d() {
+  if (!v3.renderer) return;
+  const el = $("three"); v3.renderer.setSize(el.clientWidth, el.clientHeight, false);
+  v3.camera.aspect = el.clientWidth / Math.max(1, el.clientHeight); v3.camera.updateProjectionMatrix();
+}
+function build3d() {
+  const T = window.THREE, ex = +$("zexag").value;
+  if (v3.group) { v3.scene.remove(v3.group); v3.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+  v3.group = new T.Group();
+  const [x0, y1] = toWorld(0, 0), [x1, y0] = toWorld(vw, vh), view = [x0, y0, x1, y1];
+  const pick3 = lanes.filter((l) => l.zc && l.zc.length && visible(l.bb, view)).slice(0, 20000);
+  const zs0 = pick3.map((l) => l.zc[0] / U).sort((a, b) => a - b), zRef = zs0.length ? zs0[zs0.length >> 1] : 0;
+  const ox = (x0 + x1) / 2, oy = (y0 + y1) / 2, byColor = new Map();
+  for (const l of pick3) {
+    const z = decodeZ(l.zc), n = Math.min(z.length, l.p.length / 2);
+    if (n < 3) continue;
+    const contour = [];
+    for (let i = 0; i < n; ++i) contour.push(new T.Vector2(l.p[2 * i] - ox, l.p[2 * i + 1] - oy));
+    let tris; try { tris = T.ShapeUtils.triangulateShape(contour, []); } catch (e) { continue; }
+    const j = roads[l.road].junction !== "-1";
+    const col = j && l.type === 0 ? css("--lane-junction") : css(LANE_VARS[l.type]);
+    if (!byColor.has(col)) byColor.set(col, { pos: [], wall: [] });
+    const b = byColor.get(col), P = (i) => [contour[i].x, (z[i] - zRef) * ex, -contour[i].y];
+    for (const t of tris) b.pos.push(...P(t[0]), ...P(t[1]), ...P(t[2]));
+    // a skirt below the outline closes the step between a raised curb / sidewalk and the road beside it
+    const drop = 0.3 * ex;
+    const m = contour.length;  // triangulateShape drops a repeated end point in place
+    for (let i = 0; i < m; ++i) {
+      const a = P(i), c = P((i + 1) % m);
+      b.wall.push(...a, ...c, c[0], c[1] - drop, c[2], ...a, c[0], c[1] - drop, c[2], a[0], a[1] - drop, a[2]);
+    }
+  }
+  for (const [col, b] of byColor)
+    for (const [arr, shade] of [[b.pos, 1], [b.wall, 0.6]]) {
+      if (!arr.length) continue;
+      const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(arr, 3)); g.computeVertexNormals();
+      const c = new T.Color(col); c.multiplyScalar(shade);
+      v3.group.add(new T.Mesh(g, new T.MeshLambertMaterial({ color: c, side: T.DoubleSide })));
+    }
+  v3.scene.add(v3.group);
+  const span = Math.max(x1 - x0, y1 - y0);
+  v3.camera.position.set(0, span * 0.6, span * 0.6); v3.controls.target.set(0, 0, 0); v3.controls.update();
+  flagStoreText(`3D: ${pick3.length} lanes of the area on screen, heights \u00d7 ${ex}. Zoom the 2D map to choose the area.`);
+}
+function render3d() { if (!v3.on) return; v3.controls.update(); v3.renderer.render(v3.scene, v3.camera); requestAnimationFrame(render3d); }
+async function set3d(on) {
+  v3.on = on; $("view3d").style.background = on ? "var(--accent)" : "";
+  $("three").hidden = !on; $("three3dbar").hidden = !on; cv.style.visibility = on ? "hidden" : "";
+  if (on) closeFlagForm();
+  if (!on) return;
+  try { await load3d(); } catch (e) { flagStoreText("The 3D view needs three.js from cdnjs / jsdelivr: " + e.message); set3d(false); return; }
+  const T = window.THREE;
+  if (!v3.renderer) {
+    v3.renderer = new T.WebGLRenderer({ antialias: true }); v3.renderer.setPixelRatio(window.devicePixelRatio || 1);
+    $("three").appendChild(v3.renderer.domElement);
+    v3.scene = new T.Scene();
+    v3.camera = new T.PerspectiveCamera(50, 1, 0.1, 20000);
+    v3.controls = new T.OrbitControls(v3.camera, v3.renderer.domElement); v3.controls.enableDamping = true;
+    v3.scene.add(new T.HemisphereLight(0xffffff, 0x444444, 0.75));
+    const sun = new T.DirectionalLight(0xffffff, 0.6); sun.position.set(300, 800, 200); v3.scene.add(sun);
+  }
+  v3.scene.background = new T.Color(css("--bg"));
+  resize3d(); build3d(); render3d();
+}
+$("view3d").onclick = () => set3d(!v3.on);
+$("zexag").onchange = () => { if (v3.on) build3d(); };
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("input, textarea, select")) return;
+  if (e.key === "v" || e.key === "V") set3d(!v3.on);
+});
+window.addEventListener("resize", resize3d);
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { legend(); draw(); });
 window.addEventListener("resize", resize);
 resize(); fit();
