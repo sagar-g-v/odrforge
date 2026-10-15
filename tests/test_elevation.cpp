@@ -171,6 +171,26 @@ TEST_CASE("overlap resolution: carriageways drawn too close are pushed apart") {
   CHECK(joins > 0);
 }
 
+TEST_CASE("overlap resolution: opposite carriageways meeting one junction are pushed apart, not taken for a gore") {
+  // a dual carriageway drawn 6 m apart (3 lanes each) ending at a cross street: one carriageway arrives at the
+  // junction, the other leaves it - their traffic does not merge there (Tokyo roads 734 / 977), so the pair is a
+  // drawing offset like any other, not a gore left to the junction
+  // the carriageways run 30 m from the cross street to a dead end: the whole overlap lies within the gore window (40 m)
+  OsmB b;
+  const OsmId n = b.node(0, 3), s = b.node(0, -3);
+  b.way({b.node(-30, 3), n}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "3"}});
+  b.way({s, b.node(-30, -3)}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "3"}});
+  b.way({b.node(0, -100), s, n, b.node(0, 100)}, {{"highway", "residential"}});
+  BuildOptions o = baseOptions();
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(rep.overlapShifts >= 1);
+  CHECK(v.count("quality.road_overlap") == 0);
+  CHECK(v.errors == 0);
+}
+
 TEST_CASE("overlap resolution: a realignment does not run through a lane drop") {
   // a three-lane oneway drops to two lanes 40 m before the opposite carriageway, drawn too close,
   // pushes it aside: the shift ramps in after the drop's taper; through the drop the lanes kept move

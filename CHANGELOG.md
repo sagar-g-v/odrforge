@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Opposite carriageways drawn too close are pushed apart at junctions too**: the gore exemption of the overlap shift
+  now requires the two roads' traffic to merge there (both into or both out of the junction); an arriving and a leaving
+  carriageway of one street are a drawing offset. Tokyo roads 734 / 977 overlap fixed (validation 2 -> 1); G2 costs
+  none (LA G2_ref_junction -7, London +1). Jev 0.86.
 - **Shifted roads keep G2 lane edges** (Annex D.1.3): the laneOffset of a road pushed apart from a neighbour drawn too
   close is a cubic spline through its ~10 m knots (equal second derivative at every join; original slope and second
   derivative at both ends) instead of C1 pieces whose curvature stepped at every knot. Lane-edge curvature steps

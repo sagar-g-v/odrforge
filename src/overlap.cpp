@@ -17,6 +17,27 @@ namespace detail {
 
 namespace {
 
+/// the traffic directions a road's vehicle lanes carry (along / against s). OpenDRIVE 1.8.0 §11 lanes: in right-hand
+/// traffic lanes right of the centre lane (id < 0) travel along s and left lanes against it, in left-hand traffic the
+/// reverse (@rule); @direction reversed flips a lane, both (1.8, bidirectional) carries either way
+void travelDirections(const odr::Road &r, bool &along, bool &against) {
+  along = against = false;
+  const bool lht = r.rule == "LHT";
+  for (const odr::LaneSection &sec : r.lanes)
+    for (const auto *side : {&sec.left, &sec.right})
+      for (const odr::Lane &l : *side) {
+        if (l.type != "driving" && l.type != "bus" && l.type != "bidirectional" && l.type != "onRamp" &&
+            l.type != "offRamp" && l.type != "connectingRamp" && l.type != "entry" && l.type != "exit")
+          continue;
+        if (l.direction == "both" || l.type == "bidirectional") {
+          along = against = true;
+          continue;
+        }
+        const bool withS = (l.id < 0) != lht;
+        ((l.direction == "reversed") != withS ? along : against) = true;
+      }
+}
+
 /// d laneOffset / ds at s (OpenDRIVE 1.8.0 §11.4 [1.9 §11.5] laneOffset: a cubic per record, s absolute)
 double laneOffsetSlope(const odr::Road &r, double s) {
   const odr::Poly3 *rec = nullptr;
@@ -67,15 +88,24 @@ void Builder::resolveOverlaps() {
   std::map<int, std::vector<double>> total;         // accumulated shift per sample
   // the two roads leave (enter) the same junction together within goreLength of these positions,
   // heading the same way from it (`c`: cosine of the angle between their headings there) - not a
-  // road that loops back alongside the other
+  // road that loops back alongside the other - and their traffic merges there: both carry traffic into
+  // the junction, or both out of it. Opposite carriageways of one street (one arriving, one leaving) only
+  // run side by side and are pushed apart like any other pair (Tokyo, roads 734 / 977)
   auto nearSharedEnd = [&](int mi, double sa, int mj, double sb, double c) {
     const Chain &ca = chains[metas[mi].chain], &cb = chains[metas[mj].chain];
-    const double La = od.roads[metas[mi].roadIndex].length(), Lb = od.roads[metas[mj].roadIndex].length();
+    const odr::Road &ra = od.roads[metas[mi].roadIndex], &rb = od.roads[metas[mj].roadIndex];
+    const double La = ra.length(), Lb = rb.length();
+    bool alongA, againstA, alongB, againstB;
+    travelDirections(ra, alongA, againstA);
+    travelDirections(rb, alongB, againstB);
     for (int ea : {0, 1})
       for (int eb : {0, 1}) {
         const int ka = ea ? ca.c1 : ca.c0, kb = eb ? cb.c1 : cb.c0;
         if (ka < 0 || ka != kb || (ea == eb) != (c > 0)) continue;
-        if ((ea ? La - sa : sa) < goreLength && (eb ? Lb - sb : sb) < goreLength) return true;
+        if ((ea ? La - sa : sa) >= goreLength || (eb ? Lb - sb : sb) >= goreLength) continue;
+        const bool intoA = ea ? alongA : againstA, outA = ea ? againstA : alongA;
+        const bool intoB = eb ? alongB : againstB, outB = eb ? againstB : alongB;
+        if ((intoA && intoB) || (outA && outB)) return true;
       }
     return false;
   };
