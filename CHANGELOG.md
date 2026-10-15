@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Shifted roads keep G2 lane edges** (Annex D.1.3): the laneOffset of a road pushed apart from a neighbour drawn too
+  close is a cubic spline through its ~10 m knots (equal second derivative at every join; original slope and second
+  derivative at both ends) instead of C1 pieces whose curvature stepped at every knot. Lane-edge curvature steps
+  (G2_lane): LA 2359 -> 735, Munich 326 -> 173, Frankfurt 397 -> 177, Tokyo 243 -> 54, London 66 -> 60; junction joins
+  LA -10. Cost: one Frankfurt road start 0.16 m off its OSM line (osm_off_road 37 -> 38). Jev 0.82.
 - **Left-hand traffic corner sidewalks link from lanes leading into the junction** (Annex F.4.6.6
   junctions.connection.one_link_to_incoming): they were built the right-hand-traffic way round everywhere; under LHT
   they are now traversed from the other arm with their lanes on the left - same surface (0.0000 m, 0 m in z).

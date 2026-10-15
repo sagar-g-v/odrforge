@@ -156,6 +156,19 @@ TEST_CASE("overlap resolution: carriageways drawn too close are pushed apart") {
   CHECK(rep.overlapShifts >= 2);
   CHECK(v.count("quality.road_overlap") == 0);
   CHECK(v.errors == 0);
+  // the shifted laneOffset joins its pieces with equal value, slope and second derivative (lane edges G2,
+  // Annex D.1.3): C1 pieces with finite-difference slopes stepped the curvature at every knot
+  int joins = 0;
+  for (const auto &r : od.roads)
+    for (size_t i = 1; i < r.laneOffset.size(); ++i) {
+      const odr::Poly3 &p = r.laneOffset[i - 1], &q = r.laneOffset[i];
+      const double h = q.s - p.s;
+      ++joins;
+      CHECK_NEAR(p.eval(h), q.a, 1e-9);
+      CHECK_NEAR(p.deriv(h), q.b, 1e-9);
+      CHECK_NEAR(2.0 * p.c + 6.0 * p.d * h, 2.0 * q.c, 1e-7);
+    }
+  CHECK(joins > 0);
 }
 
 TEST_CASE("overlap resolution: a realignment does not run through a lane drop") {

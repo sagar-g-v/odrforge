@@ -266,12 +266,97 @@ void Builder::resolveOverlaps() {
       // different angle, which the connecting road beyond cannot follow)
       d[0] = laneOffsetSlope(base, ss[0]);
       d[n - 1] = laneOffsetSlope(base, ss[n - 1]);
+      // knots every ~10 m, plus one a sample in from each end; a cubic spline through them: pieces join with equal
+      // value, slope and second derivative, so lane edges stay G2 inside the road (Annex D.1.3 smoothness of lanes;
+      // finite-difference knot slopes gave C1 pieces whose curvature stepped at every knot). At both ends the spline
+      // keeps the original offset's slope and second derivative (lane edges meet the connecting roads G2 as before):
+      // the two extra conditions are met by freeing the values at the two near-end knots (one sample from the end)
+      std::vector<int> knots;
+      for (int k = 0; k < n - 1; k += every) {
+        knots.push_back(k);
+        if (k == 0 && every > 1 && n >= 4) knots.push_back(1);  // (a road of a few samples: knots 0 and n - 1 only)
+      }
+      if (every > 1 && n >= 4 && knots.back() != n - 2) knots.push_back(n - 2);
+      knots.push_back(n - 1);
+      const size_t K = knots.size();
+      std::vector<double> y(K), slope(K);
+      for (size_t j = 0; j < K; ++j) y[j] = off[knots[j]];
+      slope[0] = d[0], slope[K - 1] = d[n - 1];
+      auto secondDeriv = [&](double s) {  // of the original laneOffset
+        const std::vector<odr::Poly3> &rec = original[mi];
+        for (size_t r = rec.size(); r-- > 0;)
+          if (rec[r].s <= s + 1e-9) return 2.0 * rec[r].c + 6.0 * rec[r].d * (s - rec[r].s);
+        return 0.0;
+      };
+      if (K >= 4) {
+        // unknowns: slope[1 .. K-2], y[1], y[K-2]; equations: C2 at knots 1 .. K-2, f'' at s = 0 and s = L
+        const size_t U = K;  // (K - 2) slopes + 2 values
+        auto col = [&](bool isSlope, size_t j) -> long {
+          if (isSlope) return (j >= 1 && j + 1 < K) ? static_cast<long>(j - 1) : -1;
+          return j == 1 ? static_cast<long>(K - 2) : j + 2 == K ? static_cast<long>(K - 1) : -1;
+        };
+        std::vector<std::vector<double>> A(U, std::vector<double>(U + 1, 0.0));
+        auto add = [&](size_t row, bool isSlope, size_t j, double coef) {
+          const long c = col(isSlope, j);
+          if (c >= 0) A[row][c] += coef;
+          else A[row][U] -= coef * (isSlope ? slope[j] : y[j]);
+        };
+        for (size_t j = 1; j + 1 < K; ++j) {
+          const double h0 = ss[knots[j]] - ss[knots[j - 1]], h1 = ss[knots[j + 1]] - ss[knots[j]];
+          const size_t row = j - 1;
+          add(row, true, j - 1, 1.0 / h0), add(row, true, j, 2.0 * (1.0 / h0 + 1.0 / h1)), add(row, true, j + 1, 1.0 / h1);
+          add(row, false, j - 1, 3.0 / (h0 * h0)), add(row, false, j, -3.0 / (h0 * h0) + 3.0 / (h1 * h1));
+          add(row, false, j + 1, -3.0 / (h1 * h1));
+        }
+        {  // f''(0) of the first piece = (6 (y1 - y0) - h (4 m0 + 2 m1)) / h^2
+          const double h = ss[knots[1]] - ss[knots[0]];
+          const size_t row = K - 2;
+          add(row, false, 1, 6.0 / (h * h)), add(row, false, 0, -6.0 / (h * h));
+          add(row, true, 0, -4.0 / h), add(row, true, 1, -2.0 / h);
+          A[row][U] += secondDeriv(ss[0]);
+        }
+        {  // f''(h) of the last piece = (-6 (y1 - y0) + h (2 m0 + 4 m1)) / h^2
+          const double h = ss[knots[K - 1]] - ss[knots[K - 2]];
+          const size_t row = K - 1;
+          add(row, false, K - 1, -6.0 / (h * h)), add(row, false, K - 2, 6.0 / (h * h));
+          add(row, true, K - 2, 2.0 / h), add(row, true, K - 1, 4.0 / h);
+          A[row][U] += secondDeriv(ss[n - 1]);
+        }
+        // Gaussian elimination, partial pivoting (banded except the two end rows; U is a few hundred at most)
+        bool ok = true;
+        for (size_t c = 0; c < U && ok; ++c) {
+          size_t piv = c;
+          for (size_t r = c + 1; r < U; ++r)
+            if (std::abs(A[r][c]) > std::abs(A[piv][c])) piv = r;
+          if (std::abs(A[piv][c]) < 1e-12) ok = false;
+          else {
+            std::swap(A[c], A[piv]);
+            for (size_t r = c + 1; r < U; ++r) {
+              const double f = A[r][c] / A[c][c];
+              if (f != 0.0)
+                for (size_t k = c; k <= U; ++k) A[r][k] -= f * A[c][k];
+            }
+          }
+        }
+        if (ok) {
+          std::vector<double> x(U);
+          for (size_t r = U; r-- > 0;) {
+            double v = A[r][U];
+            for (size_t k = r + 1; k < U; ++k) v -= A[r][k] * x[k];
+            x[r] = v / A[r][r];
+          }
+          for (size_t j = 1; j + 1 < K; ++j) slope[j] = x[j - 1];
+          y[1] = x[K - 2], y[K - 2] = x[K - 1];
+        } else {
+          for (size_t j = 1; j + 1 < K; ++j) slope[j] = d[knots[j]];
+        }
+      } else {
+        for (size_t j = 1; j + 1 < K; ++j) slope[j] = d[knots[j]];
+      }
       std::vector<odr::Poly3> lo;
-      int k0 = 0;
-      while (k0 < n - 1) {
-        const int k1 = std::min(n - 1, k0 + every);
-        lo.push_back(odr::Poly3::hermite(ss[k0], ss[k1] - ss[k0], off[k0], d[k0], off[k1], d[k1]));
-        k0 = k1;
+      for (size_t j = 0; j + 1 < K; ++j) {
+        const int k0 = knots[j], k1 = knots[j + 1];
+        lo.push_back(odr::Poly3::hermite(ss[k0], ss[k1] - ss[k0], y[j], slope[j], y[j + 1], slope[j + 1]));
       }
       a.laneOffset = lo;
       ++shifted;
