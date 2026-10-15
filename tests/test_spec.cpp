@@ -423,6 +423,27 @@ TEST_CASE("writer leaves out records that repeat the previous polynomial (perfor
   CHECK(records == 2);
 }
 
+TEST_CASE("writer joins consecutive lines on one heading (Annex F.5.1 performance.avoid_redundant_info)") {
+  auto geometries = [](double secondHdg) {
+    odr::OpenDrive od = sampleNetwork();
+    ReferenceLine &pv = od.roads[0].planView;
+    GeomElement a;
+    a.hdg = 0.3, a.length = 6.7;
+    GeomElement b = a;
+    b.s = a.length, b.x = a.end().x, b.y = a.end().y, b.hdg = secondHdg;  // set directly: finalize() would copy a's heading
+    pv.elements = {a, b};
+    pugi::xml_document d;
+    CHECK(d.load_string(odr::toString(od, {8, 12}).c_str()));
+    std::vector<double> lengths;
+    for (auto g : d.select_node("//road/planView").node().children("geometry")) lengths.push_back(g.attribute("length").as_double());
+    return lengths;
+  };
+  const auto joined = geometries(0.3);  // straight on: one 13.4 m line
+  CHECK(joined.size() == 1);
+  CHECK(std::abs(joined[0] - 13.4) < 1e-7);  // lengths are written on a 2^-24 m grid
+  CHECK(geometries(0.31).size() == 2);  // a heading step is real geometry, kept
+}
+
 TEST_CASE("writer precision keeps at least 10 significant digits") {
   odr::OpenDrive od = sampleNetwork();
   od.roads[0].planView.elements[0].x = 1234.567890123;

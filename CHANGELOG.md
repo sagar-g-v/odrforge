@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **No repeated straight geometry** (ASAM qc-opendrive, Annex F.5.1 performance.avoid_redundant_info): consecutive
+  line elements on the same heading are written as one. Frankfurt 7 and LA 15 redundant pairs -> 0; geometry, s and
+  every exact check unchanged. Jev 0.87.
+- **asam_qc.py: contact_point rule runs again**: the checker stopped on roads without the (optional) `<link>`; it now
+  reads a copy with an empty `<link/>` there. All its reports are connecting roads (open item: Junction Guideline
+  connecting-road reference lines); plain roads 0.
 - **Corner sidewalks beside a straight-on movement follow the road** (Munich review flag 7): where the arms differ by
   less than 35 deg, the curb runs along the outer lane border of the connecting road carrying that movement (else the
   smoothest clothoid path, else the Junction Guideline curb return); boundary corner curves there use the smooth path.

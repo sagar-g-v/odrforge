@@ -214,17 +214,28 @@ void writeValidity(pugi::xml_node n, const std::vector<ValidityRange> &v) {
 void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   auto n = root.append_child("road");
   attr(n, "name", r.name);
+  // OpenDRIVE 1.9.0 Annex F.5.1 performance.avoid_redundant_info (since 1.8.1, should): no "multiple
+  // geometry nodes for straight lines" - consecutive lines on the same heading are written as one.
+  // Same geometry and s; ASAM qc-opendrive compares headings to 1e-6 rad.
+  std::vector<GeomElement> geoms;
+  for (const GeomElement &g : r.planView.elements) {
+    if (!geoms.empty() && g.type() == GeomType::Line && geoms.back().type() == GeomType::Line &&
+        std::abs(normalizeAngle(g.hdg - geoms.back().hdg)) < 1e-6)
+      geoms.back().length += g.length;
+    else
+      geoms.push_back(g);
+  }
   {
     // the written length must not be shorter than the written geometries add up to (s + length of
     // the last element, each rounded to the output precision): readers that check s <= length
     // strictly (LibCarla Lane::ComputeTransform) otherwise reject the road end
     auto parsed = [&](double v) { return Ctx::snapS(v); };
     double need = r.length();
-    if (!r.planView.elements.empty()) {
-      const auto &g = r.planView.elements.back();
+    if (!geoms.empty()) {
+      const auto &g = geoms.back();
       need = std::max(need, parsed(g.s) + parsed(g.length));
       double sum = 0;  // readers may also accumulate the element lengths themselves
-      for (const auto &e : r.planView.elements) sum += parsed(e.length);
+      for (const auto &e : geoms) sum += parsed(e.length);
       need = std::max(need, sum);
     }
     attr(n, "length", Ctx::sNum(need, true));
@@ -232,7 +243,9 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
   attr(n, "id", r.id);
   attr(n, "junction", r.junction);
   // A left-hand-traffic road states its rule in every revision, 1.4 included: without it a reader
-  // runs every lane against its traffic (1.4 parsers ignore the attribute).
+  // runs every lane against its traffic. road@rule is 1.5+ (absent from the 1.4H XSD), but CARLA reads
+  // it whatever the header revision (LibCarla opendrive/parser/RoadParser.cpp: missing -> "RHT").
+  // Deliberate deviation for the carla profile; xsd_validate.py --allow-lht-rule tolerates only this.
   if (r.rule == "LHT" || (!r.rule.empty() && c.spec.hasRoadRule())) attr(n, "rule", r.rule);
   if (r.predecessor || r.successor) {
     auto l = n.append_child("link");
@@ -257,7 +270,7 @@ void writeRoad(pugi::xml_node root, const Road &r, const Ctx &c) {
     }
   }
   auto pv = n.append_child("planView");
-  for (const auto &g : r.planView.elements) {
+  for (const auto &g : geoms) {
     auto e = pv.append_child("geometry");
     attrS(e, "s", g.s);
     attrN(e, c, "x", g.x);

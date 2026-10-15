@@ -8,8 +8,11 @@ github.com/asam-ev/qc-opendrive at commit 8baf0a5, MPL-2.0). It covers ~22 Annex
 validation (1.1 - 1.8.1); docs/RULES.md lists which rules OdrForge checks itself.
 
 Known checker limitation: road.geometry.contact_point skips only roads of junction id 1, so it also
-reports connecting roads. Those reports are kept: the ASAM Junction Guideline requires connecting-road
-reference lines to continue the incoming road's reference line as well.
+reports connecting roads, which the rule's text ("connected without a junction") does not cover. Measured
+2026-10-15 (Munich / London / Frankfurt standard): every report is a connecting road (1546 / 865 / 776),
+plain roads 0. They start at the lane they serve (gap p50 1.5 - 1.95 m); Junction Guideline 1.0.0's T example
+starts them on the incoming reference line with laneOffset = the skipped lanes - open item in PROGRESS.md. It also stops on roads without
+<link> (optional in the XSD); checker_input() hands it a copy with an empty <link/> on those roads.
 """
 import argparse
 import collections
@@ -30,12 +33,28 @@ CONFIG = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+def checker_input(xodr, stem):
+    """The file the checker reads. road.geometry.contact_point calls road.find("link").find(...) and stops with
+    an internal error on the first road without <link>, which OpenDRIVE allows (1.8.1 XSD t_road: link
+    minOccurs="0"). Such roads get an empty <link/> (also valid: t_road_link has only optional children) in a
+    copy, so the rule runs on every road; the output itself is not changed."""
+    tree = ET.parse(xodr)
+    bare = [road for road in tree.getroot().iter("road") if road.find("link") is None]
+    if not bare:
+        return xodr
+    for road in bare:
+        road.insert(0, ET.Element("link"))  # t_road: link is the first child
+    copy = stem + ".qcin.xodr"
+    tree.write(copy, encoding="utf-8", xml_declaration=True)
+    return copy
+
+
 def run_checker(xodr):
     xodr = os.path.abspath(xodr)
     stem = os.path.splitext(xodr)[0]
     config, xqar = stem + ".qc.xml", stem + ".xqar"
     with open(config, "w", encoding="utf-8") as f:
-        f.write(CONFIG.format(xodr=xodr, xqar=xqar))
+        f.write(CONFIG.format(xodr=checker_input(xodr, stem), xqar=xqar))
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     subprocess.run([CHECKER, "-c", config], cwd=os.path.dirname(xodr), env=env,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
