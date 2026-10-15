@@ -475,6 +475,42 @@ ReferenceLine curbAlongLanes(const std::vector<odr::Road> &roads, const odr::Roa
   return curb;
 }
 
+/// records of a piecewise cubic f on [0, L] (Poly3::s = record start) giving g(s) = sign * f(L - s):
+/// the record p over [s0, s0 + h] becomes q(u) = sign * p(h - u) starting at L - s0 - h
+std::vector<odr::Poly3> reflectRecords(const std::vector<odr::Poly3> &f, double L, double sign) {
+  std::vector<odr::Poly3> g;
+  for (size_t i = f.size(); i-- > 0;) {
+    const odr::Poly3 &p = f[i];
+    const double h = (i + 1 < f.size() ? f[i + 1].s : L) - p.s;
+    odr::Poly3 q;
+    q.s = L - p.s - h;
+    q.a = sign * p.eval(h);
+    q.b = -sign * p.deriv(h);
+    q.c = sign * (p.c + 3.0 * p.d * h);
+    q.d = -sign * p.d;
+    g.push_back(q);
+  }
+  return g;
+}
+
+/// the same corner sidewalk (one lane section, lanes on the right) traversed the other way: the reference line
+/// reversed, the lanes on its left (id -k -> +k), laneOffset, widths and links mirrored. Same surface.
+void reverseToLeft(odr::Road &c) {
+  const double L = c.length();
+  c.planView = c.planView.reversed();
+  std::swap(c.predecessor, c.successor);
+  c.laneOffset = reflectRecords(c.laneOffset, L, -1.0);  // t on the reversed line is -t
+  for (odr::LaneSection &sec : c.lanes) {
+    for (odr::Lane l : sec.right) {
+      l.id = -l.id;
+      l.widths = reflectRecords(l.widths, L, 1.0);
+      std::swap(l.link.predecessor, l.link.successor);
+      sec.left.push_back(std::move(l));
+    }
+    sec.right.clear();
+  }
+}
+
 }  // namespace
 
 void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out,
@@ -578,13 +614,24 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
     walk.roadMarks.push_back(none);
     sec.right.push_back(walk);
     c.lanes.push_back(sec);
-    connectingRoadHeight(c, ConnectionEnds{&rp, p.atEnd, &rq, q.atEnd}, spanP.inner, spanQ.inner, cl);
+    // OpenDRIVE 1.9.0 Annex F.4.6.6 junctions.connection.one_link_to_incoming (1.8.0): laneLinks only for lanes
+    // that lead into the junction. Built from P's sidewalk on P's right, the corner starts at a lane leading in
+    // under right-hand traffic; under left-hand traffic the lanes leading in are on the other side of the id
+    // (1.8.0 §11.2: direction from the id sign and road@rule), so the corner is traversed from Q instead, with its
+    // lanes on the left - the mirror image, same surface.
+    const bool lht = rp.rule == "LHT";
+    if (lht) {
+      reverseToLeft(c);
+      connectingRoadHeight(c, ConnectionEnds{&rq, q.atEnd, &rp, p.atEnd}, -spanQ.inner, -spanP.inner, cl);
+    } else {
+      connectingRoadHeight(c, ConnectionEnds{&rp, p.atEnd, &rq, q.atEnd}, spanP.inner, spanQ.inner, cl);
+    }
     odr::Connection cn;
     cn.id = std::to_string(junction.connections.size());
-    cn.incomingRoad = rp.id;
+    cn.incomingRoad = lht ? rq.id : rp.id;
     cn.connectingRoad = c.id;
     cn.contactPoint = "start";
-    cn.laneLinks.push_back({*walkP, walk.id});
+    cn.laneLinks.push_back({lht ? *walkQ : *walkP, lht ? -walk.id : walk.id});
     junction.connections.push_back(cn);
     out.push_back(std::move(c));
     ++rep.cornerSidewalks;

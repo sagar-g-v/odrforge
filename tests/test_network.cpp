@@ -78,8 +78,9 @@ Result build(const OsmBuilder &b, const std::string &country = "US", const std::
 /// a connecting road along a junction corner: its sidewalk, behind a curb lane in the standard profile
 bool cornerSidewalk(const odr::Road &r) {
   const auto &sec = r.lanes.front();
-  return r.junction != "-1" && r.name != "Crossing" && sec.left.empty() && !sec.right.empty() && sec.right.back().type == "sidewalk" &&
-         std::all_of(sec.right.begin(), sec.right.end(), [](const odr::Lane &l) { return l.type == "sidewalk" || l.type == "curb"; });
+  const auto &side = sec.left.empty() ? sec.right : sec.left;  // the right, the left under left-hand traffic
+  return r.junction != "-1" && r.name != "Crossing" && sec.left.empty() != sec.right.empty() && side.back().type == "sidewalk" &&
+         std::all_of(side.begin(), side.end(), [](const odr::Lane &l) { return l.type == "sidewalk" || l.type == "curb"; });
 }
 
 /// roads in a junction (connecting roads; a cross path's crossing road not counted) or outside one
@@ -1059,9 +1060,37 @@ TEST_CASE("network: left-hand traffic (GB) - rule LHT, +s lanes on the left") {
   CHECK(r.val.errors == 0);
   for (const auto &road : r.od.roads) {
     CHECK(road.rule == "LHT");
-    if (road.junction == "-1" || cornerSidewalk(road) || road.name == "Crossing") continue;  // walking lanes: right side
-    // connecting lanes travel along +s: on the left side in LHT
+    if (road.junction == "-1" || road.name == "Crossing") continue;
+    // connecting lanes travel along +s: on the left side in LHT (corner sidewalks too, mirrored)
     CHECK(!road.lanes.front().left.empty() && road.lanes.front().right.empty());
+  }
+  CHECK(std::count_if(r.od.roads.begin(), r.od.roads.end(), cornerSidewalk) == 4);
+}
+
+TEST_CASE("junction laneLinks start only at lanes leading into the junction (Annex F.4.6.6), RHT and LHT") {
+  // OpenDRIVE 1.9.0 Annex F.4.6.6 junctions.connection.one_link_to_incoming (since 1.8.0); 1.8.0 §11.2: a lane's
+  // direction follows its id sign and road@rule (RHT: negative ids along +s; LHT: positive ids along +s). The
+  // corner sidewalks used to be built the RHT way round everywhere: London failed this for all 34 (ASAM qc-opendrive)
+  for (const char *country : {"US", "GB"}) {
+    const Result r = build(crossroads(true), country, "asam");
+    CHECK(r.val.errors == 0);
+    const bool lht = std::string(country) == "GB";
+    std::map<std::string, const odr::Road *> byId;
+    for (const auto &rd : r.od.roads) byId[rd.id] = &rd;
+    int links = 0;
+    for (const auto &j : r.od.junctions)
+      for (const auto &cn : j.connections) {
+        const odr::Road &c = *byId.at(cn.connectingRoad);
+        const auto &lk = cn.contactPoint == "start" ? c.predecessor : c.successor;
+        if (!lk || lk->elementId != cn.incomingRoad) continue;
+        const bool atEnd = lk->contactPoint == "end";  // the incoming road meets the junction with its end
+        for (const auto &ll : cn.laneLinks) {
+          ++links;
+          const bool alongS = lht ? ll.from > 0 : ll.from < 0;  // travels along +s of the incoming road
+          CHECK(alongS == atEnd);
+        }
+      }
+    CHECK(links > 0);
   }
 }
 

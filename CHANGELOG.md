@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Left-hand traffic corner sidewalks link from lanes leading into the junction** (Annex F.4.6.6
+  junctions.connection.one_link_to_incoming): they were built the right-hand-traffic way round everywhere; under LHT
+  they are now traversed from the other arm with their lanes on the left - same surface (0.0000 m, 0 m in z).
+  London checker errors 68 -> 0; London 34 and Tokyo 1175 corner sidewalks; cross paths unchanged. Jev 0.87.
 - **No repeated straight geometry** (ASAM qc-opendrive, Annex F.5.1 performance.avoid_redundant_info): consecutive
   line elements on the same heading are written as one. Frankfurt 7 and LA 15 redundant pairs -> 0; geometry, s and
   every exact check unchanged. Jev 0.87.

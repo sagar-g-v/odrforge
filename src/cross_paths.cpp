@@ -133,8 +133,10 @@ std::vector<std::pair<size_t, bool>> Builder::cornerSidewalksAt(const odr::Junct
   for (size_t i = 0; i < od.roads.size(); ++i) {
     const odr::Road &c = od.roads[i];
     if (c.junction != J.id || c.lanes.empty() || c.length() < kCrosswalkLength + 0.5) continue;
-    bool walkOnly = c.lanes.front().left.empty() && !c.lanes.front().right.empty();
-    for (const odr::Lane &l : c.lanes.front().right) walkOnly = walkOnly && (l.type == "sidewalk" || l.type == "curb");
+    // a corner sidewalk carries its lanes on one side: the right, the left under left-hand traffic (network_junctions.cpp)
+    const odr::LaneSection &sec = c.lanes.front();
+    bool walkOnly = sec.left.empty() != sec.right.empty();
+    for (const odr::Lane &l : sec.left.empty() ? sec.right : sec.left) walkOnly = walkOnly && (l.type == "sidewalk" || l.type == "curb");
     const bool fromArm = linksArm(c.predecessor), toArm = linksArm(c.successor);
     if (walkOnly && fromArm != toArm) out.push_back({i, fromArm});
   }
@@ -168,7 +170,8 @@ void Builder::crossPaths() {
       for (const auto &[i, fromArm] : cornerSidewalksAt(J, e)) {
         const odr::Road &c = od.roads[i];
         const double s = fromArm ? depth : c.length() - depth;
-        const int walk = sidewalkOf(odr::sectionAt(c, s).right);
+        const odr::LaneSection &sec = odr::sectionAt(c, s);
+        const int walk = sidewalkOf(sec.left.empty() ? sec.right : sec.left);
         double a, b;
         if (!walk || !odr::laneBorders(c, s, walk, a, b)) continue;
         const double t = 0.5 * (a + b);

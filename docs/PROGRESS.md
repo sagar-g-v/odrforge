@@ -153,7 +153,14 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
      0.9 - 1.9 m, max up to 10 m); minimum road radii per class (15 m primary, 60 m motorway); curb radius 6 m;
      the 35 degree straight-on threshold; barrier sizes.
   6. Junction Guideline 1.0.0 completed: every section checked against the implementation, the missing
-     parts implemented.
+     parts implemented. Known gap (ASAM checker, 2026-10-15): connecting roads start their reference line
+     at the lane they serve (gap to the incoming reference line p50 1.5 - 1.95 m; Munich 1546, London 865,
+     Frankfurt 776 road.geometry.contact_point reports, all on connecting roads); the guideline's T example
+     starts them on the incoming reference line with laneOffset a = the width of the skipped lanes.
+  Status 2026-10-15: 1. checker triaged - contact_point wrapper fixed, redundant lines fixed (4257157),
+  LHT corner sidewalks mirrored (F.4.6.6), road@rule in 1.4H deliberate (CARLA reads it); LA and Tokyo
+  standard not yet run (> 2 h each). 3. Munich flag 7 fixed (86cec86); LA flag 4 re-measured, not a gore
+  (question to the user: ramp shoulders); LA flag 5 waits for the user.
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
   atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:

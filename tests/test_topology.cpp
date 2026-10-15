@@ -504,6 +504,11 @@ TEST_CASE("junction: a single lane going straight on continues in the lane it li
     for (const auto &r : od.roads) {
       if (r.junction == "-1" || !r.predecessor || !r.successor || r.predecessor->elementId != in->id || r.successor->elementId != out->id)
         continue;
+      // driving connecting roads only: a corner sidewalk also runs in -> out (under left-hand traffic, mirrored)
+      const auto &sec = r.lanes.front();
+      if (std::none_of(sec.left.begin(), sec.left.end(), [](const odr::Lane &l) { return l.type == "driving"; }) &&
+          std::none_of(sec.right.begin(), sec.right.end(), [](const odr::Lane &l) { return l.type == "driving"; }))
+        continue;
       ++straight;
       const int lane = r.lanes.front().left.empty() ? r.lanes.front().right.front().id : r.lanes.front().left.front().id;
       Pose p0, p1;
