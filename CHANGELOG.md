@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Corner sidewalks beside a straight-on movement follow the road** (Munich review flag 7): where the arms differ by
+  less than 35 deg, the curb runs along the outer lane border of the connecting road carrying that movement (else the
+  smoothest clothoid path, else the Junction Guideline curb return); boundary corner curves there use the smooth path.
+  Corners of 35 deg or more are unchanged. Kinked straight-on sidewalks (worst 2 m window > 60 % of the turning) HEAD
+  Tokyo 171, Munich 48, LA 24, Frankfurt 14, London 10, Stelvio 10 -> 0; inv:G2_ref_junction drops in every area; no
+  checker count rises. Jev 0.87.
 - **Lane counts of untagged ramp pieces** (LA review flags 1 - 3): an untagged `*_link` piece takes the lanes of the
   tagged piece of the same class it continues one to one (83 % of tagged continuations in the test areas agree), and an
   untagged branch of a split the trunk lanes whose `turn:lanes` bear toward it (95 % of tagged branches agree), instead of

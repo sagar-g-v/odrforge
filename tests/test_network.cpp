@@ -111,6 +111,40 @@ OsmBuilder crossroads(bool signals) {
 
 }  // namespace
 
+TEST_CASE("corner sidewalks: beside a straight-on movement the curb bends smoothly; corners keep the curb return") {
+  // a street bending 10 degrees at a junction, a side street leaving at about 90 degrees. Junction Guideline §6 curb
+  // return (line, arc of the corner radius, line) at the side street's corners; on the far side the curb runs beside the
+  // straight-on movement and is part of the street's bend: a 6 m arc there would put the 10 degrees into 1 m (review
+  // flag 7, Munich), so it takes the smoothest path (as connecting roads do)
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0);
+  const Tags street{{"highway", "residential"}, {"lanes", "2"}};
+  b.way({b.node(-120, 0), b.node(-60, 0), c}, street);
+  b.way({c, b.node(59.09, -10.42), b.node(118.18, -20.84)}, street);
+  b.way({c, b.node(10.42, 59.09), b.node(20.84, 118.18)}, street);
+  for (const char *target : {"asam", "carla"}) {
+    const Result r = build(b, "US", target);
+    CHECK(r.val.errors == 0);
+    int straightOn = 0, corners = 0;
+    for (const auto &rd : r.od.roads) {
+      if (!cornerSidewalk(rd)) continue;
+      const double turn = std::abs(normalizeAngle(rd.planView.eval(rd.length()).hdg - rd.planView.eval(0.0).hdg));
+      double kMax = 0.0;
+      for (const auto &e : rd.planView.elements) kMax = std::max({kMax, std::abs(e.k0), std::abs(e.k1)});
+      if (turn < 35.0 * kPi / 180.0) {
+        ++straightOn;
+        CHECK(kMax < 1.0 / 20.0);                                  // no 6 m arc: the bend spreads over the curb
+        CHECK(kMax * rd.length() <= 2.5 * std::max(turn, 1e-9));  // at most twice an even bend (a clothoid pair)
+      } else {
+        ++corners;
+        CHECK(std::abs(kMax - 1.0 / 6.0) < 1e-6);  // the corner radius (BuildOptions::cornerRadius 6 m)
+      }
+    }
+    CHECK(straightOn == 1);
+    CHECK(corners == 2);
+  }
+}
+
 TEST_CASE("network: signalised crossroads (US) passes every spec rule") {
   const Result r = build(crossroads(true));
   CHECK(r.val.errors == 0);

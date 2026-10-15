@@ -416,6 +416,67 @@ ReferenceLine curbReturn(const Pose &a, const Pose &b, double wanted) {
 // in a sidewalk is joined by a connecting road along the curb line (reference line at the
 // sidewalk's curb-side edge, parallel to both arms where it meets them) carrying the sidewalk,
 // raised by the curb, lane-linked to the arms' sidewalks.
+namespace {
+
+// The curb of a corner along the outer edge of the junction's driving lanes there. The sidewalk round a corner borders
+// the carriageway: where a connecting road joins the same two arms and its outermost lane on the corner side starts and
+// ends at the arms' curb points, the curb follows that lane edge (review flag 7, Munich: a curb fitted between the curb
+// points on its own left a wedge between sidewalk and lane and, at a fork, a kink). The edge is sampled every 0.5 m and
+// refitted as a clothoid spline with the arms' headings at its ends; empty when no such lane edge exists within 1 m of
+// both curb points or the fit strays more than 0.1 m from it.
+ReferenceLine curbAlongLanes(const std::vector<odr::Road> &roads, const odr::Road &rp, const odr::Road &rq, const Pose &a,
+                             const Pose &b) {
+  constexpr double kEndTolerance = 1.0, kFitTolerance = 0.1;
+  std::vector<Vec2> best;
+  double bestEnd = kEndTolerance;
+  for (const odr::Road &c : roads) {
+    if (c.lanes.size() != 1 || !c.predecessor || !c.successor) continue;
+    const bool forward = c.predecessor->elementId == rp.id && c.successor->elementId == rq.id;
+    const bool backward = c.predecessor->elementId == rq.id && c.successor->elementId == rp.id;
+    if (!forward && !backward) continue;
+    // the corner lies right of travel from P to Q: the right side of a forward road, the left side of a backward one
+    const std::vector<odr::Lane> &side = forward ? c.lanes.front().right : c.lanes.front().left;
+    if (side.empty()) continue;
+    const int outer = side.back().id;
+    const double L = c.length();
+    const int n = std::max(2, static_cast<int>(std::ceil(L / 0.5)) + 1);
+    std::vector<Vec2> pts;
+    for (int i = 0; i < n; ++i) {
+      const double s = L * i / (n - 1);
+      double tIn, tOut;
+      if (!odr::laneBorders(c, s, outer, tIn, tOut)) break;
+      pts.push_back(c.planView.eval(s).offset(tOut));
+    }
+    if (static_cast<int>(pts.size()) != n) continue;
+    if (backward) std::reverse(pts.begin(), pts.end());
+    const double end = std::max((pts.front() - a.pos()).norm(), (pts.back() - b.pos()).norm());
+    if (end < bestEnd) bestEnd = end, best = pts;
+  }
+  if (best.size() < 2) return {};
+  best.front() = a.pos(), best.back() = b.pos();
+  PolylineFitOptions fo;
+  fo.noiseTolerance = 0.02;
+  fo.minCornerRadius = 0.5;
+  fo.startHeading = a.hdg;
+  fo.endHeading = b.hdg;
+  ReferenceLine curb = fitPolyline(best, fo);
+  if (curb.elements.empty()) return {};
+  // the curb must meet both arms exactly (OpenDRIVE 1.9 Annex D: lane borders position- and heading-continuous across
+  // links): the spline is chained from its start pose, so its end is checked against the arm's curb point and heading
+  const Pose start = curb.eval(0.0), end = curb.eval(curb.length());
+  if ((start.pos() - a.pos()).norm() > 5e-4 || std::abs(normalizeAngle(start.hdg - a.hdg)) > 2e-4 ||
+      (end.pos() - b.pos()).norm() > 5e-4 || std::abs(normalizeAngle(end.hdg - b.hdg)) > 2e-4)
+    return {};
+  for (const Vec2 &pt : best) {
+    double s, t;
+    curb.project(pt, s, t);
+    if (std::abs(t) > kFitTolerance) return {};
+  }
+  return curb;
+}
+
+}  // namespace
+
 void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out,
                                    int &nextRoadId) {
   struct Arm {
@@ -447,7 +508,20 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
       continue;
     }
     const double rankFactor = std::max(metas[p.road].rank, metas[q.road].rank) >= 7 ? 1.5 : 1.0;
-    const ReferenceLine curb = curbReturn(a, b, opt.cornerRadius * rankFactor);
+    // beside a straight-on movement (headings within classify()'s 35 degrees: a fork, the road bending through the
+    // junction) the curb follows the driving lanes' outer edge; corners keep the curb return (Junction Guideline §6)
+    // (no such lane edge: the smoothest path between the curb points where it bends less than the curb return, as the
+    // carriageway's connecting roads do - a fixed-radius return would put the whole turn into a few metres)
+    const bool straightOn = classify(normalizeAngle(b.hdg - a.hdg)) == Turn::Straight;
+    ReferenceLine curb;
+    if (straightOn) curb = curbAlongLanes(out, rp, rq, a, b);
+    if (curb.elements.empty()) {
+      curb = curbReturn(a, b, opt.cornerRadius * rankFactor);
+      if (straightOn)
+        if (ReferenceLine smooth = drivablePath(a, b);
+            !smooth.elements.empty() && (curb.elements.empty() || maxCurvature(smooth) < maxCurvature(curb) - 1e-9))
+          curb = smooth;
+    }
     if (curb.elements.empty() || curb.length() < 0.05) continue;
     // the sidewalk leaves and meets the arms drifting sideways as they do (Annex D: lane edges
     // heading-continuous): laneOffset carries the curb-side edge, the width the other edge
@@ -455,6 +529,16 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
     const TravelSpan slopeQ = travelSpanSlope(rq, q.atEnd, !q.atEnd, false, *walkQ);
     std::vector<odr::Poly3> widths = cornerSidewalkWidths(curb, spanP.width(), spanQ.width(),
                                                           slopeP.inner - slopeP.outer, slopeQ.inner - slopeQ.outer);
+    // a lane-edge or smooth curb that leaves the sidewalk no room (it bends tighter than the sidewalk is wide) falls back
+    // to the curb return, which may still fit (Frankfurt Kreuz junction 107: 29 deg over 3.3 m)
+    if (widths.empty() && straightOn) {
+      const ReferenceLine ret = curbReturn(a, b, opt.cornerRadius * rankFactor);
+      if (!ret.elements.empty() && ret.length() >= 0.05) {
+        std::vector<odr::Poly3> w2 = cornerSidewalkWidths(ret, spanP.width(), spanQ.width(), slopeP.inner - slopeP.outer,
+                                                          slopeQ.inner - slopeQ.outer);
+        if (!w2.empty()) curb = ret, widths = std::move(w2);
+      }
+    }
     if (widths.empty()) {
       ++rep.cornerSidewalksTooTight;
       if (std::getenv("ODRFORGE_DEBUG_CORNER")) {
@@ -507,7 +591,17 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
   }
 }
 
-ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted) { return curbReturn(a, b, wanted); }
+// A junction boundary corner curve (junction_surface.cpp): the curb return (Junction Guideline §6), or beside a
+// straight-on movement (headings within classify()'s 35 degrees) the smoothest path between the edges where that bends
+// less - the same rule as the corner sidewalks' fallback (a fixed-radius return puts the whole turn into a few metres)
+ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted) {
+  ReferenceLine curve = curbReturn(a, b, wanted);
+  if (classify(normalizeAngle(b.hdg - a.hdg)) != Turn::Straight) return curve;
+  ReferenceLine smooth = drivablePath(a, b);
+  if (!smooth.elements.empty() && (curve.elements.empty() || maxCurvature(smooth) < maxCurvature(curve) - 1e-9))
+    return smooth;
+  return curve;
+}
 
 // OSM turn restriction (from, via node, to) inside a junction: does it name the movement into
 // `exit`? Its "to" way is either an arm of the junction, or - where nearby intersections were built

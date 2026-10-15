@@ -53,7 +53,8 @@ constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
 /// how much further an approach ends when its crosswalk lies inside the junction (the crosswalk's far edge)
 constexpr double kCrosswalkJunctionDepth = kCrosswalkCentreBack + 0.5 * kCrosswalkLength;
 
-/// a corner curve from pose a to pose b: arc tangent to both, radius up to `wanted` (network_junctions.cpp)
+/// a corner curve from pose a to pose b: arc tangent to both, radius up to `wanted`; beside a straight-on movement the
+/// smoothest path when that bends less (network_junctions.cpp)
 ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted);
 
 struct RoadMeta {
