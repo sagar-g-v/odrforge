@@ -159,7 +159,13 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
      starts them on the incoming reference line with laneOffset a = the width of the skipped lanes.
   Status 2026-10-15: 1. checker triaged - contact_point wrapper fixed, redundant lines fixed (4257157),
   LHT corner sidewalks mirrored (F.4.6.6), road@rule in 1.4H deliberate (CARLA reads it); LA and Tokyo
-  standard not yet run (> 2 h each). 3. Munich flag 7 fixed (86cec86); LA flag 4 re-measured, not a gore
+  standard checked 2026-10-15 (current outputs): Tokyo only 3125 contact_point (connecting roads); LA 6354
+  contact_point (connecting roads), 16 performance.avoid_redundant_info and 36
+  lane_smoothness.contact_point_no_horizontal_gaps - both checked as checker false positives: the 16 records
+  differ by up to 7.9e-5 rad / 0.4 mm over their span (the checker compares raw coefficients to 1e-6 whatever the
+  span; the writer keeps a record unless the previous one reproduces it within 1e-5 rad / 1e-6 m), and the 36
+  lane pairs meet within 5 mm (median 0) at their contact points (checker limit 1 cm). Overlaps: Tokyo 734 / 977
+  fixed (c0bbebd); laneOffset shifts G2 (a217a32). 3. Munich flag 7 fixed (86cec86); LA flag 4 re-measured, not a gore
   (question to the user: ramp shoulders); LA flag 5 waits for the user.
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
