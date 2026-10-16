@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Metrics on every run** (tools/inspect/metrics.py): a snapshot of every output - structure, vertical profile, banking,
+  exact-checker / validation counts, terrain-fit numbers, with git commit and build time - and the difference of two
+  snapshots (every changed metric, before / after / delta); `compare` converts all reference areas with two builds and
+  reports both. gate.py stores one snapshot per run in build/tmp/inspect/metrics_history/ and prints the difference to
+  the previous run. Self-test with mutations (ctest metrics_selftest). Jev 0.85.
 - **Terrain contract** (tools/inspect/terrain_contract.py, docs/TERRAIN_CONTRACT.md): the proven terrain results held
   as absolute limits that do not move with the gate baseline - outputs never older than their inputs, conformed fit,
   centre line vs ground, bridge roads vs measured decks, the 8 % / 15 % banking caps, steep-road counts, London's

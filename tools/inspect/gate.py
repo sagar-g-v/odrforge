@@ -20,6 +20,8 @@ exact:annexF:<rule path> from annex_f.py, the ASAM OpenDRIVE 1.9 Annex F rules) 
 A regression is any gating (area, kind) whose count grows by more than --tolerance, any new
 validation error rule count, a failing unit test, a conversion crash, new CARLA sideways
 discontinuities or esmini load errors.
+Every run stores a detailed metrics snapshot of its outputs (metrics.py: structure, vertical, exact counts, with
+commit and time) in build/tmp/inspect/metrics_history/ and reports the difference to the previous run.
 Terrain areas are also converted in the standard profile with the ground conformed to the roads (what the review
 viewer draws), and all their outputs are held to the absolute limits of terrain_contract.py (docs/TERRAIN_CONTRACT.md):
 those never move with the baseline, so a proven terrain result cannot regress through a baseline refresh.
@@ -34,6 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import annex_f  # noqa: E402
+import metrics  # noqa: E402
 import terrain_contract  # noqa: E402
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -43,6 +46,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 DATA = r"C:\mywork\osm2carla"
 WORK = os.path.join(DATA, "build", "tmp", "inspect", "gate")
 BASELINE = os.path.join(DATA, "build", "tmp", "inspect", "gate_baseline.json")
+METRICS = os.path.join(DATA, "build", "tmp", "inspect", "metrics_history")  # one snapshot per run (metrics.py)
 CARLA_PY = r"C:\Users\venki\AppData\Local\Programs\Python\Python38\python.exe"
 ODRPLOT = r"C:\mywork\tools\esmini\esmini\bin\odrplot.exe"
 EXE = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
@@ -241,11 +245,13 @@ def main():
     res["areas"] = {ar: {"validation_errors": s["validation_errors"], "totals": s["totals"],
                          "carla": s.get("carla"), "esmini_errors": s.get("esmini_errors")} for ar, s in state.items()}
     # absolute terrain limits (not relative to the baseline, also with --baseline)
+    contract_numbers = {}
     for ar in good:
         if ar in terrain_contract.CONTRACT:
-            problems, metrics = terrain_contract.check(ar, TOUT, EXE)
+            problems, measured = terrain_contract.check(ar, TOUT, EXE)
+            contract_numbers[ar] = measured
             res["areas"][ar]["terrain"] = {prof: {k: m[k] for k in ("centre", "conformed", "decks", "superelev")}
-                                           | {"steep": len(m["steep"])} for prof, m in metrics.items()}
+                                           | {"steep": len(m["steep"])} for prof, m in measured.items()}
             for p in problems:
                 res["ok"] = False
                 res["problems"].append("terrain contract " + p)
@@ -255,6 +261,37 @@ def main():
         if r.returncode != 0:
             res["ok"] = False
             res["problems"].append("terrain contract self-test failed: " + (r.stdout + r.stderr)[-800:])
+    # detailed metrics of every output of this run (metrics.py), stored with commit and time, and their difference to
+    # the previous run over the same areas: what a change did, measured on every run
+    outputs = [AREAS[ar]["xodr"] for ar in good]
+    outputs += [terrain_contract.files(ar, TOUT)["standard"] for ar in good if AREAS[ar].get("terrain")
+                and ar in terrain_contract.CONTRACT]
+    snap = metrics.snapshot(None, "gate " + ",".join(areas), [p for p in outputs if os.path.exists(p)])
+    for ar in good:  # the run's own counts: exact checkers / detectors and validation rules of the carla output
+        m = snap["files"].get(os.path.basename(AREAS[ar]["xodr"]))
+        if m is not None:
+            m.update({"check:" + k: v for k, v in state[ar]["kinds"].items()})
+            m.update({"rule:" + k: v for k, v in (state[ar]["rules"] or {}).items()})
+            m["validation_errors"] = state[ar]["validation_errors"]
+        for prof, tm in contract_numbers.get(ar, {}).items():  # terrain fit numbers (terrain_contract.py)
+            f = os.path.basename(AREAS[ar]["xodr"] if prof == "carla" else terrain_contract.files(ar, TOUT)["standard"])
+            if f in snap["files"]:
+                for key in ("centre", "conformed", "decks"):
+                    for q, v in tm[key].items():
+                        if v == v:  # not NaN
+                            snap["files"][f][f"terrain:{key}_p{q}"] = round(v, 4)
+                near = tm.get("decks_near")
+                if isinstance(near, float) and near == near:
+                    snap["files"][f]["terrain:decks_within_0.5m"] = round(near, 4)
+    os.makedirs(METRICS, exist_ok=True)
+    stamp = snap["time"].replace(":", "")
+    previous = sorted(f for f in os.listdir(METRICS) if f.endswith("_" + "-".join(sorted(areas)) + ".json"))
+    path = os.path.join(METRICS, f"{stamp}_{snap['commit'].replace('+', '_')}_{'-'.join(sorted(areas))}.json")
+    json.dump(snap, open(path, "w", encoding="utf-8"), indent=1)
+    res["metrics"] = path
+    if previous:
+        lines, n = metrics.diff(json.load(open(os.path.join(METRICS, previous[-1]), encoding="utf-8")), snap)
+        res["metrics_vs_previous_run"] = lines
     if a.baseline:
         base = json.load(open(BASELINE)) if os.path.exists(BASELINE) and set(areas) != set(AREAS) else {}
         base.update(state)

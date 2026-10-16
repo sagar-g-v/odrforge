@@ -109,6 +109,8 @@ if(ODRFORGE_BUILD_TESTS)
       set_tests_properties(xsd_rejects_invalid PROPERTIES WILL_FAIL TRUE)
       # tools/odrforge_pipeline.py: config defaults / merging, source choice, download plans (no network)
       add_test(NAME pipeline_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/pipeline_selftest.py)
+      # tools/inspect/metrics.py: the per-run metrics snapshot and its before / after difference
+      add_test(NAME metrics_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/metrics_selftest.py)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()
