@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "odrforge/conform.hpp"
 #include "odrforge/network.hpp"
 #include "odrforge/validate.hpp"
 #include "odrforge/version.hpp"
@@ -29,6 +30,8 @@ static void usage() {
       "  --basemap DIR       offline HD map / imagery backgrounds for the view (tools/make_basemap.py)\n"
       "  --terrain G.odrz    ground surface grid (tools/make_terrain.py): real road elevation\n"
       "  --structures S.odrz bridge-deck surface grid (lidar class 17) for bridge=yes roads\n"
+      "  --ground-out C.odrz the --terrain ground conformed to the roads (road surface under the lanes, cut / fill\n"
+      "                      slopes beside them) for 3D scenes and viewers that drape terrain around the roads\n"
       "  --clip MINLAT,MINLON,MAXLAT,MAXLON  cut the network to this area (ways split at the boundary)\n"
       "  --no-superelevation flat cross sections and level junctions (for consumers that ignore\n"
       "                      <superelevation>, e.g. CARLA meshing the roads itself)\n"
@@ -46,7 +49,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "standard", name, vizPath, terrainPath, structuresPath, basemapDir;
+  std::string country = "XX", target = "standard", name, vizPath, terrainPath, structuresPath, basemapDir, groundOutPath;
   double lat0 = 1e9, lon0 = 1e9, clip[4] = {0, 0, 0, 0};
   bool haveClip = false, flat = false;
   BuildOptions opt;
@@ -66,6 +69,7 @@ int main(int argc, char **argv) {
     else if (a == "--basemap") basemapDir = next();
     else if (a == "--terrain") terrainPath = next();
     else if (a == "--structures") structuresPath = next();
+    else if (a == "--ground-out") groundOutPath = next();
     else if (a == "--no-superelevation") flat = true;
     else if (a == "--no-gores") opt.laneLevelGores = false;
     else if (a == "--no-overlap-shift") opt.resolveOverlaps = false;
@@ -108,6 +112,14 @@ int main(int argc, char **argv) {
     odr::WriteOptions wo;
     wo.revMinor = opt.target.revMinor;
     odr::write(od, out, wo);
+    if (!groundOutPath.empty()) {
+      if (terrain.ground.empty()) {
+        std::fprintf(stderr, "--ground-out needs --terrain\n");
+        return 2;
+      }
+      conformGround(od, terrain.ground).save(groundOutPath);
+      std::printf("  conformed ground: %s\n", groundOutPath.c_str());
+    }
     const ValidationReport vr = validate(od, opt.target);
     if (!vizPath.empty()) {
       VizOptions vo;

@@ -3,6 +3,7 @@
 // pitfall 11 (C1 elevation, matching z at links), plus the visual quality rules in validate().
 #include <cstdio>
 
+#include "odrforge/conform.hpp"
 #include "odrforge/network.hpp"
 #include "odrforge/terrain.hpp"
 #include "odrforge/validate.hpp"
@@ -756,4 +757,42 @@ TEST_CASE("terrain: the vertical datum is part of the geoReference (PROJ +geoidg
   BuildOptions o = baseOptions();
   o.verticalDatum = "LOCAL";  // unknown: no geoid grid is invented
   CHECK(buildOpenDrive(b.d, b.proj, o).header.geoReference.find("geoidgrids") == std::string::npos);
+}
+
+TEST_CASE("terrain: the conformed ground carries the road and meets the terrain along cut / fill slopes") {
+  // a 7 m road across a 40 % hillside of a coarse model: under the lanes the conformed ground is the road surface, beside
+  // them a 1:1.5 slope from the road edge down to (fill) or up to (cut) the terrain, beyond 20 m the terrain itself
+  OsmB b;
+  b.way({b.node(-100, 0), b.node(100, 0)}, {{"highway", "secondary"}});
+  Terrain t;
+  t.ground = makeGrid(-150, -60, 0.5, 601, 241, 1, [](int, double, double y) { return static_cast<float>(800.0 + 0.4 * y); });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const TerrainGrid c = conformGround(od, t.ground);
+  CHECK(c.nx == t.ground.nx && c.ny == t.ground.ny && c.cell == t.ground.cell);
+  const odr::Road *road = nullptr;
+  for (const auto &r : od.roads)
+    if (r.junction == "-1") road = &r;
+  CHECK(road != nullptr);
+  if (!road) return;
+  double lo = 1e9, hi = -1e9;  // the lanes' extent across the road at mid length
+  const double s = 0.5 * road->length();
+  for (const auto *side : {&road->lanes.front().left, &road->lanes.front().right})
+    for (const auto &l : *side) {
+      double a, bb;
+      if (odr::laneBorders(*road, s, l.id, a, bb)) lo = std::min({lo, a, bb}), hi = std::max({hi, a, bb});
+    }
+  const Pose p = road->planView.eval(s);
+  for (double tt = lo + 0.3; tt <= hi - 0.3; tt += 0.5)  // under the lanes: the road surface (within the cell's slope)
+    CHECK_NEAR(c.sample(p.offset(tt).x, p.offset(tt).y), odr::surfaceZ(*road, s, tt), 0.15);
+  // uphill beside the road (a cut) the ground rises at most 1 / 1.5 per metre from the edge, never above the terrain
+  for (double d = 1.0; d <= 10.0; d += 1.0) {
+    const Vec2 q = p.offset(hi + d);
+    const double zr = odr::surfaceZ(*road, s, hi), g = t.ground.sample(q.x, q.y), zc = c.sample(q.x, q.y);
+    CHECK(zc <= g + 1e-3);
+    CHECK(zc <= zr + (d + t.ground.cell) / 1.5 + 0.1);  // distances run cell centre to cell centre: one cell's rise
+  }
+  // far from the road: the terrain unchanged
+  CHECK_NEAR(c.sample(0.0, 45.0), t.ground.sample(0.0, 45.0), 1e-4);
 }

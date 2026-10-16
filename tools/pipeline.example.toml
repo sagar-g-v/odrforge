@@ -1,0 +1,32 @@
+# OdrForge pipeline config (tools/odrforge_pipeline.py). Only what differs from the built-in defaults is needed.
+[paths]
+data = "C:/mywork/osm2carla/data"          # downloads: osm/, dem/<area>_<layer>_<source>/
+out = "C:/mywork/osm2carla/build/areas"    # grids and OpenDRIVE outputs
+
+[download]
+confirm = true                              # list the downloads and ask first
+
+[area_defaults]
+profiles = ["standard", "carla"]
+
+[areas.munich]
+bbox = [48.132, 11.560, 48.145, 11.585]
+origin = [48.1385, 11.5725]
+osm = "C:/mywork/osm2carla/data/testareas/munich.osm"   # use a local OSM file instead of downloading
+
+[areas.frankfurt_kreuz]
+bbox = [50.045, 8.585, 50.060, 8.615]
+origin = [50.0525, 8.600]
+
+[areas.london]
+bbox = [51.505, -0.135, 51.517, -0.115]
+origin = [51.511, -0.125]
+
+[areas.tokyo]
+bbox = [35.652, 139.690, 35.664, 139.708]
+origin = [35.658, 139.699]
+
+[areas.stelvio]
+bbox = [46.515, 10.440, 46.535, 10.465]
+origin = [46.525, 10.4525]
+country = "IT"

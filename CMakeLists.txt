@@ -48,6 +48,7 @@ add_library(odrforge
   src/validate.cpp
   src/odr_reader.cpp
   src/terrain.cpp
+  src/conform.cpp
   src/elevation.cpp
   src/overlap.cpp
   src/snap.cpp
@@ -106,6 +107,8 @@ if(ODRFORGE_BUILD_TESTS)
       add_test(NAME xsd_rejects_invalid COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
                ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/invalid_roadmark_height.xodr)
       set_tests_properties(xsd_rejects_invalid PROPERTIES WILL_FAIL TRUE)
+      # tools/odrforge_pipeline.py: config defaults / merging, source choice, download plans (no network)
+      add_test(NAME pipeline_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/pipeline_selftest.py)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()

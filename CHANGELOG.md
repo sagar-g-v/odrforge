@@ -4,6 +4,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+- **Ground conformed to the roads** (`osm2xodr --ground-out C.odrz`, src/conform.cpp): the --terrain ground with the road
+  surface under every lane and 1:1.5 cut / fill slopes beside it, for viewers and 3D scenes that drape terrain round the
+  roads (a 30 m DEM cannot hold a mountain road's bench). Paved edges vs grid: Stelvio p95 3.55 -> 0.28 m, Munich
+  0.19 -> 0.002 m, London 0.22 -> 0.003 m. Jev 0.80.
+- **Area pipeline** (`tools/odrforge_pipeline.py`, docs/PIPELINE.md): one TOML config (built-in defaults for every key)
+  drives OSM download, ground / deck sources picked by coverage (Bavaria DGM1, Hesse DGM1 / DOM1, EA DTM / DSM, GSI
+  DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
+
 ### Fixed
 - **Corner sidewalks follow the turning lane** (Munich review flags 4 / 5; Junction Guideline 1.0.0 §6.3): a corner
   sidewalk's curb is the outer driving-lane border of the connecting road turning round that corner, instead of a fixed
