@@ -20,6 +20,9 @@ exact:annexF:<rule path> from annex_f.py, the ASAM OpenDRIVE 1.9 Annex F rules) 
 A regression is any gating (area, kind) whose count grows by more than --tolerance, any new
 validation error rule count, a failing unit test, a conversion crash, new CARLA sideways
 discontinuities or esmini load errors.
+Terrain areas are also converted in the standard profile with the ground conformed to the roads (what the review
+viewer draws), and all their outputs are held to the absolute limits of terrain_contract.py (docs/TERRAIN_CONTRACT.md):
+those never move with the baseline, so a proven terrain result cannot regress through a baseline refresh.
 """
 import argparse
 import collections
@@ -31,6 +34,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import annex_f  # noqa: E402
+import terrain_contract  # noqa: E402
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -86,6 +90,19 @@ def kind_of(name, f):
     return f"{name}:{k}" + (f":{sub}" if sub else "")
 
 
+def without_views(args):
+    """osm2xodr arguments without the HTML view options (--viz FILE, --basemap DIR)"""
+    out, skip = [], False
+    for x in args:
+        if skip:
+            skip = False
+        elif x in ("--viz", "--basemap"):
+            skip = True
+        else:
+            out.append(x)
+    return out
+
+
 def convert(area):
     a = AREAS[area]
     os.makedirs(os.path.dirname(a["xodr"]), exist_ok=True)
@@ -103,6 +120,15 @@ def convert(area):
                 break
             rules[mm.group(2)] = int(mm.group(1))
     out["rules"] = rules
+    if a.get("terrain") and not out["crashed"]:
+        # the standard profile and the conformed ground the viewer draws, from the same inputs (terrain_contract.py:
+        # outputs never older than their inputs)
+        f = terrain_contract.files(area, TOUT)
+        rs, _ = run([EXE, a["osm"], f["standard"], "--target", "standard"] + without_views(a["args"])
+                    + ["--ground-out", f["conformed"]], cwd=DATA)
+        if not os.path.exists(f["standard"]) or "validation:" not in rs.stdout + rs.stderr:
+            out["crashed"] = True
+            log = rs.stdout + rs.stderr
     if out["crashed"]:
         out["log_tail"] = log[-1500:]
     return area, out
@@ -214,6 +240,21 @@ def main():
         state[ar]["totals"][name] = sum(kinds.values())
     res["areas"] = {ar: {"validation_errors": s["validation_errors"], "totals": s["totals"],
                          "carla": s.get("carla"), "esmini_errors": s.get("esmini_errors")} for ar, s in state.items()}
+    # absolute terrain limits (not relative to the baseline, also with --baseline)
+    for ar in good:
+        if ar in terrain_contract.CONTRACT:
+            problems, metrics = terrain_contract.check(ar, TOUT, EXE)
+            res["areas"][ar]["terrain"] = {prof: {k: m[k] for k in ("centre", "conformed", "decks", "superelev")}
+                                           | {"steep": len(m["steep"])} for prof, m in metrics.items()}
+            for p in problems:
+                res["ok"] = False
+                res["problems"].append("terrain contract " + p)
+    # the contract's own checks still bite: every one must fail on a copy with its defect planted
+    if any(ar in terrain_contract.CONTRACT for ar in good):
+        r, _ = run([sys.executable, os.path.join(REPO, "tests", "terrain_contract_selftest.py")])
+        if r.returncode != 0:
+            res["ok"] = False
+            res["problems"].append("terrain contract self-test failed: " + (r.stdout + r.stderr)[-800:])
     if a.baseline:
         base = json.load(open(BASELINE)) if os.path.exists(BASELINE) and set(areas) != set(AREAS) else {}
         base.update(state)

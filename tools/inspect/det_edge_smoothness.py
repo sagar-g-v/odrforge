@@ -82,6 +82,8 @@ def poly(rec, x, d=0):
 def pw(recs, x, d=0, left=False):
     """piecewise cubic (records [(start, abcd)]) at x; left=True takes the record ending at x."""
     x = np.atleast_1d(np.asarray(x, float))
+    if not recs:  # no records (a road without <laneOffset>): 0
+        return np.zeros_like(x)
     starts = np.array([r[0] for r in recs])
     idx = np.searchsorted(starts, x - (1e-9 if left else -1e-9), side="right") - 1
     idx = np.clip(idx, 0, len(recs) - 1)

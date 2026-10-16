@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Terrain contract** (tools/inspect/terrain_contract.py, docs/TERRAIN_CONTRACT.md): the proven terrain results held
+  as absolute limits that do not move with the gate baseline - outputs never older than their inputs, conformed fit,
+  centre line vs ground, bridge roads vs measured decks, the 8 % / 15 % banking caps, steep-road counts, London's
+  terrace streets. gate.py regenerates the standard output and conformed ground of terrain areas and runs it on every
+  run; a planted-defect self-test proves each check fails on its defect. Jev 0.82.
 - **Streets on structures OSM does not tag as bridges** (make_terrain.py): the deck grid also takes the surface
   model's smooth cells (std < 0.3 m) more than 2.5 m over the bare earth within 3 m of any road nothing is mapped over
   (not tunnel / covered, layer >= 0); the elevation solver takes them only where they continue the road better than the
@@ -27,6 +32,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **edge_smoothness inspector crash** on roads without <laneOffset> (it reported no findings on any area).
 - **Corner sidewalks follow the turning lane** (Munich review flags 4 / 5; Junction Guideline 1.0.0 §6.3): a corner
   sidewalk's curb is the outer driving-lane border of the connecting road turning round that corner, instead of a fixed
   6 m curb return a tighter turn ran over. Sidewalk-on-driving overlaps (JCT-8): Munich 175 -> 68, Tokyo 1008 -> 378,

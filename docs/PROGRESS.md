@@ -183,6 +183,10 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   crosses (a first attempt left decks 2.9 m under their access tunnel, inside the validator's 3 m same-level band).
   Tokyo stays relative (its stacked Shuto flyovers would need deck data: 8 errors with ground alone). Elevation over measured terrain now runs the
   relative-mode level solver too and uses its levels as offsets in unmeasured stretches (elevation.cpp 4.).
+- Terrain contract (2026-10-17): docs/TERRAIN_CONTRACT.md holds the proven terrain numbers as absolute gate limits
+  with a planted-defect test per check (user rule: harden every proven improvement). The gate baseline itself
+  (gate_baseline.json, 2026-10-12) is stale: its deltas (G2 invariants, JCT-8, max_grade from real terrain) come from
+  commits reviewed one by one with exact_diff; refreshing it needs the user's go-ahead.
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
   atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:
