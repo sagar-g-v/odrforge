@@ -5,6 +5,13 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Stelvio on South Tyrol's 2.5 m DTM** (CC0, province of Bolzano WCS; pipeline source `south_tyrol_dtm2_5`). A
+  regional model ending inside an area is completed by the next coarser source: the pipeline measures the share of
+  the bbox with data and adds GLO-30 below 99.5 %; `make_terrain.py` shifts the fill onto the finer data (nearest
+  difference fading over `--seam` 100 m to the median), so the Lombardy border has no step (border |dz| p95
+  3.83 -> 0.45 m). Stelvio road centre vs ground p95 0.61 -> 0.16 m, grade warnings 12 -> 1, conformed edges p95
+  0.28 -> 0.13 m. Other areas' grids byte-identical. Header userData `verticalCRS` (EPSG code of the vertical datum);
+  Genova 1942 has no open geoid grid, so no `+geoidgrids` for it. Jev 0.80.
 - **Ground conformed to the roads** (`osm2xodr --ground-out C.odrz`, src/conform.cpp): the --terrain ground with the road
   surface under every lane and 1:1.5 cut / fill slopes beside it, for viewers and 3D scenes that drape terrain round the
   roads (a 30 m DEM cannot hold a mountain road's bench). Paved edges vs grid: Stelvio p95 3.55 -> 0.28 m, Munich

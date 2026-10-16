@@ -176,7 +176,7 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   | frankfurt_kreuz | Hesse DGM1 1 m (INSPIRE WCS he_dgm1) | Hesse DOM1 1 m (WCS dom1) | 0.5 m | DHHN2016 |
   | london | EA LIDAR Composite DTM 1 m (WCS) | - | 0.5 m | ODN |
   | tokyo | GSI DEM5A 5 m (tile service, zoom 15) | none open | 1 m | JGD2011 (T.P.) |
-  | stelvio | Copernicus GLO-30 (DSM, above the tree line) | - | 1 m | EGM2008 |
+  | stelvio | South Tyrol DTM 2.5 m (WCS, CC0; 54 % of the box) + Copernicus GLO-30 shifted onto it for the Lombardy part | - | 1 m | Genova1942 (EPSG:5214, no open geoid grid) |
   gate.py builds munich, london and stelvio on terrain. Frankfurter Kreuz with ground + decks validates clean (0 errors,
   7 grade warnings vs 31 errors with ground alone) but a three-level underground car park (layers -1 .. -3, maxheight
   2.1 m, 50 roads) connects to no measured road and keeps height 0 - open: anchor such a network through the roads it

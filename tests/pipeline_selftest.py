@@ -1,5 +1,5 @@
 """Self-test of tools/odrforge_pipeline.py: config defaults and merging, source choice by coverage, download plans.
-No network. usage: python pipeline_selftest.py   (exit 0 = pass)"""
+DEM fill seam. No network. usage: python pipeline_selftest.py   (exit 0 = pass)"""
 import os
 import sys
 import tempfile
@@ -48,7 +48,10 @@ check(pick("ground", (50.045, 8.585, 50.060, 8.615)) == "hesse_dgm1", "Frankfurt
 check(pick("decks", (50.045, 8.585, 50.060, 8.615)) == "hesse_dom1", "Frankfurt decks: Hesse DOM1")
 check(pick("ground", (51.505, -0.135, 51.517, -0.115)) == "ea_dtm1", "London ground: EA DTM")
 check(pick("ground", (35.652, 139.690, 35.664, 139.708)) == "gsi_dem5a", "Tokyo ground: GSI DEM5A")
-check(pick("ground", (46.515, 10.440, 46.535, 10.465)) == "copernicus_glo30", "Stelvio ground: GLO-30")
+check(pick("ground", (46.515, 10.440, 46.535, 10.465)) == "south_tyrol_dtm2_5", "Stelvio ground: South Tyrol DTM")
+check((P.next_provider(P.PROVIDER["south_tyrol_dtm2_5"], (46.515, 10.440, 46.535, 10.465)) or {}).get("name")
+      == "copernicus_glo30", "Stelvio: GLO-30 fills past the South Tyrol border")
+check(P.next_provider(P.PROVIDER["copernicus_glo30"], (46.515, 10.440, 46.535, 10.465)) is None, "nothing after GLO-30")
 check(pick("decks", (46.515, 10.440, 46.535, 10.465)) is None, "no open deck source at Stelvio")
 check(P.pick("ground", "none", (0, 0, 1, 1)) is None, "none: no source")
 
@@ -73,6 +76,41 @@ try:
     check(False, "an area without bbox is refused")
 except SystemExit:
     pass
+
+# 5. a coarser DEM filling past a finer one's border is shifted onto it: no step at the border, the median
+#    difference far from it (make_terrain.shifted_fill)
+try:
+    import numpy as np
+    import scipy  # noqa: F401
+    import make_terrain as T
+    x = np.arange(400.0)[None, :].repeat(50, axis=0)
+    fine = np.where(x < 200, 100.0 + 0.1 * x + np.where(x > 150, 0.02 * (x - 150), 0.0), np.nan)  # 3.98 m apart at x 199
+    coarse = 97.0 + 0.1 * x  # another datum: 3 m lower
+    filled = np.where(np.isnan(fine), T.shifted_fill(fine, coarse, 100.0), fine)
+    check(abs(filled[25, 200] - filled[25, 199] - 0.1) < 0.05, "no step where the fill takes over")
+    check(abs(filled[25, 399] - (coarse[25, 399] + 3.0)) < 0.05, "far from the border: shifted by the median difference")
+    check(np.all(np.abs(np.diff(filled[25])) < 0.2), "the faded shift keeps the slope continuous")
+except ImportError:
+    print("numpy / scipy / pyproj missing: the DEM fill not checked")
+
+# 6. coverage: the share of the bbox where a source's files have data (decides whether a coarser one is added)
+try:
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+    box = (46.0, 10.0, 46.1, 10.1)
+    tif = os.path.join(tempfile.mkdtemp(), "half.tif")
+    a = np.full((100, 100), 1500.0, dtype="float32")
+    a[:, 50:] = -9999.0  # the region ends half way east: no data beyond
+    with rasterio.open(tif, "w", driver="GTiff", width=100, height=100, count=1, dtype="float32", crs="EPSG:4326",
+                       transform=from_origin(10.0, 46.1, 0.001, 0.001), nodata=-9999.0) as d:
+        d.write(a, 1)
+    share = P.coverage([tif], box)
+    check(0.4 < share < 0.6, f"coverage of a half-empty raster ~0.5 (got {share:.2f})")
+    check(P.coverage([tif], (46.0, 10.0, 46.1, 10.04)) >= 0.995, "coverage 1 where the raster has data everywhere")
+    check(P.coverage([tif], (46.0, 10.3, 46.1, 10.4)) == 0.0, "coverage 0 outside the raster")
+except ImportError:
+    print("numpy / rasterio / pyproj missing: coverage not checked")
 
 print("pipeline self-test:", "FAILED" if failures else "ok")
 sys.exit(1 if failures else 0)

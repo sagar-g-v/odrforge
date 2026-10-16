@@ -1527,16 +1527,24 @@ void Builder::finish() {
   // the heights' vertical datum in the spatial reference itself: OpenDRIVE 1.9.0 §8.5 describes the reference system
   // by a PROJ string (zWorld = zODR + zOffset); PROJ ties ellipsoidal to orthometric heights through a geoid model,
   // +geoidgrids (the grid of the PROJ database's transformation to that vertical CRS, cdn.proj.org) +vunits=m. Kept
-  // in the header userData too (verticalDatum) for readers that do not parse it. Unknown datum names add nothing
-  static const std::map<std::string, std::string> kGeoid = {
-      {"DHHN2016", "de_bkg_gcg2016.tif"},        // EPSG:7837, GCG2016 quasigeoid
-      {"ODN", "uk_os_OSGM15_GB.tif"},            // EPSG:5701, OSGM15
-      {"EGM2008", "us_nga_egm08_25.tif"},        // EPSG:3855
-      {"JGD2011 (T.P.)", "jp_gsi_gsigeo2011.tif"},  // EPSG:6695, GSIGEO2011
-      {"NAVD88", "us_noaa_g2018u0.tif"},         // EPSG:5703, GEOID18 (CONUS)
+  // in the header userData too (verticalDatum, and verticalCRS: the vertical CRS's EPSG code) for readers that do not
+  // parse it. A datum whose geoid grid is not open (Genova 1942: PROJ's transformation needs IGM's geo_igm_mar06.grd)
+  // gets no +geoidgrids - a missing grid would be read as ellipsoidal heights - only the userData. Unknown names: the
+  // verticalDatum name alone
+  struct VerticalDatum {
+    const char *epsg, *grid;
   };
-  if (auto g = kGeoid.find(opt.verticalDatum); g != kGeoid.end())
-    od.header.geoReference += " +geoidgrids=" + g->second + " +vunits=m";
+  static const std::map<std::string, VerticalDatum> kVertical = {
+      {"DHHN2016", {"EPSG:7837", "de_bkg_gcg2016.tif"}},           // GCG2016 quasigeoid
+      {"ODN", {"EPSG:5701", "uk_os_OSGM15_GB.tif"}},               // OSGM15
+      {"EGM2008", {"EPSG:3855", "us_nga_egm08_25.tif"}},
+      {"JGD2011 (T.P.)", {"EPSG:6695", "jp_gsi_gsigeo2011.tif"}},  // GSIGEO2011
+      {"NAVD88", {"EPSG:5703", "us_noaa_g2018u0.tif"}},            // GEOID18 (CONUS)
+      {"Genova1942", {"EPSG:5214", nullptr}},                      // Genoa 1942 height (Italy, IGM)
+  };
+  const auto vd = kVertical.find(opt.verticalDatum);
+  if (vd != kVertical.end() && vd->second.grid)
+    od.header.geoReference += std::string(" +geoidgrids=") + vd->second.grid + " +vunits=m";
   // the road network is derived from OpenStreetMap data, licensed under the ODbL 1.0 (OpenDRIVE 1.8.0 \u00a76.4.2
   // <license>: name, resource, spdxid; @text would be "The full license text" - left out, the resource links
   // it). ODbL asks for the attribution "(c) OpenStreetMap contributors"
@@ -1546,6 +1554,7 @@ void Builder::finish() {
                                    "https://opendatacommons.org/licenses/odbl/1-0/", "ODbL-1.0", ""};
   od.header.userData["attribution"] = u8"Contains data \u00a9 OpenStreetMap contributors, available under the ODbL 1.0.";
   if (!opt.verticalDatum.empty()) od.header.userData["verticalDatum"] = opt.verticalDatum;
+  if (vd != kVertical.end()) od.header.userData["verticalCRS"] = vd->second.epsg;
   od.header.revMinor = opt.target.revMinor;
   char buf[64];
   const std::time_t now = std::time(nullptr);

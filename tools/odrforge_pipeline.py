@@ -26,7 +26,8 @@ The config is TOML (Python tomllib). Every key has a default (DEFAULTS below); a
     cell = 0.5                                # grid cell (m); default: from the source's resolution
 
 `[areas.<name>]` keys not given fall back to `[area_defaults]`, then to DEFAULTS. `auto` picks the finest provider
-whose coverage holds the whole bbox (PROVIDERS, finest first; Copernicus GLO-30 covers the world). Each provider
+whose coverage holds the whole bbox (PROVIDERS, finest first; Copernicus GLO-30 covers the world), adding the next
+coarser one where its data ends inside the bbox (a region's border). Each provider
 states its CRS, resolution and vertical datum; the datum goes into the grids and, through osm2xodr, into the
 geoReference (PROJ +geoidgrids) and header userData.
 """
@@ -82,6 +83,10 @@ PROVIDERS = [
     dict(name="hesse_dom1", layer="decks", country="DE", res=1.0, datum="DHHN2016", crs="EPSG:25832",
          bbox=(49.39, 7.77, 51.66, 10.24), kind="wcs", url="https://inspire-hessen.de/raster/dom1/ows",
          coverage="dom1", axes=("E", "N"), note="HVBG Hesse, INSPIRE WCS DOM1 (surface model), dl-zero-de/2.0"),
+    dict(name="south_tyrol_dtm2_5", layer="ground", country="IT", res=2.5, datum="Genova1942", crs="EPSG:25832",
+         bbox=(46.21, 10.38, 47.09, 12.48), kind="wcs", url="https://geoservices9.civis.bz.it/geoserver/ows",
+         coverage="p_bz-Elevation__DigitalTerrainModel-2.5m", axes=("E", "N"),
+         note="Autonomous Province of Bolzano, DTM 2.5 m (heights above Genova 1942 mean sea level), CC0"),
     dict(name="ea_dtm1", layer="ground", country="GB", res=1.0, datum="ODN", crs="EPSG:27700",
          bbox=(49.9, -6.4, 55.8, 1.8), kind="wcs",
          url="https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wcs",
@@ -159,6 +164,32 @@ def pick(layer, choice, bbox):
     if os.path.exists(choice):
         return choice
     sys.exit(f"unknown source {choice!r} (auto, none, a provider: {', '.join(PROVIDER)}, or an existing file)")
+
+
+def next_provider(p, bbox):
+    """the next coarser provider of p's layer covering the bbox (fills what p leaves empty), or None"""
+    later = PROVIDERS[PROVIDERS.index(p) + 1:]
+    return next((q for q in later if q["layer"] == p["layer"] and covers(q, bbox)), None)
+
+
+def coverage(files, bbox, n=40):
+    """share of the bbox where one of the files has data, on an n x n lattice of cell centres. A provider's bbox is
+    the rectangle round its region (a state, a province); the data itself ends at the region's border"""
+    import numpy as np
+    import rasterio
+    from pyproj import Transformer
+    s, w, nn, e = bbox
+    k = (np.arange(n) + 0.5) / n
+    lat, lon = np.meshgrid(s + k * (nn - s), w + k * (e - w))
+    have = np.zeros(lat.size, dtype=bool)
+    for f in files:
+        with rasterio.open(f) as src:
+            x, y = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True).transform(lon.ravel(), lat.ravel())
+            v = np.array([val[0] for val in src.sample(zip(x, y))], dtype=float)
+            ok = np.isfinite(v) if src.nodata is None or np.isnan(src.nodata) else (v != src.nodata) & np.isfinite(v)
+            l, b, r, t = src.bounds
+            have |= ok & (x >= l) & (x <= r) & (y >= b) & (y <= t)
+    return float(have.mean())
 
 
 def projected_box(p, bbox, pad=0.0):
@@ -282,18 +313,27 @@ def stage_osm(name, a, cfg):
 
 
 def stage_source(name, a, cfg, layer):
-    """local raster files of the ground / decks layer and the source's datum (None, None when there is none)"""
+    """local raster files of the ground / decks layer, finest first, and the main source (None, None when there is
+    none). With auto, a source whose data ends inside the bbox (a regional model at its border) is completed by the
+    next coarser one; make_terrain.py fills the gap with it, shifted onto the finer data"""
     p = pick(layer, a[layer], a["bbox"])
     if p is None:
         return None, None
     if isinstance(p, str):
         return [p], a.get("datum", "")
-    folder = os.path.join(cfg["paths"]["data"], "dem", f"{name}_{layer}_{p['name']}")
-    print(f"  {layer}: {p['name']} - {p['note']} ({p['res']:g} m, {p['datum']})")
-    if not fetch(plan_downloads(p, a["bbox"], a["margin"], folder), cfg, f"{layer} ({p['name']})"):
-        return None, None
-    files = [gsi_mosaic(folder)] if p["kind"] == "gsi" else raster_files(folder)
-    return files, p
+    files, q = [], p
+    while q is not None:
+        folder = os.path.join(cfg["paths"]["data"], "dem", f"{name}_{layer}_{q['name']}")
+        print(f"  {layer}: {q['name']} - {q['note']} ({q['res']:g} m, {q['datum']})")
+        if not fetch(plan_downloads(q, a["bbox"], a["margin"], folder), cfg, f"{layer} ({q['name']})"):
+            break
+        files += [gsi_mosaic(folder)] if q["kind"] == "gsi" else raster_files(folder)
+        if a[layer] != "auto" or (share := coverage(files, a["bbox"])) >= 0.995:
+            break
+        q = next_provider(q, a["bbox"])
+        print(f"  {layer}: data on {share * 100:.0f} % of the bbox; the rest from "
+              f"{q['name'] if q else 'nowhere (no other source)'}")
+    return (files, p) if files else (None, None)
 
 
 def stage_terrain(name, a, cfg, osm_path, ground, decks):

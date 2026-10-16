@@ -755,8 +755,17 @@ TEST_CASE("terrain: the vertical datum is part of the geoReference (PROJ +geoidg
     CHECK(od.header.userData.at("verticalDatum") == datum);
   }
   BuildOptions o = baseOptions();
-  o.verticalDatum = "LOCAL";  // unknown: no geoid grid is invented
-  CHECK(buildOpenDrive(b.d, b.proj, o).header.geoReference.find("geoidgrids") == std::string::npos);
+  o.verticalDatum = "DHHN2016";
+  CHECK(buildOpenDrive(b.d, b.proj, o).header.userData.at("verticalCRS") == "EPSG:7837");
+  // Genova 1942 (South Tyrol's DTM): its geoid grid is not open - the vertical CRS is named, no grid is referenced
+  o.verticalDatum = "Genova1942";
+  const odr::OpenDrive it = buildOpenDrive(b.d, b.proj, o);
+  CHECK(it.header.geoReference.find("geoidgrids") == std::string::npos);
+  CHECK(it.header.userData.at("verticalCRS") == "EPSG:5214");
+  o.verticalDatum = "LOCAL";  // unknown: no geoid grid or vertical CRS is invented
+  const odr::OpenDrive local = buildOpenDrive(b.d, b.proj, o);
+  CHECK(local.header.geoReference.find("geoidgrids") == std::string::npos);
+  CHECK(local.header.userData.count("verticalCRS") == 0);
 }
 
 TEST_CASE("terrain: the conformed ground carries the road and meets the terrain along cut / fill slopes") {

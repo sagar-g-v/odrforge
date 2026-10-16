@@ -17,6 +17,10 @@ Sources (any country): national lidar (USGS 3DEP, UK EA, NL AHN, FR IGN LiDAR HD
   buildings elsewhere are left out; a deck under another deck is not seen (osm2xodr: the lower road gives way).
 * Lidar heights are aligned to the DEM's vertical datum by the median offset of ground points
   (e.g. ellipsoidal lidar vs NAVD88 DEM).
+* Several --dem, finest first: a later DEM fills only the cells the earlier ones leave empty (a regional model
+  ending at its border, e.g. South Tyrol's 2.5 m DTM at the Lombardy border, completed by GLO-30). The fill is
+  shifted onto the earlier DEMs: by the difference at the nearest cell where both have data, fading over
+  --seam metres to their median difference (another datum, a surface model's trees), so the border has no step.
 Requires numpy, pyproj, rasterio (DEM), laspy[lazrs] for .las/.laz.
 """
 import argparse
@@ -89,6 +93,22 @@ def load_lidar(paths, crs):
     return np.concatenate(xs), np.concatenate(ys), np.concatenate(zs), np.concatenate(cs), crs
 
 
+def shifted_fill(dem, fill, seam_cells):
+    """`fill` moved onto `dem` for the cells `dem` leaves empty: the difference dem - fill at the nearest cell where
+    both have data, fading over seam_cells to their median difference; `fill` as it is where they never overlap"""
+    both = ~np.isnan(dem) & ~np.isnan(fill)
+    if not both.any():
+        return fill
+    from scipy.ndimage import distance_transform_edt
+    diff = np.where(both, dem - fill, 0.0)
+    median = float(np.median(diff[both]))
+    d, (ii, jj) = distance_transform_edt(~both, return_indices=True)
+    w = np.clip(1.0 - d / max(seam_cells, 1e-9), 0.0, 1.0)
+    print(f"DEM fill: {np.isnan(dem).mean() * 100:.1f} % of the grid, shifted {median:+.2f} m (median), "
+          f"nearest-cell differences faded over {seam_cells:.0f} cells")
+    return fill + w * diff[ii, jj] + (1.0 - w) * median
+
+
 def bin_mean(ix, iy, z, nx, ny):
     ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
     idx = iy[ok] * nx + ix[ok]
@@ -127,6 +147,7 @@ def main():
     ap.add_argument("--structures")
     ap.add_argument("--cell", type=float, default=0.5)
     ap.add_argument("--margin", type=float, default=60.0)
+    ap.add_argument("--seam", type=float, default=100.0, help="m over which a filling DEM fades onto the earlier ones")
     ap.add_argument("--datum", default="")
     ap.add_argument("--dsm", action="append", default=[], help="surface model raster(s): bridge decks (with --deck-osm)")
     ap.add_argument("--deck-osm", help="OSM file whose road bridges select the DSM deck cells")
@@ -156,9 +177,7 @@ def main():
                 reproject(rasterio.band(src, 1), tmp, dst_transform=dst_tr, dst_crs=local,
                           src_nodata=src.nodata, dst_nodata=np.nan, resampling=Resampling.bilinear)
                 tmp = tmp[::-1]  # north-up raster -> row 0 = south
-                dem = np.where(np.isnan(dem), tmp, dem)
-                if not a.datum and src.crs is not None:
-                    pass
+                dem = np.where(np.isnan(dem), shifted_fill(dem, tmp, a.seam / a.cell), dem)
         print(f"DEM coverage {np.mean(~np.isnan(dem)) * 100:.1f} %")
 
     ground, decks = dem.copy(), None

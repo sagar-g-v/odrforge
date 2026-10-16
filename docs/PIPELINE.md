@@ -54,6 +54,12 @@ origin = [48.1385, 11.5725]               # default: bbox centre
 
 ## Sources (`auto`: the finest one whose coverage holds the whole bbox)
 
+A source's coverage is the rectangle round its region; its data ends at the region's border. When the data holds
+less than 99.5 % of the bbox (Stelvio: South Tyrol's DTM stops at the Lombardy border), `auto` adds the next
+coarser source, and `make_terrain.py` fills the gap with it, shifted onto the finer data (the difference at the
+nearest cell where both have data, fading over `--seam` 100 m to their median difference), so the border shows
+no step. The grid keeps the finer source's datum.
+
 | name | layer | coverage | resolution | vertical datum | access |
 |---|---|---|---|---|---|
 | `bavaria_dgm1` | ground | Bavaria | 1 m | DHHN2016 | 1 km GeoTIFF tiles, open data |
@@ -61,8 +67,9 @@ origin = [48.1385, 11.5725]               # default: bbox centre
 | `hesse_dom1` | decks | Hesse | 1 m | DHHN2016 | INSPIRE WCS `dom1` |
 | `ea_dtm1` | ground | England | 1 m | ODN | Environment Agency WCS |
 | `ea_dsm1` | decks | England | 1 m | ODN | Environment Agency WCS (last return) |
+| `south_tyrol_dtm2_5` | ground | South Tyrol | 2.5 m | Genova1942 | Province of Bolzano WCS, CC0 |
 | `gsi_dem5a` | ground | Japan | 5 m | JGD2011 (T.P.) | GSI zoom-15 text tiles |
 | `copernicus_glo30` | ground | world | 30 m | EGM2008 | AWS open data (a surface model) |
 
 The datum goes into the grids; `osm2xodr` writes it into the geoReference (PROJ `+geoidgrids`) and the header
-userData. New sources are one entry in `PROVIDERS` (bbox, CRS, resolution, datum, kind, URL).
+userData (a datum without an open PROJ grid, like Genova1942, only in the userData). New sources are one entry in `PROVIDERS` (bbox, CRS, resolution, datum, kind, URL).
