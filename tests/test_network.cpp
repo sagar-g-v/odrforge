@@ -112,11 +112,12 @@ OsmBuilder crossroads(bool signals) {
 
 }  // namespace
 
-TEST_CASE("corner sidewalks: beside a straight-on movement the curb bends smoothly; corners keep the curb return") {
-  // a street bending 10 degrees at a junction, a side street leaving at about 90 degrees. Junction Guideline §6 curb
-  // return (line, arc of the corner radius, line) at the side street's corners; on the far side the curb runs beside the
-  // straight-on movement and is part of the street's bend: a 6 m arc there would put the 10 degrees into 1 m (review
-  // flag 7, Munich), so it takes the smoothest path (as connecting roads do)
+TEST_CASE("corner sidewalks: the curb follows the connecting road round the corner, bending smoothly beside a straight-on") {
+  // a street bending 10 degrees at a junction, a side street leaving at about 90 degrees. Junction Guideline 1.0.0 §6.3:
+  // the connecting road round a corner carries the curb and walking lanes beside its driving lane, so the corner
+  // sidewalk's curb is that road's outer lane border - a fixed 6 m curb return let a tighter turn run over the sidewalk
+  // (Munich review flags 4 / 5). On the far side the curb runs beside the straight-on movement and is part of the
+  // street's bend: a 6 m arc there would put the 10 degrees into 1 m (review flag 7, Munich)
   OsmBuilder b;
   const OsmId c = b.node(0, 0);
   const Tags street{{"highway", "residential"}, {"lanes", "2"}};
@@ -138,7 +139,26 @@ TEST_CASE("corner sidewalks: beside a straight-on movement the curb bends smooth
         CHECK(kMax * rd.length() <= 2.5 * std::max(turn, 1e-9));  // at most twice an even bend (a clothoid pair)
       } else {
         ++corners;
-        CHECK(std::abs(kMax - 1.0 / 6.0) < 1e-6);  // the corner radius (BuildOptions::cornerRadius 6 m)
+        // every point of the curb (the sidewalk's inner edge, lane 0) lies on a driving lane's border of a connecting
+        // road of the junction (within the 0.1 m of the curb's fit)
+        std::vector<Vec2> borders;
+        for (const auto &q : r.od.roads) {
+          if (q.junction != rd.junction || cornerSidewalk(q) || q.lanes.empty()) continue;
+          for (double s = 0.0; s <= q.length(); s += 0.1)
+            for (const auto *side : {&q.lanes.front().left, &q.lanes.front().right})
+              for (const auto &l : *side) {
+                double a, bb;
+                if (l.type == "driving" && odr::laneBorders(q, s, l.id, a, bb)) borders.push_back(q.planView.eval(s).offset(bb));
+              }
+        }
+        double worst = 0.0;
+        for (double s = 0.0; s <= rd.length(); s += 0.25) {
+          const Vec2 curb = rd.planView.eval(s).offset(odr::laneOffsetAt(rd, s));
+          double d = 1e300;
+          for (const Vec2 &p : borders) d = std::min(d, (p - curb).norm());
+          worst = std::max(worst, d);
+        }
+        CHECK(worst < 0.15);
       }
     }
     CHECK(straightOn == 1);
@@ -607,8 +627,27 @@ OsmBuilder skewFuzz0277() {
 }
 
 TEST_CASE("junction boundary (standard): a helper road is pushed out past lanes that swing beyond it") {
-  // a connecting road between two arms that are not neighbours runs outside the corner's helper road, which is pushed out
-  // past it (laneOffset records on a 1 m grid); the boundary then encloses every lane
+  // a connecting road turning tighter than the corner's curb return swings beyond the corner sidewalk; the boundary
+  // takes a helper along that sidewalk and pushes it out past the lanes (laneOffset records on a 1 m grid), so it
+  // encloses every lane. The corner sidewalk built as a curb return (cornerCurbAlongTurns off), as at fallback corners
+  const OsmBuilder b = skewFuzz0277();
+  BuildOptions o = boundaryOptions("US");
+  o.cornerCurbAlongTurns = false;
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.junctionBoundaries == 1);
+  CHECK(checkBoundaries(od) == 1);
+  size_t records = 0;
+  for (const auto &r : od.roads)
+    if (r.name == "JunctionBoundary") records = std::max(records, r.laneOffset.size());
+  CHECK(records > 4);  // the pushed stretch: one record per metre
+}
+
+TEST_CASE("junction boundary (standard): a corner sidewalk along the turning lane needs no helper pushed out past it") {
+  // with sidewalks the same junction's corner sidewalk follows the edge of the connecting road turning there (Junction
+  // Guideline 1.0.0 §6.3): no lane swings beyond it. Built as a curb return, it had lanes beyond it, and the boundary
+  // needed a helper along it pushed out (32 laneOffset records)
   const OsmBuilder b = skewFuzz0277();
   const BuildOptions o = boundaryOptions("US");
   BuildReport rep;
@@ -619,7 +658,7 @@ TEST_CASE("junction boundary (standard): a helper road is pushed out past lanes 
   size_t records = 0;
   for (const auto &r : od.roads)
     if (r.name == "JunctionBoundary") records = std::max(records, r.laneOffset.size());
-  CHECK(records > 4);  // the pushed stretch: one record per metre
+  CHECK(records <= 1);
 }
 
 TEST_CASE("junction boundary (standard): a helper copying a connecting road follows its side edge exactly") {

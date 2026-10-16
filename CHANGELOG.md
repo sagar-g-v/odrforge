@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Corner sidewalks follow the turning lane** (Munich review flags 4 / 5; Junction Guideline 1.0.0 §6.3): a corner
+  sidewalk's curb is the outer driving-lane border of the connecting road turning round that corner, instead of a fixed
+  6 m curb return a tighter turn ran over. Sidewalk-on-driving overlaps (JCT-8): Munich 175 -> 68, Tokyo 1008 -> 378,
+  LA 101 -> 63, Stelvio 10 -> 0; more junction boundaries written (Tokyo 499 -> 529). Crosswalk footprints are no longer
+  accepted past a sidewalk's end (a clamped projection). Option cornerCurbAlongTurns (default on). Jev 0.81.
 - **Real terrain**: the Munich, London and Stelvio test areas build on national bare-earth DEMs (Bavaria DGM1, EA
   LIDAR DTM 1 m, Copernicus GLO-30): Munich 498 - 521 m, London 0.7 - 43 m, Stelvio 2408 - 2783 m (were relative,
   Stelvio flat). Over measured terrain the relative level solver now also runs: tunnels and bridges without deck data

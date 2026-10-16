@@ -52,9 +52,12 @@ int sidewalkOf(const std::vector<odr::Lane> &side) {
   return !side.empty() && side.back().type == "sidewalk" ? side.back().id : 0;
 }
 
-/// does point (s, t) of road r lie inside its outermost sidewalk walk, kInside from either border?
-bool insideSidewalk(const odr::Road &r, double s, double t, int walk) {
-  if (s < 0.0 || s > r.length()) return false;
+/// does point q lie inside road r's outermost sidewalk walk, kInside from either border? A point before the road's
+/// start or past its end projects onto that end (the projection clamps s): it is outside, not on the end line
+bool insideSidewalk(const odr::Road &r, const Vec2 &q, int walk) {
+  double s, t;
+  r.planView.project(q, s, t);
+  if (s < 0.0 || s > r.length() || (r.planView.eval(s).offset(t) - q).norm() > 1e-3) return false;
   const odr::LaneSection &sec = odr::sectionAt(r, s);
   if (sidewalkOf(walk > 0 ? sec.left : sec.right) != walk) return false;
   double a, b;
@@ -193,7 +196,7 @@ void Builder::crossPaths() {
           for (const double side : {-0.5 * w, 0.5 * w}) {
             double sc, tc;
             c.planView.project(C.at + n * side, sc, tc);
-            inside = inside && insideSidewalk(c, sc, tc, C.walk);
+            inside = inside && insideSidewalk(c, C.at + n * side, C.walk);
             span[k][0] = std::min(span[k][0], sc), span[k][1] = std::max(span[k][1], sc);
           }
         }
@@ -314,7 +317,7 @@ void Builder::crossPaths() {
       for (const double side : {-h, h}) {
         double sc, tc;
         r.planView.project(end + p.dir() * side, sc, tc);
-        inside = inside && insideSidewalk(r, sc, tc, walk);
+        inside = inside && insideSidewalk(r, end + p.dir() * side, walk);
         sMin = std::min(sMin, sc), sMax = std::max(sMax, sc);
       }
     if (!inside) continue;

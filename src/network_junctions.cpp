@@ -549,8 +549,13 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
     // (no such lane edge: the smoothest path between the curb points where it bends less than the curb return, as the
     // carriageway's connecting roads do - a fixed-radius return would put the whole turn into a few metres)
     const bool straightOn = classify(normalizeAngle(b.hdg - a.hdg)) == Turn::Straight;
-    ReferenceLine curb;
-    if (straightOn) curb = curbAlongLanes(out, rp, rq, a, b);
+    // the curb runs along the outer driving-lane border of the connecting road that turns round this corner (the right
+    // turn P -> Q in right-hand traffic, the left turn Q -> P in left-hand traffic): Junction Guideline 1.0.0 §6.3 T
+    // junction - the connecting road round the corner carries the curb and walking lanes beside its driving lane (road
+    // 45: -1 driving, -2 curb, -3 walking), so they share its border. A fixed curb return where that turn bends tighter
+    // put the turning lane over the sidewalk (Munich review flags 4 / 5: 9.85 m2; JCT-8 sidewalk_on_driving)
+    ReferenceLine curb = straightOn || opt.cornerCurbAlongTurns ? curbAlongLanes(out, rp, rq, a, b) : ReferenceLine{};
+    const bool laneEdge = !curb.elements.empty();
     if (curb.elements.empty()) {
       curb = curbReturn(a, b, opt.cornerRadius * rankFactor);
       if (straightOn)
@@ -567,7 +572,7 @@ void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, s
                                                           slopeP.inner - slopeP.outer, slopeQ.inner - slopeQ.outer);
     // a lane-edge or smooth curb that leaves the sidewalk no room (it bends tighter than the sidewalk is wide) falls back
     // to the curb return, which may still fit (Frankfurt Kreuz junction 107: 29 deg over 3.3 m)
-    if (widths.empty() && straightOn) {
+    if (widths.empty() && (straightOn || laneEdge)) {
       const ReferenceLine ret = curbReturn(a, b, opt.cornerRadius * rankFactor);
       if (!ret.elements.empty() && ret.length() >= 0.05) {
         std::vector<odr::Poly3> w2 = cornerSidewalkWidths(ret, spanP.width(), spanQ.width(), slopeP.inner - slopeP.outer,

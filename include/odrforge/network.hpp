@@ -39,6 +39,9 @@ struct BuildOptions {
   double junctionJoinSlack = 4.0;   ///< extra metres when merging intersection nodes into one junction
   double stopLineSetback = 1.0;     ///< road ends this far before the conflict area
   double cornerRadius = 6.0;        ///< curb return radius at intersections (m); scaled up for major roads
+  /// a corner sidewalk's curb follows the connecting road turning round the corner (Junction Guideline 1.0.0 §6.3);
+  /// off: the curb return of cornerRadius at every turning corner (straight-on corners follow their lanes either way)
+  bool cornerCurbAlongTurns = true;
   double taperLength = 30.0;        ///< lane add / drop transition length (m)
   double minConnectingRadius = 3.0; ///< connecting roads tighter than this get a smoother 2-piece curve
   bool crosswalksAtSignals = true;  ///< signalised junctions get crosswalks on every approach

@@ -413,7 +413,12 @@ void Builder::junctionBoundaries() {
                   const double f = std::clamp((q - u).dot(ab) / std::max(ab.dot(ab), 1e-12), 0.0, 1.0), d = (u + ab * f - q).norm();
                   if (d < best) best = d, nearest = e;
                 }
-                if (pieces[owner[nearest]].arm >= 0) return false;
+                if (pieces[owner[nearest]].arm >= 0) {
+                  if (std::getenv("ODRFORGE_DEBUG_BOUNDARY"))
+                    std::fprintf(stderr, "boundary J%s: road %s (%s) lane %d s %.2f t %.2f outside at arm joint, %.3f m\n", J.id.c_str(),
+                                 r.id.c_str(), r.name.c_str(), l.id, s, t, best);
+                  return false;
+                }
                 byPiece[owner[nearest]].push_back(q);
               }
             }
