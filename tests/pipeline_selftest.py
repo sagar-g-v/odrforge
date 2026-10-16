@@ -93,7 +93,28 @@ try:
 except ImportError:
     print("numpy / scipy / pyproj missing: the DEM fill not checked")
 
-# 6. coverage: the share of the bbox where a source's files have data (decides whether a coarser one is added)
+# 6. decks of streets on structures OSM does not call bridges (make_terrain.raised_smooth, on_top): a terrace's smooth
+#    surface over the bare earth is a deck; a rough tree crown is not; a tunnel / covered / underground way gets none
+try:
+    import numpy as np
+    import scipy  # noqa: F401
+    import make_terrain as T
+    g = np.full((40, 80), 6.0)
+    dsm = g.copy()
+    dsm[:, 10:30] = 13.5  # a terrace: 7.5 m over the bare earth, flat
+    dsm[:, 50:70] = g[:, 50:70] + 8.0 + np.random.default_rng(1).normal(0.0, 1.5, (40, 20))  # a tree crown
+    m = T.raised_smooth(dsm, g, 0.5)
+    check(m[20, 15:25].all(), "a terrace's flat surface over the bare earth is a deck")
+    check(not m[20, 52:68].any(), "a rough tree crown is not")
+    check(not m[20, 35:45].any(), "the ground itself is not")
+    check(T.on_top({"highway": "residential"}) and T.on_top({"highway": "primary", "layer": "1"}), "streets on top")
+    check(not T.on_top({"highway": "service", "tunnel": "yes", "layer": "-1"}), "a tunnel is under something")
+    check(not T.on_top({"highway": "steps", "covered": "yes"}) and not T.on_top({"highway": "service", "layer": "-1"}),
+          "covered and underground ways are under something")
+except ImportError:
+    print("numpy / scipy / pyproj missing: street decks not checked")
+
+# 7. coverage: the share of the bbox where a source's files have data (decides whether a coarser one is added)
 try:
     import numpy as np
     import rasterio

@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Streets on structures OSM does not tag as bridges** (make_terrain.py): the deck grid also takes the surface
+  model's smooth cells (std < 0.3 m) more than 2.5 m over the bare earth within 3 m of any road nothing is mapped over
+  (not tunnel / covered, layer >= 0); the elevation solver takes them only where they continue the road better than the
+  ground. London: Adam Street on the Adelphi terrace (bare earth dipped 7 m under it, -25 %) and the Lancaster Place
+  approach are now on their measured surface; grade warnings 7 -> 5, every other gate count identical. Frankfurt:
+  a motorway bridge approach loses a 1 m sag, validation identical. Unit tests: terrace vs bus vs road beneath. Jev 0.84.
 - **Stelvio on South Tyrol's 2.5 m DTM** (CC0, province of Bolzano WCS; pipeline source `south_tyrol_dtm2_5`). A
   regional model ending inside an area is completed by the next coarser source: the pipeline measures the share of
   the bbox with data and adds GLO-30 below 99.5 %; `make_terrain.py` shifts the fill onto the finer data (nearest

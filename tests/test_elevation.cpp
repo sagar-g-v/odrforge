@@ -1,6 +1,7 @@
 // Elevation, junction surfaces, grade separation, overlap resolution and clipping.
 // Spec basis: spec 3 (elevation absolute s; superelevation roll, positive falls to the right),
 // pitfall 11 (C1 elevation, matching z at links), plus the visual quality rules in validate().
+#include <algorithm>
 #include <cstdio>
 
 #include "odrforge/conform.hpp"
@@ -700,6 +701,67 @@ TEST_CASE("terrain: a tunnel under a street stays a storey below it (the relativ
   const double zStreet = zThrough(od, 0, 0, isStreet), zTunnel = zThrough(od, 0, 0, isTunnel);
   CHECK_NEAR(zStreet, 500.0, 0.1);
   CHECK(zStreet - zTunnel >= o.levelHeight - 0.1);
+}
+
+TEST_CASE("terrain: a street on a structure OSM does not call a bridge takes the deck, a vehicle on the road does not") {
+  // make_terrain.py puts smooth surface-model cells over any street into the deck grid (London: Adam Street on the
+  // Adelphi terrace, which the bare-earth model removed - a 7 m pit under the street). The solver takes such a deck
+  // only where it continues the road better than the ground: over the 80 m pit, yes; a 3.5 m high, 10 m long blob
+  // on a level street (a bus in the surface model), no
+  OsmB b;
+  b.way({b.node(-200, 0), b.node(200, 0)}, {{"highway", "residential"}});
+  b.way({b.node(-200, 100), b.node(200, 100)}, {{"highway", "residential"}});
+  Terrain t;
+  t.ground = makeGrid(-250, -50, 1.0, 501, 201, 1, [](int, double x, double y) {
+    const double pit = y < 50 ? std::clamp((48.0 - std::abs(x)) / 8.0, 0.0, 1.0) * 7.0 : 0.0;  // 7 m deep, 25 % walls
+    return static_cast<float>(20.0 - pit);
+  });
+  t.structures = makeGrid(-250, -50, 1.0, 501, 201, 1, [](int, double x, double y) {
+    if (y < 50) return std::abs(x) < 48 ? 20.0f : NAN;  // the terrace's surface over the pit
+    return std::abs(x) < 5 ? 23.5f : NAN;                // the bus
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  CHECK(validate(od, o.target).count("quality.max_grade") == 0);
+  CHECK_NEAR(zThrough(od, 0, 0, isStreet), 20.0, 0.1);    // on the terrace, not 13 m in the pit
+  CHECK_NEAR(zThrough(od, 30, 0, isStreet), 20.0, 0.1);
+  CHECK_NEAR(zThrough(od, 0, 100, isStreet), 20.0, 0.1);  // under the bus: the ground
+}
+
+TEST_CASE("terrain: an untagged road under a street on a structure keeps the ground, the street the deck") {
+  // the risk of street decks: a road passing under the structure without tunnel / layer tags. Its deck cells lie only
+  // along the upper street (make_terrain.py: within 3 m of its centre line), so the road beneath crosses a 6 m strip of
+  // deck - jumping 7 m up and down again costs more than its cutting (and the lower layer gives way: it stays down even
+  // with a deck over its whole cutting - checked by widening the deck). Upper street east-west at 20 m over a cutting
+  // 7 m deep running north-south; the road beneath runs in the cutting, layer -1 without a tunnel tag (two crossing
+  // layer-0 ways are joined at grade by the converter, so that is the untagged case that can pass under)
+  OsmB b;
+  b.way({b.node(-200, 0), b.node(200, 0)}, {{"highway", "residential"}});
+  b.way({b.node(0, -200), b.node(0, 200)}, {{"highway", "residential"}, {"layer", "-1"}});
+  Terrain t;
+  t.ground = makeGrid(-250, -250, 1.0, 501, 501, 1, [](int, double x, double y) {
+    const double cut = std::clamp((60.0 - std::abs(y)) / 28.0, 0.0, 1.0) * std::clamp((12.0 - std::abs(x)) / 4.0, 0.0, 1.0);
+    return static_cast<float>(20.0 - 7.0 * cut);  // 7 m deep within 32 m of the crossing, 25 % ramps
+  });
+  t.structures = makeGrid(-250, -250, 1.0, 501, 501, 1, [](int, double x, double y) {
+    return std::abs(y) <= 3.0 && std::abs(x) < 12.0 ? 20.0f : NAN;  // the deck along the upper street only
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  CHECK(validate(od, o.target).count("quality.road_overlap") == 0);
+  double zUpper = NAN, zLower = NAN;
+  for (const auto &r : od.roads) {
+    if (r.junction != "-1") continue;
+    double s, tt;
+    r.planView.project({0, 0}, s, tt);
+    if (std::abs(tt) > 3 || s <= 0.5 || s >= r.length() - 0.5) continue;
+    const double h = r.planView.eval(s).hdg;
+    (std::abs(std::cos(h)) > 0.7 ? zUpper : zLower) = odr::elevationAt(r, s);
+  }
+  CHECK_NEAR(zUpper, 20.0, 0.2);  // the street on its deck
+  CHECK_NEAR(zLower, 13.0, 0.2);  // the road beneath in its cutting, not lifted onto the deck
 }
 
 TEST_CASE("terrain: a building passage runs on the ground under the building (OSM tunnel=building_passage)") {
