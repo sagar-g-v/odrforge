@@ -21,6 +21,7 @@ struct Seg {
   int travel = 0;  ///< +1 oneway along the way, -1 oneway against, 0 two-way
   bool bridge = false, tunnel = false;
   bool covered = false;  ///< covered=yes: under a building or hillside, the surface above is not the road
+  bool passage = false;  ///< tunnel=building_passage: through a building at ground level (OSM wiki Key:tunnel)
 };
 
 struct Part {
@@ -63,6 +64,7 @@ struct RoadMeta {
   std::vector<SectionInfo> sections;  ///< s on the full line
   std::vector<std::pair<double, double>> bridges, tunnels;  ///< s ranges on the full line
   std::vector<std::pair<double, double>> covered;           ///< covered=yes s ranges (no height observations)
+  std::vector<std::pair<double, double>> passages;          ///< tunnel=building_passage s ranges (on the ground)
   struct LayerRange {
     double s0, s1;
     int layer;

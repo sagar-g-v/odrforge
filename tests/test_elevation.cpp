@@ -668,3 +668,92 @@ TEST_CASE("grade separation without elevation data: a building passage stays on 
   CHECK_NEAR(zThrough(od, 0, 0, startsAtY(0)), 0.0, 1e-6);
   CHECK_NEAR(zThrough(od, 0, 0, startsAtX(0)), o.levelHeight, 0.05);
 }
+
+// ------------------------------------------------------------------------------------ structures over measured terrain
+
+TEST_CASE("terrain: a tunnel under a street stays a storey below it (the relative levels over measured ground)") {
+  // a street on the ground at 500 m; a secondary road drops into a measured cutting (5 m deep, level for the last 20 m before the portals) and runs
+  // as a tunnel under the street. Interpolated between its portals the tunnel would lie 5 m under the street - less
+  // than a storey (Munich, Altstadtringtunnel: 2 m)
+  OsmB b;
+  b.way({b.node(-300, 0), b.node(300, 0)}, {{"highway", "residential"}});
+  const Tags road{{"highway", "secondary"}};
+  Tags tunnel = road;
+  tunnel["tunnel"] = "yes", tunnel["layer"] = "-1";
+  const OsmId t0 = b.node(0, -300), t1 = b.node(0, -50), t2 = b.node(0, 50), t3 = b.node(0, 300);
+  b.way({t0, t1}, road);
+  b.way({t1, t2}, tunnel);
+  b.way({t2, t3}, road);
+  Terrain t;
+  t.ground = makeGrid(-350, -350, 1.0, 701, 701, 1, [](int, double x, double y) {
+    const double ay = std::abs(y);
+    const double cut = std::abs(x) < 8 && ay > 50 && ay < 120 ? std::min(5.0, 5.0 * (120 - ay) / 50.0) : 0.0;  // open cutting, level 20 m
+    return static_cast<float>(500.0 - cut);
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.count("quality.road_overlap") == 0);
+  const double zStreet = zThrough(od, 0, 0, isStreet), zTunnel = zThrough(od, 0, 0, isTunnel);
+  CHECK_NEAR(zStreet, 500.0, 0.1);
+  CHECK(zStreet - zTunnel >= o.levelHeight - 0.1);
+}
+
+TEST_CASE("terrain: a building passage runs on the ground under the building (OSM tunnel=building_passage)") {
+  // a bare-earth terrain model carries the ground under a building: the passage is measured there (a 1.5 m rise)
+  OsmB b;
+  b.way({b.node(-200, -40), b.node(200, -40)}, {{"highway", "residential"}});
+  b.way({b.node(-200, 40), b.node(200, 40)}, {{"highway", "residential"}});
+  const OsmId p0 = b.node(0, -40), p1 = b.node(0, -15), p2 = b.node(0, 15), p3 = b.node(0, 40);
+  b.way({p0, p1}, {{"highway", "service"}});
+  b.way({p1, p2}, {{"highway", "service"}, {"tunnel", "building_passage"}});
+  b.way({p2, p3}, {{"highway", "service"}});
+  Terrain t;
+  t.ground = makeGrid(-250, -100, 1.0, 501, 201, 1, [](int, double, double y) {
+    return static_cast<float>(300.0 + 1.5 * std::exp(-y * y / 200.0));  // a rise under the building
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  CHECK_NEAR(zThrough(od, 0, 0, isTunnel), 301.5, 0.3);
+}
+
+TEST_CASE("terrain: a covered road touching no measured road lies on the ground at its ends, never at 0") {
+  // an isolated private driveway through a building (Munich, way 1558109782): no sample measured, no junction
+  OsmB b;
+  b.way({b.node(0, 0), b.node(12, 0)}, {{"highway", "service"}, {"covered", "yes"}});
+  Terrain t;
+  t.ground = makeGrid(-50, -50, 1.0, 101, 101, 1, [](int, double x, double) { return static_cast<float>(250.0 + 0.5 * x); });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  int roads = 0;
+  for (const auto &r : od.roads) {
+    if (r.junction != "-1") continue;
+    ++roads;
+    for (double s = 0; s <= r.length(); s += 1.0) {
+      const Pose p = r.planView.eval(s);
+      CHECK_NEAR(odr::elevationAt(r, s), 250.0 + 0.5 * p.x, 0.5);
+    }
+  }
+  CHECK(roads == 1);
+}
+
+TEST_CASE("terrain: the vertical datum is part of the geoReference (PROJ +geoidgrids), and kept in userData") {
+  // OpenDRIVE 1.9.0 §8.5: the spatial reference is a PROJ string; PROJ gives a vertical datum by its geoid model
+  OsmB b;
+  b.way({b.node(-50, 0), b.node(50, 0)}, {{"highway", "residential"}});
+  for (const auto &[datum, grid] : std::vector<std::pair<std::string, std::string>>{
+           {"DHHN2016", "de_bkg_gcg2016.tif"}, {"ODN", "uk_os_OSGM15_GB.tif"}, {"NAVD88", "us_noaa_g2018u0.tif"}}) {
+    BuildOptions o = baseOptions();
+    o.verticalDatum = datum;
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    CHECK(od.header.geoReference.find(" +geoidgrids=" + grid + " +vunits=m") != std::string::npos);
+    CHECK(od.header.userData.at("verticalDatum") == datum);
+  }
+  BuildOptions o = baseOptions();
+  o.verticalDatum = "LOCAL";  // unknown: no geoid grid is invented
+  CHECK(buildOpenDrive(b.d, b.proj, o).header.geoReference.find("geoidgrids") == std::string::npos);
+}

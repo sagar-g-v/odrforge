@@ -167,6 +167,22 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   lane pairs meet within 5 mm (median 0) at their contact points (checker limit 1 cm). Overlaps: Tokyo 734 / 977
   fixed (c0bbebd); laneOffset shifts G2 (a217a32). 3. Munich flag 7 fixed (86cec86); LA flag 4 re-measured, not a gore
   (question to the user: ramp shoulders); LA flag 5 waits for the user.
+- Real terrain for the test areas (2026-10-17): ground grids `build/testareas/<area>_ground.odrz` (make_terrain.py,
+  local TM frame at each area's origin, 60 m margin), bridge decks `<area>_decks.odrz` from a surface model near OSM
+  road bridges (make_terrain.py --dsm --deck-osm). Sources (data in `C:\mywork\osm2carla\data\dem`):
+  | area | ground (bare earth) | decks | cell | vertical datum |
+  |---|---|---|---|---|
+  | munich | Bavaria DGM1 1 m, 6 tiles (open data) | - | 0.5 m | DHHN2016 |
+  | frankfurt_kreuz | Hesse DGM1 1 m (INSPIRE WCS he_dgm1) | Hesse DOM1 1 m (WCS dom1) | 0.5 m | DHHN2016 |
+  | london | EA LIDAR Composite DTM 1 m (WCS) | - | 0.5 m | ODN |
+  | tokyo | GSI DEM5A 5 m (tile service, zoom 15) | none open | 1 m | JGD2011 (T.P.) |
+  | stelvio | Copernicus GLO-30 (DSM, above the tree line) | - | 1 m | EGM2008 |
+  gate.py builds munich, london and stelvio on terrain. Frankfurter Kreuz with ground + decks validates clean (0 errors,
+  7 grade warnings vs 31 errors with ground alone) but a three-level underground car park (layers -1 .. -3, maxheight
+  2.1 m, 50 roads) connects to no measured road and keeps height 0 - open: anchor such a network through the roads it
+  crosses (a first attempt left decks 2.9 m under their access tunnel, inside the validator's 3 m same-level band).
+  Tokyo stays relative (its stacked Shuto flyovers would need deck data: 8 errors with ground alone). Elevation over measured terrain now runs the
+  relative-mode level solver too and uses its levels as offsets in unmeasured stretches (elevation.cpp 4.).
 - Remaining plan items, not started. The design-level Jev scores below (2026-10-13) are NOT reliable: the
   briefs held untested claims and no spec / guideline text. Each item is to be re-assessed after reading the
   atlas, 1.8.0, 1.9, the Junction Guideline and the XSDs, with measured evidence:

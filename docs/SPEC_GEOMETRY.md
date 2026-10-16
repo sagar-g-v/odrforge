@@ -713,6 +713,13 @@ At a freeway split with a shallow branch (DESIGN, lane-level gores):
   Main lanes continue 1:1.
 - A merge is the mirror image of a split.
 
+**JCT-8 (MUST): sidewalks beside the carriageway, not on it.**
+Inside a junction, no walking or curb lane of a connecting road overlaps a driving lane of another connecting road of
+the same junction by more than 0.5 m² (plan view). The Junction Guideline 1.0.0 §6.3 (T junction) carries the curb and
+walking lanes round a corner on the connecting road that turns there, beside its driving lane, so the two share a border.
+Crossing roads (a cross path's walking lane over the carriageway, ASAM OpenDRIVE 1.8.0 §12.6 crossPath) are exempt.
+- Check `sidewalk_on_driving`: one instance per (walking/curb lane, driving lane) pair, value = overlap area in m².
+
 ---
 
 ## 8. Simulator conformance (SIM)

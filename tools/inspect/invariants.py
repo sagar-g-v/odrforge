@@ -559,6 +559,7 @@ class Result:
         "flow_narrow": ("m", W_P, "MUST", "FLOW-6/narrow, XS-2"),
         "flow_no_drivable": ("-", 0, "MUST", "FLOW-6"),
         "degenerate": ("m", MIN_LEN, "MUST", "SIM-5"),
+        "sidewalk_on_driving": ("m2", 0.5, "MUST", "JCT-8"),
     }
 
     def __init__(self):
@@ -2267,6 +2268,53 @@ def run_all(net, osm=None, clip_xy=None, rule="file"):
     return res
 
 
+def check_sidewalk_on_driving(xodr, res, min_area=0.5):
+    """JCT-8: walking / curb lanes of junction roads overlapping driving lanes of the same junction (plan view)."""
+    import odrgeom as G
+    from shapely.geometry import Polygon
+    from shapely.strtree import STRtree
+    root = ET.parse(xodr).getroot()
+    crossing = {c.get("crossingRoad") or c.get("roadId") for c in root.iter("crossPath")}
+    od = G.OpenDrive(xodr)
+
+    def poly(r, lid, n=30):
+        L, R = [], []
+        for s in np.linspace(0.0, r.length, n):
+            b = r.borders_at(s)
+            if lid not in b:
+                return None
+            ti, to = b[lid]
+            L.append(r.point(s, ti)), R.append(r.point(s, to))
+        p = Polygon(L + R[::-1]).buffer(0)
+        return None if p.is_empty else p
+
+    walk, drive = collections.defaultdict(list), collections.defaultdict(list)
+    for r in od.roads.values():
+        if r.junction == "-1" or not r.sections or r.id in crossing or r.name == "Crossing":
+            continue
+        for l in list(r.sections[0].left) + list(r.sections[0].right):
+            kind = "walk" if l.type in ("walking", "sidewalk", "curb") else "drive" if l.type == "driving" else None
+            if kind:
+                pg = poly(r, l.id)
+                if pg is not None:
+                    (walk if kind == "walk" else drive)[r.junction].append((r, l.id, pg))
+    for j, ws in walk.items():
+        ds = drive.get(j, [])
+        if not ds:
+            continue
+        tree = STRtree([d[2] for d in ds])
+        for r, lid, pg in ws:
+            for k in tree.query(pg):
+                rd, ld, pd = ds[k]
+                if rd.id == r.id:
+                    continue
+                inter = pg.intersection(pd)
+                if inter.area > min_area:
+                    c = inter.centroid
+                    res.add("sidewalk_on_driving", inst(r.id, lid, 0.0, c.x, c.y, inter.area, min_area,
+                                                        driving_road=rd.id, driving_lane=ld, junction=j))
+
+
 def clip_from_gate(area):
     import gate
     a = gate.AREAS[area]
@@ -2311,6 +2359,7 @@ def main():
         osm = G.Osm(a.osm, net.lat0, net.lon0)
     cxy = clip_xy_of(net, clip)
     res = run_all(net, osm, cxy, a.rule)
+    check_sidewalk_on_driving(a.xodr, res)
     os.makedirs(a.out, exist_ok=True)
     inv = res.to_json()
     summary = {k: v["count"] for k, v in inv.items()}

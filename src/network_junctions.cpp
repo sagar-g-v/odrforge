@@ -1519,6 +1519,19 @@ void Builder::finish() {
   od.header.east = maxX;
   od.header.west = minX;
   od.header.geoReference = proj.projString();
+  // the heights' vertical datum in the spatial reference itself: OpenDRIVE 1.9.0 §8.5 describes the reference system
+  // by a PROJ string (zWorld = zODR + zOffset); PROJ ties ellipsoidal to orthometric heights through a geoid model,
+  // +geoidgrids (the grid of the PROJ database's transformation to that vertical CRS, cdn.proj.org) +vunits=m. Kept
+  // in the header userData too (verticalDatum) for readers that do not parse it. Unknown datum names add nothing
+  static const std::map<std::string, std::string> kGeoid = {
+      {"DHHN2016", "de_bkg_gcg2016.tif"},        // EPSG:7837, GCG2016 quasigeoid
+      {"ODN", "uk_os_OSGM15_GB.tif"},            // EPSG:5701, OSGM15
+      {"EGM2008", "us_nga_egm08_25.tif"},        // EPSG:3855
+      {"JGD2011 (T.P.)", "jp_gsi_gsigeo2011.tif"},  // EPSG:6695, GSIGEO2011
+      {"NAVD88", "us_noaa_g2018u0.tif"},         // EPSG:5703, GEOID18 (CONUS)
+  };
+  if (auto g = kGeoid.find(opt.verticalDatum); g != kGeoid.end())
+    od.header.geoReference += " +geoidgrids=" + g->second + " +vunits=m";
   // the road network is derived from OpenStreetMap data, licensed under the ODbL 1.0 (OpenDRIVE 1.8.0 \u00a76.4.2
   // <license>: name, resource, spdxid; @text would be "The full license text" - left out, the resource links
   // it). ODbL asks for the attribution "(c) OpenStreetMap contributors"

@@ -5,6 +5,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Fixed
+- **Real terrain**: the Munich, London and Stelvio test areas build on national bare-earth DEMs (Bavaria DGM1, EA
+  LIDAR DTM 1 m, Copernicus GLO-30): Munich 498 - 521 m, London 0.7 - 43 m, Stelvio 2408 - 2783 m (were relative,
+  Stelvio flat). Over measured terrain the relative level solver now also runs: tunnels and bridges without deck data
+  take its levels as offsets from the measured ground (Munich Altstadtringtunnel no longer 2 m under the street:
+  validation 4 -> 2); building passages follow the ground; a road wholly covered at ground level is no longer left at
+  height 0. The vertical datum goes into the geoReference as PROJ +geoidgrids (+vunits=m), and stays in userData.
+  make_terrain.py: bridge decks from a surface model near OSM road bridges (--dsm --deck-osm). invariants.py: JCT-8
+  sidewalk_on_driving. Frankfurt Kreuz (an isolated underground car park) and Tokyo (no open deck data) stay relative.
+  Jev 0.80.
 - **Review server: local cross-origin access** (`tools/inspect/viz_server.py`): the new review app
   ([odrforge-viewer](https://github.com/sagar-g-v/odrforge-viewer), React + deck.gl + MapLibre) runs on its own local
   port; the server grants CORS to localhost / 127.0.0.1 / [::1] origins only, so no web page can read networks or

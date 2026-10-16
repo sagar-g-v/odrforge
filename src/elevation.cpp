@@ -236,9 +236,11 @@ void Builder::sampleElevation() {
       for (const auto &lr : m.layers)
         if (s + m.trimStart >= lr.s0 - 1e-6 && s + m.trimStart <= lr.s1 + 1e-6) pf.layer[i] = lr.layer, pf.headroom[i] = lr.maxHeight;
       if (!haveTerrain) continue;
-      const bool bridge = inRanges(m.bridges, s), tunnel = inRanges(m.tunnels, s) || inRanges(m.covered, s);
       // the terrain above a tunnel or a covered way (under a building, through a hillside) is not the
-      // road: interpolated between the portals
+      // road: interpolated between the portals. A building passage (OSM wiki Key:tunnel, tunnel=building_passage:
+      // through a building at ground level) is: a bare-earth terrain model carries the ground under the building
+      const bool bridge = inRanges(m.bridges, s);
+      const bool tunnel = (inRanges(m.tunnels, s) && !inRanges(m.passages, s)) || inRanges(m.covered, s);
       if (tunnel) continue;
       if (!opt.terrain) {
         const double z = opt.elevation(q.x, q.y);
@@ -365,7 +367,11 @@ void Builder::sampleElevation() {
   //          both are pinned to their levels and ramps lead there from the ground; a ramp that reaches
   //          a junction lifts (lowers) the junction and continues on its other roads. Nothing else is
   //          invented (a bridge over a river stays level).
-  if (!haveTerrain) {
+  //          Over measured terrain (a ground grid) the same levels are offsets from the measured ground: what the
+  //          terrain cannot measure (a bridge without deck data, a tunnel) lies that far above / below the smoothest
+  //          curve through the measured road (4.)
+  std::vector<std::vector<double>> rel(P.size());
+  if (!haveTerrain || opt.terrain) {
     const double goreLength = 40.0;
     // design grade of an invented ramp by road class (at its steepest): a motorway climbs gently, a
     // garage ramp steeply
@@ -775,16 +781,21 @@ void Builder::sampleElevation() {
       for (size_t c = 0; c < clusters.size(); ++c) level[c] = x[levelVar[c]];
       place(x);
     }
-    // the constructed profile is final (no measurement to re-fit against the junction surfaces)
-    for (size_t mi = 0; mi < P.size(); ++mi) {
-      RoadMeta &m = metas[mi];
-      if (m.roadIndex < 0) continue;
-      m.zz = profile(mi, true);
-      m.hasData = true;
-      m.xs.assign(m.zs.size(), 0.0);
-      m.obs0 = m.obs1 = 0.0;
+    if (opt.terrain) {
+      for (size_t mi = 0; mi < P.size(); ++mi)
+        if (metas[mi].roadIndex >= 0) rel[mi] = profile(mi, true);
+    } else {
+      // the constructed profile is final (no measurement to re-fit against the junction surfaces)
+      for (size_t mi = 0; mi < P.size(); ++mi) {
+        RoadMeta &m = metas[mi];
+        if (m.roadIndex < 0) continue;
+        m.zz = profile(mi, true);
+        m.hasData = true;
+        m.xs.assign(m.zs.size(), 0.0);
+        m.obs0 = m.obs1 = 0.0;
+      }
+      return;
     }
-    return;
   }
   for (int pass = 0; pass < 3 && opt.terrain; ++pass) {
     std::vector<std::vector<double>> zf(P.size());
@@ -878,9 +889,25 @@ void Builder::sampleElevation() {
     std::vector<double> y(n, kNaN), w(n, 0.0);
     for (size_t i = 0; i < n && i < P[mi].chosen.size(); ++i)
       if (!std::isnan(P[mi].chosen[i])) y[i] = P[mi].chosen[i], w[i] = 1.0;
+    const std::vector<double> w0 = w;  // the measured samples
     double wsum = 0;
     for (double v : w) wsum += v;
-    if (wsum < 0.5) {
+    // a road wholly covered at ground level over measured terrain (covered=yes, OSM layer 0: a driveway through a
+    // building): a weak first guess, straight between the ground at its two ends; the junction surfaces decide the
+    // rest. Not on a bridge or in a tunnel: the ground at their ends is not their road (London: Waterloo Bridge over
+    // the Embankment, tunnel stubs under the street)
+    bool layered = false;
+    for (size_t i = 0; i < n && i < P[mi].layer.size(); ++i) layered |= P[mi].layer[i] != 0;
+    if (wsum < 0.5 && opt.terrain && !layered) {
+      size_t f = 0, l = n;
+      while (f < n && std::isnan(P[mi].groundC[f])) ++f;
+      while (l > f && std::isnan(P[mi].groundC[l - 1])) --l;
+      if (f < l) {
+        y[f] = P[mi].groundC[f], y[l - 1] = P[mi].groundC[l - 1], w[f] = w[l - 1] = 1e-3;
+        wsum = 2e-3;
+      }
+    }
+    if (wsum <= 0.0) {
       m.zz.assign(n, 0.0);
       m.hasData = false;
       continue;
@@ -889,7 +916,6 @@ void Builder::sampleElevation() {
     double lambda = opt.elevationSmoothing / std::pow(std::max(ds, 0.1), 4.0);
     // robust fit: Tukey biweights drop isolated outliers (walls, stairs, kerb edges, vehicles that
     // survived lidar classification) instead of letting them bend the profile
-    std::vector<double> w0 = w;
     for (int it = 0; it < 4; ++it) {
       m.zz = whittaker(y, w, lambda);
       std::vector<double> res;
@@ -913,6 +939,36 @@ void Builder::sampleElevation() {
     for (int it = 0; it < 4 && maxGrade(m.zz) > opt.maxGrade; ++it) {
       lambda *= 4.0;
       m.zz = whittaker(y, w, lambda);
+    }
+    // what the terrain cannot measure (a bridge without deck data, a tunnel) lies at the relative level (1. - 3.) above /
+    // below the measured-ground curve - relative to the measured samples around it, which already carry their part of
+    // it (an embankment, a cutting): in each unmeasured stretch the offset is the relative level less its value
+    // interpolated between the measured samples bracketing the stretch, zero where the measurement takes over.
+    // Interpolated between its portals, the Altstadtringtunnel (Munich) ran 2 m under the street above it
+    if (opt.terrain && rel[mi].size() == n) {
+      bool any = false;
+      for (size_t i = 0; i < n;) {
+        if (w0[i] > 0.0) {
+          ++i;
+          continue;
+        }
+        size_t e = i;
+        while (e < n && w0[e] == 0.0) ++e;  // unmeasured stretch [i, e)
+        const bool before = i > 0, after = e < n;
+        for (size_t k = i; k < e; ++k) {
+          double anchor = 0.0;
+          if (before && after)
+            anchor = rel[mi][i - 1] + (rel[mi][e] - rel[mi][i - 1]) * (m.zs[k] - m.zs[i - 1]) / std::max(1e-9, m.zs[e] - m.zs[i - 1]);
+          else if (before)  // open to the road end: the offset fades to the end, where the junction surface decides
+            anchor = rel[mi][i - 1] + (rel[mi][n - 1] - rel[mi][i - 1]) * (m.zs[k] - m.zs[i - 1]) / std::max(1e-9, m.zs[n - 1] - m.zs[i - 1]);
+          else if (after)
+            anchor = rel[mi][0] + (rel[mi][e] - rel[mi][0]) * m.zs[k] / std::max(1e-9, m.zs[e]);
+          const double off = rel[mi][k] - anchor;
+          if (std::abs(off) > 1e-3) y[k] = m.zz[k] + off, w[k] = 1.0, any = true;
+        }
+        i = e;
+      }
+      if (any) m.zz = whittaker(y, w, lambda);
     }
     // before the first and after the last measured sample (a tunnel or a covered way running to the
     // road end, an unmeasured deck, the edge of the terrain data) the smoothest curve carries the

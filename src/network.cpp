@@ -142,6 +142,7 @@ void Builder::collectSegments() {
     cur.bridge = tagYes(w->tags, "bridge") || tagIs(w->tags, "bridge", "viaduct");
     cur.tunnel = tagYes(w->tags, "tunnel") || tagIs(w->tags, "tunnel", "building_passage");
     cur.covered = tagYes(w->tags, "covered");
+    cur.passage = tagIs(w->tags, "tunnel", "building_passage");
     for (size_t i = 0; i < w->nodes.size(); ++i) {
       cur.nodes.push_back(w->nodes[i]);
       const bool split = i > 0 && i + 1 < w->nodes.size() && usage[w->nodes[i]] >= 2;
@@ -397,6 +398,7 @@ void Builder::buildRoadGeometry() {
       m.layers.push_back({s0, s1, layer, maxHeight});
       if (sg.tunnel) m.tunnels.push_back({s0, s1});
       if (sg.covered) m.covered.push_back({s0, s1});
+      if (sg.passage) m.passages.push_back({s0, s1});
     }
     metas.push_back(m);
   }

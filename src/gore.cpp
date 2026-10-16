@@ -302,6 +302,7 @@ void Builder::buildGores() {
       moveRanges(&RoadMeta::bridges);
       moveRanges(&RoadMeta::tunnels);
       moveRanges(&RoadMeta::covered);
+      moveRanges(&RoadMeta::passages);
       nT.layers.clear(), nA.layers.clear();
       for (const auto *src : {&mT, &mA}) {
         const ReferenceLine &old = src == &mT ? oldT : oldA;

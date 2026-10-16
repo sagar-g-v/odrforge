@@ -52,17 +52,25 @@ AREAS = {
                      "--terrain", os.path.join(LA_OUT, "ground.odrz"), "--structures", os.path.join(LA_OUT, "decks.odrz"),
                      "--clip", "34.044,-118.27,34.064,-118.245", "--viz", os.path.join(LA_OUT, "LA_DTLA_odrforge.html"),
                      "--basemap", os.path.join(LA_OUT, "LA_DTLA_basemap")]),
-    "munich": dict(country="DE", origin="48.1385,11.5725", clip="48.132,11.560,48.145,11.585"),
-    "london": dict(country="GB", origin="51.511,-0.125", clip="51.505,-0.135,51.517,-0.115"),
+    # terrain: absolute ground heights from national bare-earth DEMs (build/testareas/<area>_ground.odrz, written by
+    # tools/make_terrain.py; DEM, cell and vertical datum in docs/PROGRESS.md), and bridge decks from a surface model
+    # where one is open (<area>_decks.odrz). Frankfurter Kreuz stays relative for now: with ground + decks it is clean, but
+    # a three-level underground car park (layers -1 .. -3, 50 roads) connects to no measured road and would keep height 0.
+    # Tokyo stays relative: its stacked flyovers have no open deck data
+    "munich": dict(country="DE", origin="48.1385,11.5725", clip="48.132,11.560,48.145,11.585", terrain=True),
+    "london": dict(country="GB", origin="51.511,-0.125", clip="51.505,-0.135,51.517,-0.115", terrain=True),
     "frankfurt_kreuz": dict(country="DE", origin="50.0525,8.600", clip="50.045,8.585,50.060,8.615"),
-    "stelvio": dict(country="IT", origin="46.525,10.4525", clip="46.515,10.440,46.535,10.465"),
+    "stelvio": dict(country="IT", origin="46.525,10.4525", clip="46.515,10.440,46.535,10.465", terrain=True),
     "tokyo": dict(country="JP", origin="35.658,139.699", clip="35.652,139.690,35.664,139.708"),
 }
 for _k, _a in AREAS.items():
     if "args" not in _a:
         _a.update(osm=os.path.join(TA, _k + ".osm"), xodr=os.path.join(TOUT, _k + ".xodr"),
-                  args=["--country", _a["country"], "--origin", _a["origin"], "--name", _k, "--clip", _a["clip"],
-                        "--viz", os.path.join(TOUT, _k + ".html")]
+                  args=["--country", _a["country"], "--origin", _a["origin"], "--name", _k, "--clip", _a["clip"]]
+                  + (["--terrain", os.path.join(TOUT, _k + "_ground.odrz")] if _a.get("terrain") else [])
+                  + (["--structures", os.path.join(TOUT, _k + "_decks.odrz")]
+                     if _a.get("terrain") and os.path.exists(os.path.join(TOUT, _k + "_decks.odrz")) else [])
+                  + ["--viz", os.path.join(TOUT, _k + ".html")]
                   + (["--basemap", os.path.join(TOUT, _k + "_basemap")] if os.path.isdir(os.path.join(TOUT, _k + "_basemap")) else []))
 
 
