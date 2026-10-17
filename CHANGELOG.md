@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Gate publishes atomically** (gate.py, terrain_contract.py): a run converts and measures in build/tmp/inspect/gate_stage
+  and moves every output (carla file, HTML view, standard file, conformed ground) into place only at its end, followed
+  by the build records - the review folder never holds a half-published build (a real run: nothing published changed
+  for 29 min, then all 20 outputs at once; records match). Subprocess checkers read ODRFORGE_GATE_STAGE. New ctest
+  gate_stage_selftest with mutations. Jev 0.81.
 - **Terrain contract check `cliffs`** (terrain_contract.py): roads of 0.1 m and more steeper than 50 % between samples
   0.25 m apart - short stubs the 5 m steep check cannot see (no public road reaches 50 %). Munich / Frankfurt 0
   (Frankfurt's old grid had 3), London 1 (road 250) and Stelvio 1 (road 31) held as open junction-geometry cases.

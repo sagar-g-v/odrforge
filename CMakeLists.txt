@@ -113,6 +113,8 @@ if(ODRFORGE_BUILD_TESTS)
       add_test(NAME metrics_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/metrics_selftest.py)
       # tools/make_terrain.py: deck cells need a smooth surface (structure edges and tree crowns are not decks)
       add_test(NAME make_terrain_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/make_terrain_selftest.py)
+      # tools/inspect/gate.py: outputs staged during a run, published together at its end
+      add_test(NAME gate_stage_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/gate_stage_selftest.py)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()

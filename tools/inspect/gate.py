@@ -26,12 +26,16 @@ output it writes <file>.metrics.json (schema 1: run, build, the file's sha256 / 
 Terrain areas are also converted in the standard profile with the ground conformed to the roads (what the review
 viewer draws), and all their outputs are held to the absolute limits of terrain_contract.py (docs/TERRAIN_CONTRACT.md):
 those never move with the baseline, so a proven terrain result cannot regress through a baseline refresh.
+Outputs are published atomically: a run writes and measures them in build/tmp/inspect/gate_stage and moves them into
+build/testareas / build/odrforge together, followed by their build records, only at its end (a crashed area keeps its
+last outputs).
 """
 import argparse
 import collections
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -81,6 +85,52 @@ for _k, _a in AREAS.items():
                      if _a.get("terrain") and os.path.exists(os.path.join(TOUT, _k + "_decks.odrz")) else [])
                   + ["--viz", os.path.join(TOUT, _k + ".html")]
                   + (["--basemap", os.path.join(TOUT, _k + "_basemap")] if os.path.isdir(os.path.join(TOUT, _k + "_basemap")) else []))
+
+
+# Atomic publishing: a run converts and measures in a staging folder and moves the outputs into place (carla file, HTML
+# view, standard file, conformed ground) only at its end, followed by their build records - the review folder never
+# holds a half-published build, and a page opened during a run shows the last complete one. The checkers the gate
+# starts (invariants.py, laneflow.py and the contract self-test import this module or terrain_contract.py) read
+# STAGE_ENV, so they measure the staged files too.
+STAGE_ENV = "ODRFORGE_GATE_STAGE"
+STAGE = os.path.join(DATA, "build", "tmp", "inspect", "gate_stage")
+FINAL = {k: dict(xodr=a["xodr"], viz=next((a["args"][i + 1] for i, x in enumerate(a["args"][:-1]) if x == "--viz"), None))
+         for k, a in AREAS.items()}
+
+
+def staged(path, stage):
+    """the staged twin of a published output: <stage>/<its folder name>/<its file name>"""
+    return os.path.join(stage, os.path.basename(os.path.dirname(path)), os.path.basename(path))
+
+
+def use_stage(stage):
+    """point every area's outputs (carla file, HTML view) at the staging folder"""
+    for k, a in AREAS.items():
+        a["xodr"] = staged(FINAL[k]["xodr"], stage)
+        if FINAL[k]["viz"]:
+            a["args"][a["args"].index("--viz") + 1] = staged(FINAL[k]["viz"], stage)
+
+
+if os.environ.get(STAGE_ENV):
+    use_stage(os.environ[STAGE_ENV])
+
+
+def publish(areas, stage):
+    """move the run's outputs of `areas` into place, file by file (os.replace: atomic on one volume); returns
+    {staged folder: published folder} for the build records"""
+    folders = {}
+    for ar in areas:
+        pairs = [(AREAS[ar]["xodr"], FINAL[ar]["xodr"])]
+        if FINAL[ar]["viz"]:
+            pairs.append((staged(FINAL[ar]["viz"], stage), FINAL[ar]["viz"]))
+        if AREAS[ar].get("terrain"):
+            src, dst = terrain_contract.files(ar, TOUT), terrain_contract.files(ar, TOUT, out=TOUT)
+            pairs += [(src[k], dst[k]) for k in ("standard", "conformed")]
+        for src, dst in pairs:
+            if os.path.exists(src):
+                os.replace(src, dst)
+                folders[os.path.dirname(os.path.abspath(src))] = os.path.dirname(os.path.abspath(dst))
+    return folders
 
 
 def run(cmd, **kw):
@@ -218,6 +268,9 @@ def main():
             sys.exit(1)
     for ar in areas:
         os.makedirs(os.path.join(WORK, ar), exist_ok=True)
+    shutil.rmtree(STAGE, ignore_errors=True)  # a fresh staging folder; published outputs stay untouched until publish()
+    os.environ[STAGE_ENV] = STAGE
+    use_stage(STAGE)
     with ThreadPoolExecutor(max_workers=3) as pool:
         conv = dict(pool.map(convert, areas))
     for ar, c in conv.items():
@@ -284,6 +337,13 @@ def main():
                 near = tm.get("decks_near")
                 if isinstance(near, float) and near == near:
                     snap["files"][f]["terrain:decks_within_0.5m"] = round(near, 4)
+    # publish: every measured output of the converted areas moves into place, then the records name the published folder
+    folders = publish(good, STAGE)
+    for ident in snap["identity"].values():
+        ident["folder"] = folders.get(os.path.abspath(ident["folder"]), ident["folder"])
+    if snap.get("folder") in folders:
+        snap["folder"] = folders[snap["folder"]]
+    res["published"] = sorted(set(folders.values()))
     os.makedirs(METRICS, exist_ok=True)
     stamp = snap["time"].replace(":", "")
     previous = metrics.latest(METRICS, "_" + "-".join(sorted(areas)) + ".json")  # before this run's file is written

@@ -272,12 +272,20 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                 buried=sorted(buried, key=lambda x: int(x) if x.isdigit() else 0), named=named_grade)
 
 
-def files(area, d):
+def files(area, d, out=None):
+    """an area's inputs (OSM, ground and deck grids) in `d` and outputs (carla, standard, conformed ground) in `out`:
+    by default `d` - or, while a gate run stages its outputs (gate.py STAGE_ENV) and `d` is the published folder, that
+    run's staged copies, so the contract and its self-test measure what the run is about to publish"""
+    if out is None:
+        stage = os.environ.get("ODRFORGE_GATE_STAGE")
+        same = os.path.normcase(os.path.abspath(d)) == os.path.normcase(os.path.abspath(TOUT))
+        out = os.path.join(stage, os.path.basename(os.path.normpath(TOUT))) if stage and same else d
     p = lambda f: os.path.join(d, f)  # noqa: E731
+    o = lambda f: os.path.join(out, f)  # noqa: E731
     decks = p(f"{area}_decks.odrz")
     return dict(osm=os.path.join(DATA, "data", "testareas", area + ".osm"), ground=p(f"{area}_ground.odrz"),
-                decks=decks if os.path.exists(decks) else None, carla=p(f"{area}.xodr"),
-                standard=p(f"{area}_standard.xodr"), conformed=p(f"{area}_ground_conformed.odrz"))
+                decks=decks if os.path.exists(decks) else None, carla=o(f"{area}.xodr"),
+                standard=o(f"{area}_standard.xodr"), conformed=o(f"{area}_ground_conformed.odrz"))
 
 
 def stale(f, exe=EXE):
