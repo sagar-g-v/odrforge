@@ -10,7 +10,7 @@ Never edit the fingerprint without reading what changed: the fingerprint is the 
 against those versions.
 """
 
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 REVISED = "2026-10-17"
 ODRFORGE_VERSION = "0.6.0"  # the repository's VERSION file when the prompt was last revised
 
@@ -38,18 +38,18 @@ CHECKERS = {
     "det_lane_transitions.py": ("f31b4876274c", "lane count / width transitions, jogs, tapers"),
     "det_link_continuity.py": ("0a143940cc56", "lane-link continuity, open lane ends at junctions"),
     "det_osm_fidelity.py": ("ef13e5eed4d2", "plain roads on their OSM ways, lane counts as tagged"),
-    "gate.py": ("d9c44cfc6b0d", "runs everything per reference area against a baseline"),
+    "gate.py": ("e775b3a6da6c", "runs everything per reference area against a baseline"),
     "grid_audit.py": ("c92fc7521596", "junction reference lines and elevation grids vs 1.8.0 12.9 / 12.11"),
     "invariants.py": ("0eb83fe54a39", "exact G0/G1/G2, widths, folds, flow, sidewalk on driving"),
     "junction_audit.py": ("786a25120ea2", "junction rules of docs/reference/opendrive_junction_rules.md"),
     "junction_rules_audit.py": ("7cdb757ad532", "direct / virtual junctions, lane heights vs 1.9"),
     "kerb_match.py": ("986803c51bbb", "sidewalk curb edges vs OSM barrier=kerb"),
     "laneflow.py": ("9be67690813f", "drive every lane: dead ends, orphans, traps, unreachable, islands"),
-    "metrics.py": ("2b3e03890699", "metrics snapshot per output, before / after"),
+    "metrics.py": ("04266a58e2b2", "metrics snapshot per output, before / after"),
     "odrgeom.py": ("ba69e6c1160a", "exact OpenDRIVE evaluation and OSM projection used by the review facts"),
     "ped_signal_audit.py": ("975da8df6dae", "pedestrian lights on cross paths vs JG 6.3.3"),
     "signal_rules_audit.py": ("4e80dfc679c0", "traffic-light control vs 1.8.0 14 and JG"),
-    "terrain_contract.py": ("f88a0e3abf87", "absolute terrain limits of the reference areas"),
+    "terrain_contract.py": ("b9010c1639c8", "absolute terrain limits of the reference areas"),
 }
 # files of tools/inspect that are not checkers (selftests, planting tools, servers, meta tools and the review itself)
 NOT_CHECKERS = {"exact_diff.py", "flags.py", "fuzz.py", "jev.py", "jev_judge.py", "laneflow_plant.py", "llm_review.py",
@@ -179,12 +179,16 @@ Looks wrong but is legitimate: short urban turn bays, staggered T-junctions 40-1
 different levels, lane lines that kink at a stop line where a lane splits into turn lanes, width steps of 0.25-0.5 m
 between sections, single-lane old-town streets without sidewalks, opposing turns crossing in the junction centre
 (both conventions exist [S25]), mini-roundabouts, slip lanes behind islands, scramble crossings, staggered
-crossings, bus gates, tram tracks in a traffic lane, sidewalks on one side only.
+crossings, bus gates, tram tracks in a traffic lane, sidewalks on one side only, a road under the terrain inside a
+<tunnel> record (type "underpass": OSM covered=yes stretches 2 m or more under the terrain, elevation.cpp
+coveredUnderpasses) with the ground surface above it.
 Looks fine but is wrong: a lane link across a median, kerbed island or tram reservation; a crosswalk ending in a
 driving lane; a turn from a through-only lane or against turn:lanes / a restriction; a dual carriageway merged into
 one two-way road; a road ending 1-10 m before another with no barrier (missing link); a sidewalk running through a
 junction or across a ramp without a crossing; left-hand-traffic areas built with right-hand lane orientation;
-elevation steps at links; incoming junction lanes with no laneLink.
+elevation steps at links; incoming junction lanes with no laneLink; a plain road more than 2 m under the raw ground over
+10 m or more with no tunnel / bridge record and no bridge over it (the terrain contract's "buried" check; tunnel records
+are extended past a short OSM tunnel way to where the road meets the terrain).
 
 ## Output
 For each chunk, write verdicts/chunk_NN.json (the run command tells you where): a JSON object
