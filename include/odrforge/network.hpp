@@ -94,6 +94,8 @@ struct BuildReport {
   int inheritedLinkLanes = 0;  ///< untagged *_link pieces given the lanes of the tagged piece they continue one to one
   int parkingAisles = 0;
   int separateSidewalks = 0;  ///< road sides extended to a separately mapped sidewalk
+  int parkingNoStoppingAtJunctions = 0; ///< roads whose tagged parking lanes carry the no-stopping rule near a junction (country parkingClearOfJunction)
+  int parkingDroppedOnShortRoads = 0;   ///< roads too short to park on beside their junctions: no tagged parking lane
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added
   int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int directJunctions = 0;  ///< gores written as direct junctions (OpenDRIVE 1.7+)

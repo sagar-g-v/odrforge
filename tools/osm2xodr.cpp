@@ -177,6 +177,13 @@ int main(int argc, char **argv) {
                   rep.directJunctions);
     if (rep.separateSidewalks)
       std::printf("  cross-section: %d road sides extended to their separately mapped sidewalk\n", rep.separateSidewalks);
+    if (rep.parkingNoStoppingAtJunctions)
+      std::printf("  parking: %d roads' tagged parking lanes carry \"no stopping at any time\" near junctions (%.1f m, "
+                  "country rule)\n",
+                  rep.parkingNoStoppingAtJunctions, opt.country.parkingClearOfJunction);
+    if (rep.parkingDroppedOnShortRoads)
+      std::printf("  parking: %d roads too short to park on beside their junctions keep no tagged parking lane\n",
+                  rep.parkingDroppedOnShortRoads);
     if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
       std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk, %d acute (nose)\n",
                   rep.cornerSidewalks, rep.cornerSidewalksTooTight, rep.cornerNoses);

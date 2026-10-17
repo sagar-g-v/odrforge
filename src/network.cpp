@@ -748,6 +748,7 @@ void Builder::buildRoads() {
     }
     mergeEqualSections(secs);
     remeasureSidewalks(m, r.planView, secs);
+    keepTagParkingClearOfJunctions(m, len, secs);  // tagged parking: no stopping within the legal distance of junctions
     for (size_t k = 0; k < secs.size(); ++k)
       keepVergeFoldSafe(secs[k].xs, r.planView, secs[k].s, k + 1 < secs.size() ? secs[k + 1].s : len);
     // lane sections, tapers and links

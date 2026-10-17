@@ -201,6 +201,13 @@ void writeLane(pugi::xml_node parent, const Lane &l, const Ctx &c) {
     attrN(h, c, "inner", hc.inner);
     attrN(h, c, "outer", hc.outer);
   }
+  // OpenDRIVE 1.8.0 §11.9 lane rules, after <height> (XSD 1.8.1 t_road_lanes_laneSection_lr_lane, 1.4H lane: same
+  // place), in ascending sOffset
+  for (const auto &[sOffset, value] : l.rules) {
+    auto r = n.append_child("rule");
+    attrN(r, c, "sOffset", sOffset);
+    attr(r, "value", value);
+  }
 }
 
 void writeValidity(pugi::xml_node n, const std::vector<ValidityRange> &v) {

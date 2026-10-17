@@ -19,6 +19,8 @@ struct LaneSpec {
   LaneKind kind = LaneKind::Driving;
   double width = 3.25;
   std::vector<std::string> turns;  ///< OSM turn values (left, slight_left, through, right, merge_to_left, ...)
+  /// a lane rule for the whole section (OpenDRIVE 1.8.0 §11.9 <rule>), e.g. "no stopping at any time"; empty: none
+  std::string rule;
 };
 
 /// Lanes of one road side, ordered from the reference-line divider outwards.

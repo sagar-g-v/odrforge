@@ -55,6 +55,7 @@ struct Lane {
   std::vector<HeightChange> heightChanges;  ///< further <height> records (sOffset > 0, ascending), e.g. lowered curbs
   std::string material;          ///< surface (asphalt, concrete, ...)
   std::string direction;         ///< 1.8 lane direction: standard, reversed, both (empty = not written)
+  std::vector<std::pair<double, std::string>> rules;  ///< lane rules (1.8.0 §11.9): sOffset in the section, value
 };
 
 struct LaneSection {

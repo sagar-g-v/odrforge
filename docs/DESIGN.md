@@ -85,7 +85,7 @@ Unit tests (`tests/test_geometry.cpp`) cover:
 |---|---|
 | Lane counts | `lanes`, `lanes:forward` / `lanes:backward`, `lanes:both_ways` (becomes `bidirectional`, or `direction="both"` in 1.8), oneway / reverse / roundabout / motorway defaults |
 | Per-lane data | `turn:lanes*`, `width:lanes*`, carriageway `width` (feet and inches handled), `bus:lanes` / `psv:lanes` (driving lanes with access restrictions) |
-| Side lanes | `cycleway:*` lanes; parking in both schemes (`parking:<side>` with orientation, and `parking:lane:<side>`); country shoulders; sidewalks (`sidewalk*` and widths, assumed on untagged urban streets, raised to curb height) |
+| Side lanes | `cycleway:*` lanes; parking in both schemes (`parking:<side>` = `lane`, `street_side`, `yes`, `on_kerb` or `half_on_kerb` with orientation and `:width`, and `parking:lane:<side>` with its position key); parking on the kerb takes its share out of the sidewalk; tagged parking lanes carry the lane rule "no stopping at any time" within the country's no-parking distance of a junction (`parkingClearOfJunction`, e.g. DE 5 m, GB 10 m; a lane section of its own, `parking.cpp`); country shoulders; sidewalks (`sidewalk*` and widths, assumed on untagged urban streets, raised to curb height) |
 | Speeds | `maxspeed`, `maxspeed:forward` / `maxspeed:backward`; units km/h, mph and knots; zone codes such as `DE:urban` |
 | Placement | `placement` / `placement:forward` (`left_of`, `middle_of`, `right_of`) sets `laneOffset`. The default is the middle of the carriageway. |
 | Road marks | Broken lines between same-direction lanes; the centre line by country style (US `solid solid` yellow); solid edge lines next to bike and parking lanes and on motorways; `bold` edges for bus lanes. |

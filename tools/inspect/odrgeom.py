@@ -107,6 +107,7 @@ class Lane:
         self.pred = int(lk.find("predecessor").get("id")) if lk is not None and lk.find("predecessor") is not None else None
         self.succ = int(lk.find("successor").get("id")) if lk is not None and lk.find("successor") is not None else None
         self.marks = [dict(m.attrib) for m in el.findall("roadMark")]
+        self.rules = [r.get("value") for r in el.findall("rule")]  # lane rules (OpenDRIVE 1.8.0 §11.9), in order
 
     def width(self, ds):
         ds = np.asarray(ds, float)

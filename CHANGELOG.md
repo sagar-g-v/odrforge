@@ -5,6 +5,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Street parking from more OSM tags, and no stopping near junctions** (lanes.cpp, parking.cpp, rules/countries,
+  OpenDRIVE 1.8.0 §11.7.1 / §11.9): `parking:<side>` = `yes`, `on_kerb` and `half_on_kerb` now give parking lanes and
+  `:width` is read; parking on the kerb takes its share out of the sidewalk (user decision); plain `parking=*` on a road
+  is no longer read as street parking. Within the country's legal no-parking distance of a junction (DE StVO §12(3) 5 m,
+  GB Highway Code 243 10 m, JP 5 m, US 20 ft, AU 10 m; others 5 m) a tagged parking lane keeps its width - the kerb does not
+  move - and carries the lane rule "no stopping at any time" in a lane section of its own; a stub too short to park on
+  keeps no tagged lane. Lane `<rule>` written in both profiles (XSD 1.8.1 / 1.4H valid). NAT-2 (docs/SPEC_GEOMETRY.md,
+  user decision) and the laneflow / invariants section checks count a lane-rule change as a reason for a section.
+  Parking lanes per section Munich 77 -> 307, LA 15 -> 100, Frankfurt 16 -> 44; validation unchanged everywhere. Worse:
+  parking-type junction corners Munich 66 -> 77, LA 83 -> 87; G2_ref_junction Munich +40, LA +25; one fold (Munich road
+  76); LA junctions 936 -> 934. New ctest lane_rule_selftest; unit tests; 10 of 10 mutations caught. Jev 0.39, committed by
+  the user's decision.
 - **Lanes going straight on stay side by side** (network_junctions.cpp buildJunctions, Junction Guideline §6): fewer
   lanes than the road ahead were spread over all its lanes, leaving a middle lane with no feeder (the LLM review's
   "lane skip"). Straight lanes, lane splits and the no-path fallback now place a movement's lanes as one block (where

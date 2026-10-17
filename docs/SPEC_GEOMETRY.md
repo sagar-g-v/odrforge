@@ -211,6 +211,9 @@ A section boundary is removable, and so a defect, when all of the following hold
 - the lanes have the same types;
 - every lane links 1:1 to the lane with the same id (`successor` = own id on one side, `predecessor`
   = own id on the other).
+- the lanes carry the same lane rules (OpenDRIVE 1.8.0 §11.9 `<rule>`). A rule has an `sOffset` but no end
+  of its own, so a stretch with a rule (e.g. "no stopping at any time" within the legal distance of a junction)
+  is a section of its own (user decision 2026-10-18).
 
 Widths, marks, speed and the other attributes do not matter: they all have an `sOffset` form. The
 checker reports what differs (`identical`, `width-poly <id>`, `width-jump <id>`, `mark <id>`) so it can

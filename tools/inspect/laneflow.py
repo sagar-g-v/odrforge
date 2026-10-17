@@ -2098,7 +2098,8 @@ class LaneFlow:
             # redundant sections
             for k in range(len(r.sections) - 1):
                 a, b = r.sections[k], r.sections[k + 1]
-                if [(l.id, l.type) for l in a.lanes()] == [(l.id, l.type) for l in b.lanes()] and \
+                # a lane rule (1.8.0 §11.9) has no end of its own: a change of rules needs the section (NAT-2)
+                if [(l.id, l.type, l.rules) for l in a.lanes()] == [(l.id, l.type, l.rules) for l in b.lanes()] and \
                         all(l.succ == l.id for l in a.lanes()) and all(l.pred == l.id for l in b.lanes()):
                     x, y, _ = r.ref(np.array([b.s]))
                     F.add("split.section_redundant", "defect", rid, None, b.s, float(x[0]), float(y[0]),

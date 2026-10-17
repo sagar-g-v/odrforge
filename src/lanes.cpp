@@ -72,15 +72,32 @@ void addOuterLanes(SideSpec &s, const Tags &t, const std::string &side, const st
   const std::string cyc = sideValue(t, "cycleway", side);
   if (cyc == "lane" || cyc == "opposite_lane" || cyc == "exclusive" || cyc == "advisory")
     s.lanes.push_back({LaneKind::Biking, c.bikeLaneWidth, {}});
-  // parking: new scheme parking:<side>=lane|street_side + orientation, old scheme parking:lane:<side>=parallel|...
-  std::string park = sideValue(t, "parking", side), orient;
-  if (park == "lane" || park == "street_side") {
-    orient = tag(t, "parking:" + side + ":orientation").value_or(tag(t, "parking:both:orientation").value_or("parallel"));
-  } else {
+  // parking (OSM wiki Street parking): new scheme parking:<side>|both = lane | street_side | on_kerb | half_on_kerb |
+  // yes (parked, position untold) with :orientation and :width; old scheme parking:lane:<side>=parallel|diagonal|
+  // perpendicular, its position in parking:lane:<side>:<orientation>. Parking on the kerb is a parking lane
+  // between the carriageway and the sidewalk that takes its share (all, half) out of the sidewalk.
+  // separate (an area mapped beside the road), shoulder, no: no lane from the tag.
+  auto sideOrBoth = [&](const std::string &suffix) {
+    return tag(t, "parking:" + side + suffix).value_or(tag(t, "parking:both" + suffix).value_or(""));
+  };
+  const std::string park = sideOrBoth("");
+  std::string orient, position = park;
+  if (park == "lane" || park == "street_side" || park == "on_kerb" || park == "half_on_kerb" || park == "yes") {
+    orient = sideOrBoth(":orientation");
+    if (orient != "diagonal" && orient != "perpendicular") orient = "parallel";
+  } else if (park.empty()) {
     const std::string old = sideValue(t, "parking:lane", side);
-    if (old == "parallel" || old == "diagonal" || old == "perpendicular") orient = old;
+    if (old == "parallel" || old == "diagonal" || old == "perpendicular") {
+      orient = old;
+      position = tag(t, "parking:lane:" + side + ":" + old).value_or(tag(t, "parking:lane:both:" + old).value_or(""));
+    }
   }
-  if (!orient.empty()) s.lanes.push_back({LaneKind::Parking, parkingWidth(orient, c), {}});
+  double kerbShare = 0.0;  // of the parking lane's width, taken out of the sidewalk
+  if (!orient.empty()) {
+    const double w = lengthTag(sideOrBoth(":width")).value_or(parkingWidth(orient, c));
+    s.lanes.push_back({LaneKind::Parking, w, {}});
+    kerbShare = position == "on_kerb" ? w : position == "half_on_kerb" ? 0.5 * w : 0.0;
+  }
   if (o.shoulders) {
     const std::string sh = sideValue(t, "shoulder", side);
     double w = 0.0;
@@ -96,6 +113,9 @@ void addOuterLanes(SideSpec &s, const Tags &t, const std::string &side, const st
     double w = c.sidewalkWidth;
     if (auto v = tag(t, "sidewalk:" + side + ":width")) w = lengthTag(*v).value_or(w);
     else if (auto v2 = tag(t, "sidewalk:both:width")) w = lengthTag(*v2).value_or(w);
+    // the narrowest sidewalk left beside cars parked on the kerb (keepVergeFoldSafe's kMinWalk)
+    constexpr double kMinWalk = 1.0;
+    if (kerbShare > 0.0) w = std::max(kMinWalk, w - kerbShare);
     s.lanes.push_back({LaneKind::Sidewalk, w, {}});
   }
 }
@@ -430,6 +450,7 @@ std::vector<odr::Lane> sideLanes(const SideSpec &side, int sign, bool motorwayLi
     l.id = sign * static_cast<int>(i + 1);
     l.widths.push_back({0.0, spec.width, 0, 0, 0});
     setTypeAndAccess(l, spec.kind, c);
+    if (!spec.rule.empty()) l.rules.push_back({0.0, spec.rule});
     if (carriesVehicles(spec.kind)) {
       l.speedMax = side.speed;
       l.material = "asphalt";

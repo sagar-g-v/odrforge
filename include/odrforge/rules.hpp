@@ -28,6 +28,9 @@ struct CountryProfile {
   std::map<std::string, std::string> maxspeedZones;  ///< "DE:urban" -> "50" etc.
   double sidewalkWidth = 2.0, bikeLaneWidth = 1.5, parkingWidthParallel = 2.4;
   double parkingWidthDiagonal = 4.8, parkingWidthPerpendicular = 5.2;
+  /// no parking this close to a junction (the country's traffic law, rules/countries/*.json parkingClearOfJunctionSource):
+  /// parking lanes from tags carry "no stopping at any time" this close to a road end at a junction
+  double parkingClearOfJunction = 5.0;
   double curbHeight = 0.15;
   std::string centerLineColor = "white";    ///< yellow in the Americas
   std::string edgeLineColor = "white";

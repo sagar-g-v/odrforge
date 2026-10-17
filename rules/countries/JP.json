@@ -62,6 +62,8 @@
   "trunk": 2.0,
   "default": 0.0
  },
+ "parkingClearOfJunction": 5.0,
+ "parkingClearOfJunctionSource": "Road Traffic Act Art. 44(1): no parking within 5 m of an intersection",
  "sidewalkWidth": 2.0,
  "bikeLaneWidth": 1.5,
  "curbHeight": 0.15

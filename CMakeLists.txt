@@ -59,6 +59,7 @@ add_library(odrforge
   src/barriers.cpp
   src/junction_surface.cpp
   src/sidewalk.cpp
+  src/parking.cpp
   src/viz.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp
 )
@@ -86,7 +87,7 @@ endif()
 if(ODRFORGE_BUILD_TESTS)
   enable_testing()
   add_executable(odrforge_tests tests/test_main.cpp tests/test_geometry.cpp tests/test_projection.cpp
-    tests/test_spec.cpp tests/test_network.cpp tests/test_elevation.cpp tests/test_topology.cpp)
+    tests/test_spec.cpp tests/test_network.cpp tests/test_elevation.cpp tests/test_topology.cpp tests/test_parking.cpp)
   target_link_libraries(odrforge_tests PRIVATE odrforge)
   set(ODRFORGE_TEST_OUT ${CMAKE_CURRENT_BINARY_DIR}/test_out)
   file(MAKE_DIRECTORY ${ODRFORGE_TEST_OUT})
@@ -115,6 +116,9 @@ if(ODRFORGE_BUILD_TESTS)
       add_test(NAME make_terrain_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/make_terrain_selftest.py)
       # tools/inspect/gate.py: outputs staged during a run, published together at its end
       add_test(NAME gate_stage_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/gate_stage_selftest.py)
+      # laneflow.py / invariants.py NAT-2: a section boundary where a lane rule changes (no-stopping near junctions)
+      add_test(NAME lane_rule_selftest COMMAND ${Python3_EXECUTABLE} -I
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/lane_rule_selftest.py $<TARGET_FILE:osm2xodr>)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()

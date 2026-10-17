@@ -202,6 +202,8 @@ struct Builder {
   void attachSeparateSidewalks();  // sidewalk.cpp
   /// re-measures attached sidewalks from the fitted, trimmed reference line (sidewalk.cpp)
   void remeasureSidewalks(const RoadMeta &m, const ReferenceLine &line, std::vector<SectionInfo> &secs) const;
+  /// parking lanes from tags end the country's legal distance from a road end at a junction (parking.cpp)
+  void keepTagParkingClearOfJunctions(const RoadMeta &m, double len, std::vector<SectionInfo> &secs);
   void findJunctionNodes();
   void buildChains();
   void clusterJunctions();

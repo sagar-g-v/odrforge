@@ -50,6 +50,7 @@ CountryProfile CountryProfile::load(const std::string &code, const std::string &
   p.parkingWidthParallel = j.value("parkingWidthParallel", p.parkingWidthParallel);
   p.parkingWidthDiagonal = j.value("parkingWidthDiagonal", p.parkingWidthDiagonal);
   p.parkingWidthPerpendicular = j.value("parkingWidthPerpendicular", p.parkingWidthPerpendicular);
+  p.parkingClearOfJunction = j.value("parkingClearOfJunction", p.parkingClearOfJunction);
   p.curbHeight = j.value("curbHeight", p.curbHeight);
   p.centerLineColor = j.value("centerLineColor", p.centerLineColor);
   p.edgeLineColor = j.value("edgeLineColor", p.edgeLineColor);

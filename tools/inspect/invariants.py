@@ -329,6 +329,8 @@ class Lane:
         self.lane_change = {m.get("laneChange", "both") for m in el.findall("roadMark")} or {"both"}
         # spec 0.1: a restricted lane carrying an <access rule="allow"> is drivable
         self.access_allow = any(a.get("rule") == "allow" for a in el.findall("access"))
+        # lane rules (OpenDRIVE 1.8.0 §11.9 <rule>): free text with no end of its own - a change needs a section
+        self.rules = [r.get("value") for r in el.findall("rule")]
 
     def allows(self, toward_higher_id):
         """does this lane's outer road mark allow crossing toward the higher (or lower) lane id?"""
@@ -1662,9 +1664,11 @@ def check_plain_links(net, oi, res, links):
                         res.add("continuity_nondriving", inst(r.id, l.id, b.s, *_xy(r, b.s), 1, 0, kind="section",
                                                               type=l.type))
             # NAT-2: a removable section boundary (same lane ids and types, every lane linked 1:1 to its
-            # own id). Widths, marks and speed all have an sOffset form, so they never need a section.
+            # own id). Widths, marks and speed all have an sOffset form, so they never need a section; a lane rule
+            # (1.8.0 §11.9) has no end of its own, so a change of rules does (user decision 2026-10-18).
             ids_a, ids_b = sorted(a.lanes), sorted(b.lanes)
-            if ids_a == ids_b and all(a.lanes[i].type == b.lanes[i].type for i in ids_a) \
+            if ids_a == ids_b and all(a.lanes[i].type == b.lanes[i].type and a.lanes[i].rules == b.lanes[i].rules
+                                      for i in ids_a) \
                     and set(L["pairs"]) == {(i, i) for i in ids_a}:
                 diff = []
                 for i in ids_a:
