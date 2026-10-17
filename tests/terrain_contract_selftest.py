@@ -128,5 +128,7 @@ if have.get("london"):
     check(planted("london", "named", lambda f: steepen(f, "Adam Street")), "named: Adam Street off its terrace is caught")
 else:
     print("london outputs missing: decks / named not checked")
+if have.get("frankfurt_kreuz"):  # its deck check is a share of samples within 0.5 m (a surface model sees top decks only)
+    check(planted("frankfurt_kreuz", "decks", float_bridge), "decks share: Frankfurt bridges 3 m above their deck are caught")
 print("terrain contract self-test:", "FAILED" if failures else "ok")
 sys.exit(1 if failures else 0)

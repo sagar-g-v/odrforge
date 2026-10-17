@@ -11,7 +11,9 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                before its deck grid existed
   conformed    paved edges vs the conformed ground (OpenDRIVE 1.8.0 §10.5: z = elevation + t tan(superelevation))
   centre       carriageway reference line vs the raw ground, plain roads outside bridges / tunnels
-  decks        bridge roads vs the measured deck where the deck grid has a value under them
+  decks        bridge roads vs the measured deck where the deck grid has a value under them and no other road passes
+               over them (a surface model sees the top deck only: under a flyover the lower bridge would be measured
+               against the upper deck): a quantile limit, and / or the share of samples within 0.5 m
   superelev    plain roads more than 30 m from their ends: |superelevation| <= 0.085 rad (elevation.cpp caps the terrain
                cross slope at 8 %, atan = 0.0798, plus the cubic records' overshoot); everywhere <= atan(15 %) + 2 mrad
                (junction planes are capped at a 15 % gradient, elevation.cpp step 4, and road ends bank into them)
@@ -43,8 +45,11 @@ SE_END = 30.0               # m: a plain road's end blend into its junction plan
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
 CONTRACT = {
     "munich": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], steep=2),
-    "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), steep=5,
+    "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), decks_near=0.98, steep=5,
                    named={"Adam Street": 0.10, "Lancaster Place": 0.10}),
+    # Frankfurter Kreuz: decks as a share - a surface model sees the top structure only (the ICE viaduct over road
+    # bridges) and narrow service bridges drawn a few metres off their deck sample the ground beside it
+    "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.85, steep=7),
     "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1),
 }
 
@@ -111,6 +116,17 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
     dk = read_grid(decks) if decks else None
     dks = [sampler(dk, l) for l in range(dk[3].shape[0])] if dk else []
     centre, edges, deck = [], [], []
+    tops = {}  # 5 m cells -> centre-line samples (x, y, z) of every road, for "another road passes over"
+    for r in roads:
+        for s in np.arange(0.0, r.length, 2.0):
+            x, y = r.point(np.array([s]), 0.0)
+            x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+            tops.setdefault((int(x // 5), int(y // 5)), []).append((x, y, float(r.z(np.array([s]))[0]), r.id))
+
+    def covered(x, y, z, rid):
+        cx, cy = int(x // 5), int(y // 5)
+        return any(q[3] != rid and q[2] > z + 2.0 and math.hypot(q[0] - x, q[1] - y) < 4.0
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1) for q in tops.get((cx + dx, cy + dy), ()))
     se_plain = se_all = 0.0
     steep, named_grade = [], {n: 0.0 for n in named}
     for r in roads:
@@ -143,7 +159,7 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
             if on_structure(sts, s, "bridge"):
                 lv = [f(x, y) for f in dks]
                 lv = [v for v in lv if not math.isnan(v)]
-                if lv:
+                if lv and not covered(x, y, z0, r.id):
                     deck.append(min((z0 - v for v in lv), key=abs))
                 continue
             if on_structure(sts, s):
@@ -164,8 +180,9 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                     v = c(float(np.ravel(xe)[0]), float(np.ravel(ye)[0]))
                     if not math.isnan(v):
                         edges.append(z0 + t * math.tan(roll) - v)
+    near = float(np.mean(np.abs(np.asarray(deck)) <= 0.5)) if deck else math.nan
     return dict(centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
-                decks=quantiles(deck, (50, 95, 99)), n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
+                decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
                 superelev=dict(plain=se_plain, all=se_all), steep=sorted(steep, key=lambda x: int(x) if x.isdigit() else 0),
                 named=named_grade)
 
@@ -211,6 +228,9 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             q, v = lim["decks"]
             if not m["decks"][q] <= v:
                 problems.append(f"{tag} decks: |bridge road - measured deck| p{q} {m['decks'][q]:.3f} m > {v} m")
+        if lim.get("decks_near") is not None and not m["decks_near"] >= lim["decks_near"]:
+            problems.append(f"{tag} decks: {m['decks_near'] * 100:.1f} % of bridge samples within 0.5 m of the measured deck "
+                            f"< {lim['decks_near'] * 100:.0f} %")
         if m["superelev"]["plain"] > SE_PLAIN:
             problems.append(f"{tag} superelev: plain roads {m['superelev']['plain']:.4f} rad > {SE_PLAIN} (8 % cap)")
         if m["superelev"]["all"] > SE_ALL:

@@ -764,6 +764,69 @@ TEST_CASE("terrain: an untagged road under a street on a structure keeps the gro
   CHECK_NEAR(zLower, 13.0, 0.2);  // the road beneath in its cutting, not lifted onto the deck
 }
 
+TEST_CASE("terrain: an underground network nothing measured reaches lies a storey under the lowest surface over it") {
+  // Frankfurter Kreuz: a three-level car park whose ramps OSM does not connect kept height 0 (the ground is 112-141 m).
+  // Here a street runs in a trench (ground 100 m) across a plateau (110 m); a garage of layer -2 tunnels, connected
+  // to no street, lies under the plateau and passes under the street. OSM layers count from the ground: it keeps its
+  // relative storeys under the lowest measured surface over it - the street, not the plateau (the median ground)
+  OsmB b;
+  b.way({b.node(-200, 0), b.node(200, 0)}, {{"highway", "residential"}});
+  const Tags garage{{"highway", "service"}, {"tunnel", "yes"}, {"layer", "-2"}};
+  const OsmId a = b.node(-60, -60), c = b.node(60, -60), d = b.node(60, 60), e = b.node(-60, 60), m0 = b.node(0, -60),
+              m1 = b.node(0, 60);
+  b.way({a, m0, c}, garage);
+  b.way({c, d}, garage);
+  b.way({d, m1, e}, garage);
+  b.way({e, a}, garage);
+  b.way({m0, m1}, garage);  // across the middle, under the street
+  Terrain t;
+  t.ground = makeGrid(-250, -250, 1.0, 501, 501, 1, [](int, double, double y) {
+    return static_cast<float>(110.0 - 10.0 * std::clamp((20.0 - std::abs(y)) / 8.0, 0.0, 1.0));  // trench |y| < 12
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.count("quality.road_overlap") == 0);
+  double lowest = 1e9, aboveGround = -1e9;  // aboveGround: the garage's height over the ground at its own position
+  for (const auto &r : od.roads)
+    if (!r.tunnels.empty())
+      for (double s = 0.0; s <= r.length(); s += 1.0) {
+        const double z = odr::elevationAt(r, s);
+        const Vec2 p = r.planView.eval(s).pos();
+        lowest = std::min(lowest, z), aboveGround = std::max(aboveGround, z - t.ground_at(p.x, p.y));
+      }
+  CHECK(lowest > 80.0);        // not left at height 0
+  CHECK(aboveGround < -1.5);   // under the ground everywhere (the corners lie under the plateau, 10 m higher)
+  const double zStreet = zThrough(od, 0, 0, isStreet);
+  CHECK_NEAR(zStreet, 100.0, 0.1);
+  for (double x : {-60.0, 0.0, 60.0})  // where it passes under the street: at least a storey below it
+    CHECK(zStreet - zThrough(od, x, 0, isTunnel) >= o.levelHeight - 0.1);
+}
+
+TEST_CASE("terrain: connecting roads bank no more than their junction plane (capped at 15 %)") {
+  // property: the banking of connecting roads follows the junction plane, atan(grad . left), and the plane is capped
+  // at 15 %. A crossroads on a 25 % slope keeps every road within atan(15 %). This scene does NOT reproduce the cubic
+  // overshoot found at Frankfurt (a 4.5 m boundary helper round a 2 m radius: 0.156 rad) - reverting the record
+  // spacing passes here; the Frankfurt terrain contract check (superelev <= atan(15 %) + 2 mrad) is that guard
+  OsmB b;
+  b.way({b.node(-100, 0), b.node(100, 0)}, {{"highway", "residential"}});
+  b.way({b.node(0, -100), b.node(0, 100)}, {{"highway", "residential"}});
+  Terrain t;
+  t.ground = makeGrid(-150, -150, 1.0, 301, 301, 1,
+                      [](int, double x, double y) { return static_cast<float>(200.0 + 0.18 * x + 0.18 * y); });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  double worst = 0.0;
+  for (const auto &r : od.roads)
+    if (r.junction != "-1")
+      for (double s = 0.0; s <= r.length(); s += 0.02) worst = std::max(worst, std::abs(odr::superelevationAt(r, s)));
+  CHECK(worst > 0.1);  // the junction is banked
+  CHECK(worst <= std::atan(0.15) + 1e-3);
+}
+
 TEST_CASE("terrain: a building passage runs on the ground under the building (OSM tunnel=building_passage)") {
   // a bare-earth terrain model carries the ground under a building: the passage is measured there (a 1.5 m rise)
   OsmB b;

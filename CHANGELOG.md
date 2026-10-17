@@ -37,6 +37,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **Frankfurter Kreuz on real terrain: an underground network nothing measured reaches** (elevation.cpp): its car park
+  P15 (118 roads, OSM connects it to no street) stayed at z = 0 under 112-141 m ground. Such a network now keeps its
+  relative storeys under the lowest measured surface over it (ground along its roads, roads passing over them).
+  Validation 0 errors / 7 warnings as before; gate builds Frankfurt on terrain + decks; terrain contract for Frankfurt.
+  Known flaws: the car park lies a median 11-12 m deep (up to 55 m, one point 0.38 m above ground) - one level 0 for
+  the whole network. Jev 0.78 at the user's decision, 0.82 after the measured scope was added.
+- **Connecting-road banking no longer overshoots the junction plane** (elevation.cpp connectingElevation): records are
+  placed closer on tight curves (at most 15 deg of heading per record); Frankfurt 0.1555 -> 0.1489 rad = atan(15 %).
+  Adds records in every terrain area (LA +2214 banking records), exact invariants unchanged.
 - **DEM fill keeps its own heights away from the border** (make_terrain.py, audit of 5ef8b71): the fill was shifted by
   the median fine-minus-fill difference everywhere beyond the seam. At Stelvio that median (+1.26 m) is no datum offset
   (IQR 2.34 m; GLO-30 meets the mapped Passo delle Platigliole within 0.1-0.6 m) and moved the Lombardy part 1.2 m

@@ -189,6 +189,11 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   unless the difference is a consistent offset (|median| > IQR), and the grid is labelled with the datums it holds.
   Jev re-score of the corrected change with a fully transparent brief: 0.79 (below 0.8); committed by the user's
   decision. Open: finer Lombardy data (TINITALY 10 m, INGV, CC BY 4.0 - its server refused connections on 2026-10-17).
+- Frankfurter Kreuz on terrain (2026-10-17): the isolated car park P15 is anchored under the lowest measured surface
+  over it; it lands too deep in places (median 11-12 m, max 55 m) and one point is 0.38 m above ground. Rework: anchor
+  locally (per junction cluster / road) instead of one level 0 per network. A verification pitfall found the same day:
+  restoring a source with a timestamp-preserving copy left a mutated osm2xodr.exe in place (ninja saw nothing newer) -
+  always touch restored files; the per-run metrics history showed the difference.
 - Terrain contract (2026-10-17): docs/TERRAIN_CONTRACT.md holds the proven terrain numbers as absolute gate limits
   with a planted-defect test per check (user rule: harden every proven improvement). The gate baseline itself
   (gate_baseline.json, 2026-10-12) is stale: its deltas (G2 invariants, JCT-8, max_grade from real terrain) come from

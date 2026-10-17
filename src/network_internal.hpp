@@ -78,6 +78,8 @@ struct RoadMeta {
   std::vector<double> zs, zz;  ///< elevation samples (s on the trimmed road) and smoothed heights
   std::vector<double> xs;      ///< smoothed cross slope (tan of the superelevation) per sample
   bool hasData = true;         ///< false: no measurement anywhere on the road
+  std::vector<double> zRel;    ///< terrain mode: the relative-mode levels per sample (OSM layer storeys, 0 = ground)
+  std::vector<double> zGround; ///< terrain mode: the measured ground at the carriageway centre per sample (NaN: none)
   std::optional<double> fixedTrimStart, fixedTrimEnd;  ///< set by the gore stage: not re-trimmed
   std::vector<double> zy, zw, ztc;  ///< observed centre heights (NaN: none), robust weights, carriageway centre t
   double zLambda = 0.0;             ///< Whittaker smoothing weight used for the profile

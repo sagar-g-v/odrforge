@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -907,6 +908,7 @@ void Builder::sampleElevation() {
         wsum = 2e-3;
       }
     }
+    m.zRel = rel[mi], m.zGround = P[mi].groundC;  // kept for networks nothing measured reaches (junctionSurfaces)
     if (wsum <= 0.0) {
       m.zz.assign(n, 0.0);
       m.hasData = false;
@@ -1153,44 +1155,105 @@ void Builder::junctionSurfaces() {
   // used, never placeholders.
   std::vector<char> known(metas.size(), 0);
   for (size_t i = 0; i < metas.size(); ++i) known[i] = metas[i].roadIndex >= 0 && metas[i].hasData;
-  for (bool changed = true; changed;) {
-    changed = false;
-    for (size_t i = 0; i < metas.size(); ++i) {
-      RoadMeta &m = metas[i];
-      if (m.roadIndex < 0 || known[i]) continue;
-      const odr::Road &r = od.roads[m.roadIndex];
-      const Chain &ch = chains[m.chain];
-      const bool h0 = ch.c0 >= 0 && clusters[ch.c0].hasPlane, h1 = ch.c1 >= 0 && clusters[ch.c1].hasPlane;
-      if (!h0 && !h1) continue;
-      const double z0 = h0 ? planeZ(clusters[ch.c0], r.planView.eval(0).pos()) : 0.0;
-      const double z1 = h1 ? planeZ(clusters[ch.c1], r.planView.eval(r.length()).pos()) : 0.0;
-      const double a = h0 ? z0 : z1, b = h1 ? z1 : a;
-      for (size_t k = 0; k < m.zs.size(); ++k) m.zz[k] = a + (b - a) * m.zs[k] / std::max(1e-9, r.length());
-      known[i] = 1, changed = true;
-    }
-    for (Cluster &cl : clusters) {
-      if (cl.hasPlane || cl.ends.empty()) continue;
-      std::vector<Pt> pts;
-      for (const RoadEnd &e : cl.ends) {
-        const RoadMeta &m = metas[e.road];
-        if (m.roadIndex < 0 || !known[e.road] || m.zz.empty()) continue;
+  auto propagate = [&]() {
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (size_t i = 0; i < metas.size(); ++i) {
+        RoadMeta &m = metas[i];
+        if (m.roadIndex < 0 || known[i]) continue;
         const odr::Road &r = od.roads[m.roadIndex];
-        const Vec2 p = r.planView.eval(e.atEnd ? r.length() : 0.0).pos();
-        // a height carried through an unmeasured road counts less the longer that road is: a
-        // junction follows its nearest known neighbour (a garage entrance stub, not the far exits)
-        const double w = m.hasData ? 1.0 : 1.0 / std::pow(1.0 + r.length() / 10.0, 2.0);
-        pts.push_back({p.x, p.y, e.atEnd ? m.zz.back() : m.zz.front(), w});
+        const Chain &ch = chains[m.chain];
+        const bool h0 = ch.c0 >= 0 && clusters[ch.c0].hasPlane, h1 = ch.c1 >= 0 && clusters[ch.c1].hasPlane;
+        if (!h0 && !h1) continue;
+        const double z0 = h0 ? planeZ(clusters[ch.c0], r.planView.eval(0).pos()) : 0.0;
+        const double z1 = h1 ? planeZ(clusters[ch.c1], r.planView.eval(r.length()).pos()) : 0.0;
+        const double a = h0 ? z0 : z1, b = h1 ? z1 : a;
+        for (size_t k = 0; k < m.zs.size(); ++k) m.zz[k] = a + (b - a) * m.zs[k] / std::max(1e-9, r.length());
+        known[i] = 1, changed = true;
       }
-      if (pts.empty()) continue;
-      double sol[3];
-      fit(pts, cl.center, sol, 0.05 * weightSum(pts) * 100.0);
-      const double g = std::hypot(sol[1], sol[2]);
-      if (g > 0.15) sol[1] *= 0.15 / g, sol[2] *= 0.15 / g;
-      if (!opt.target.superelevation) sol[1] = sol[2] = 0.0;
-      cl.plane[0] = sol[0], cl.plane[1] = sol[1], cl.plane[2] = sol[2];
-      cl.hasPlane = changed = true;
+      for (Cluster &cl : clusters) {
+        if (cl.hasPlane || cl.ends.empty()) continue;
+        std::vector<Pt> pts;
+        for (const RoadEnd &e : cl.ends) {
+          const RoadMeta &m = metas[e.road];
+          if (m.roadIndex < 0 || !known[e.road] || m.zz.empty()) continue;
+          const odr::Road &r = od.roads[m.roadIndex];
+          const Vec2 p = r.planView.eval(e.atEnd ? r.length() : 0.0).pos();
+          // a height carried through an unmeasured road counts less the longer that road is: a
+          // junction follows its nearest known neighbour (a garage entrance stub, not the far exits)
+          const double w = m.hasData ? 1.0 : 1.0 / std::pow(1.0 + r.length() / 10.0, 2.0);
+          pts.push_back({p.x, p.y, e.atEnd ? m.zz.back() : m.zz.front(), w});
+        }
+        if (pts.empty()) continue;
+        double sol[3];
+        fit(pts, cl.center, sol, 0.05 * weightSum(pts) * 100.0);
+        const double g = std::hypot(sol[1], sol[2]);
+        if (g > 0.15) sol[1] *= 0.15 / g, sol[2] *= 0.15 / g;
+        if (!opt.target.superelevation) sol[1] = sol[2] = 0.0;
+        cl.plane[0] = sol[0], cl.plane[1] = sol[1], cl.plane[2] = sol[2];
+        cl.hasPlane = changed = true;
+      }
+    }
+  };
+  propagate();
+  // a network nothing measured reaches (an underground garage whose ramps OSM does not connect, Frankfurter Kreuz:
+  // three levels, 118 roads) keeps its relative levels (1. - 3.: a storey per level under level 0) under the ground:
+  // OSM layers count from the ground (wiki Key:layer), and a garage lies under everything above it, so level 0 is the
+  // lowest measured surface over its roads (Frankfurt: a street in a dip runs over it, 5 m under the median ground).
+  // Then its junctions take surfaces from those heights as above
+  std::vector<size_t> comp(metas.size());
+  for (size_t i = 0; i < comp.size(); ++i) comp[i] = i;
+  std::function<size_t(size_t)> root = [&](size_t i) { return comp[i] == i ? i : comp[i] = root(comp[i]); };
+  std::map<int, size_t> byCluster;  // cluster -> first unknown road at it
+  for (size_t i = 0; i < metas.size(); ++i) {
+    if (metas[i].roadIndex < 0 || known[i]) continue;
+    const Chain &ch = chains[metas[i].chain];
+    for (int c : {ch.c0, ch.c1})
+      if (c >= 0) {
+        auto [it, fresh] = byCluster.emplace(c, i);
+        if (!fresh) comp[root(i)] = root(it->second);
+      }
+  }
+  // what lies over it: the measured ground along its roads and the measured roads passing over them in plan (centre
+  // lines within 4 m; a street in a cutting runs below the ground beside it)
+  const double over = 4.0;
+  struct Height {
+    double x, y, z;
+  };
+  std::map<std::pair<long, long>, std::vector<Height>> knownAt;  // centre-line samples of roads with heights, 10 m cells
+  auto cellOf = [](const Vec2 &p) { return std::make_pair(static_cast<long>(std::floor(p.x / 10.0)), static_cast<long>(std::floor(p.y / 10.0))); };
+  for (size_t i = 0; i < metas.size(); ++i)
+    if (metas[i].roadIndex >= 0 && known[i])
+      for (size_t k = 0; k < metas[i].zs.size(); ++k) {
+        const Vec2 p = od.roads[metas[i].roadIndex].planView.eval(metas[i].zs[k]).pos();
+        knownAt[cellOf(p)].push_back({p.x, p.y, metas[i].zz[k]});
+      }
+  std::map<size_t, std::vector<double>> groundOf;
+  for (size_t i = 0; i < metas.size(); ++i) {
+    if (metas[i].roadIndex < 0 || known[i]) continue;
+    for (double g : metas[i].zGround)
+      if (!std::isnan(g)) groundOf[root(i)].push_back(g);
+    for (size_t k = 0; k < metas[i].zs.size(); ++k) {
+      const Vec2 p = od.roads[metas[i].roadIndex].planView.eval(metas[i].zs[k]).pos();
+      const auto [cx, cy] = cellOf(p);
+      for (long dx = -1; dx <= 1; ++dx)
+        for (long dy = -1; dy <= 1; ++dy)
+          if (auto it = knownAt.find({cx + dx, cy + dy}); it != knownAt.end())
+            for (const Height &q : it->second)
+              if (std::hypot(q.x - p.x, q.y - p.y) < over) groundOf[root(i)].push_back(q.z);
     }
   }
+  std::map<size_t, double> level0;  // component -> lowest measured surface over it
+  for (const auto &[c, v] : groundOf) level0[c] = *std::min_element(v.begin(), v.end());
+  bool anchored = false;
+  for (size_t i = 0; i < metas.size(); ++i) {
+    RoadMeta &m = metas[i];
+    const auto l0 = level0.find(root(i));
+    if (m.roadIndex < 0 || known[i] || l0 == level0.end() || m.zRel.size() != m.zs.size()) continue;
+    for (size_t k = 0; k < m.zs.size(); ++k) m.zz[k] = l0->second + m.zRel[k];
+    known[i] = 1, anchored = true;
+  }
+  if (anchored) propagate();
 }
 
 double Builder::planeZ(const Cluster &c, const Vec2 &p) const {
@@ -1356,7 +1419,13 @@ void Builder::connectingElevation(odr::Road &c, const Cluster &cl, std::optional
   // plane plus a smoothstep correction to those heights (C1: zero correction slope at the ends)
   const double L = c.length();
   const Vec2 grad(cl.plane[1], cl.plane[2]);
-  const int n = std::max(2, static_cast<int>(std::ceil(L / 2.0)) + 1);
+  // records every 2 m, closer on a tight curve: the banking atan(grad . left) turns with the heading, and a cubic
+  // record spanning more than 15 deg of it overshoots the plane's cross slope (Frankfurt: a 4.5 m boundary helper
+  // round a 2 m radius banked 0.156 rad on a plane capped at atan(15 %) = 0.149)
+  double kmax = 0.0;
+  for (double q = 0.0; q <= L; q += std::min(0.25, std::max(L, 1e-3) / 8.0)) kmax = std::max(kmax, std::abs(c.planView.eval(q).kappa));
+  const double step = std::min(2.0, 0.26 / std::max(kmax, 1e-9));
+  const int n = std::max(2, static_cast<int>(std::ceil(L / step)) + 1);
   c.elevation.clear();
   c.superelevation.clear();
   std::vector<double> s(n), z(n), dz(n), se(n), dse(n);
