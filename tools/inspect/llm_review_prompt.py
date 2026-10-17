@@ -10,7 +10,7 @@ Never edit the fingerprint without reading what changed: the fingerprint is the 
 against those versions.
 """
 
-PROMPT_VERSION = "1.1.2"  # 1.0.1: four checkers fixed (lane centres, LHT, direct junctions); 1.1.0: underpasses, buried roads; 1.1.2: junction pits
+PROMPT_VERSION = "1.1.3"  # 1.0.1: four checkers fixed (lane centres, LHT, direct junctions); 1.1.0: underpasses, buried roads; 1.1.2: junction pits; 1.1.3: contract limits tightened
 REVISED = "2026-10-17"
 ODRFORGE_VERSION = "0.6.0"  # the repository's VERSION file when the prompt was last revised
 
@@ -49,7 +49,7 @@ CHECKERS = {
     "odrgeom.py": ("ba69e6c1160a", "exact OpenDRIVE evaluation and OSM projection used by the review facts"),
     "ped_signal_audit.py": ("975da8df6dae", "pedestrian lights on cross paths vs JG 6.3.3"),
     "signal_rules_audit.py": ("4e80dfc679c0", "traffic-light control vs 1.8.0 14 and JG"),
-    "terrain_contract.py": ("05d227008d9f", "absolute terrain limits of the reference areas"),
+    "terrain_contract.py": ("fdc438e24ed7", "absolute terrain limits of the reference areas"),
 }
 # files of tools/inspect that are not checkers (selftests, planting tools, servers, meta tools and the review itself)
 NOT_CHECKERS = {"exact_diff.py", "flags.py", "fuzz.py", "jev.py", "jev_judge.py", "laneflow_plant.py", "llm_review.py",
