@@ -77,6 +77,8 @@ python tools/inspect/llm_review.py run build/tmp/llm_review/bundles --runner ses
 python tools/inspect/llm_review.py run build/tmp/llm_review/bundles --runner claude-cli --limit 1
 # 3. verdicts -> <stem>.review.json next to each output (rejected verdicts are listed and make the exit code 1)
 python tools/inspect/llm_review.py merge build/tmp/llm_review/bundles
+# 3b. optionally also as open flags in the viewer's <stem>.flags.json (listed and answered with flags.py)
+python tools/inspect/llm_review.py merge build/tmp/llm_review/bundles --as-flags
 ```
 
 `--reuse` rebuilds existing bundles from the same reviewed file and checker results (after a prompt or tool change);
@@ -119,6 +121,13 @@ stops coming back. The fields `id, x, y, road, lane, laneType, junction, s, cate
 viewer's own; `category` is one of the viewer's categories (geometry, lanes, connection, junction, missing, signal,
 elevation, other). Road ids change between builds: use `osm_ways` to find the place in another build.
 
+With `--as-flags`, merge also appends every defect / uncertain verdict to the viewer's `<stem>.flags.json` as an
+open flag: the viewer's fields (category, note "[LLM review defect, major, confidence 0.85] ... (OSM ways ...)", x,
+y, road, lane, junction, s) plus source "llm-review", severity, perspective, evidence, reasoning, confidence,
+osm_ways and the reviewed sha256. Their ids start at 1001, so a viewer page left open does not number a new
+hand-made flag the same; the user's flags are never changed or removed (viz_server.py keeps fields it does not own),
+and a verdict already added (same `llm_key`) is not added again. `flags.py list / set` then works on them.
+
 A candidate may be given by its number in the spot's list (the numbered circles); merge resolves it to the id.
 merge rejects a verdict that does not follow the vocabulary, has no evidence, names a road that is not in the file, a
 candidate that does not exist, or a position outside the spot it was given: a reviewer cannot place a flag where it
@@ -155,9 +164,15 @@ clean).
 - Missing turns are measured against the arms of one junction; a movement served by a neighbouring junction of a
   split intersection can appear missing. U-turns are not counted.
 - Checker results exist for the carla profile from the gate; the standard profile needs `--run-checkers` (slower).
-  The checkers' own false positives reach the reviewer as candidates (the first review found several: left-hand
-  traffic read as right-hand, reference lines compared instead of lane centres, direct junctions not read); the
-  prompt asks the reviewer to clear them with the fact that does, and they are reported back to the checkers.
+  The checkers' own false positives reach the reviewer as candidates; the prompt asks the reviewer to clear them
+  with the fact that does, and they are reported back to the checkers. The first review found four, fixed since
+  (prompt 1.0.1, tests/review_checkers_selftest.py, which fails 14 of its 19 checks on the old checkers):
+  det_junction_gore crashed on 1.8.0 outputs, compared reference lines instead of lane centres and read one lane
+  per connecting road; det_osm_fidelity and det_lane_transitions read left-hand traffic as right-hand;
+  det_link_continuity did not read direct junctions. On the 12 reviewed outputs: conn_discontinuity 12246 -> 0,
+  lane_no_successor 2427 -> 13, osm_fidelity lane_count 693 -> 79, lane_transitions count_mismatch 1350 -> 68,
+  open_lane_end_junction 1098 -> 764; conn_wiggle in London / Tokyo 22 / 8 -> 135 / 167 (hidden before by the
+  right-hand headings).
 - The console of this machine is cp932: print review files with `PYTHONIOENCODING=utf-8` (the files are UTF-8).
 - Verdicts are LLM judgements: each carries a confidence and its evidence, and the deterministic checkers stay the
   definition of correct.

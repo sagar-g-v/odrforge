@@ -55,7 +55,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import odrgeom as G  # noqa: E402
 
 BIN = 1.0
-CARRIAGEWAY = {"driving", "bidirectional", "biking"}
+# lanes OSM counts in lanes=* (ramp, entry / exit and bus lanes included: a motorway_link's onRamp lane is
+# its lane); lane@direction="both" (1.8.0) and the deprecated type bidirectional count as both ways
+COUNTED = {"driving", "bidirectional", "entry", "exit", "onRamp", "offRamp", "connectingRamp", "slipLane", "bus", "taxi",
+           "HOV"}
+CARRIAGEWAY = COUNTED | {"biking"}
+
+
+def lane_directions(r):
+    """{(section index, lane id): lane@direction} (OpenDRIVE 1.8.0 standard / reversed / both)"""
+    out = {}
+    secs = sorted(r.el.find("lanes").findall("laneSection"), key=lambda e: float(e.get("s")))
+    for si, se in enumerate(secs):
+        for l in se.iter("lane"):
+            if l.get("direction"):
+                out[(si, int(l.get("id")))] = l.get("direction")
+    return out
 BAND_TOL, BAND_HARD, BAND_MINLEN = 0.75, 1.5, 10.0
 FIT_TOL, FIT_MINLEN = 0.5, 5.0
 COUNT_MINLEN, BOUNDARY_TOL = 15.0, 35.0
@@ -378,8 +393,11 @@ def analyze_road(r, osm, gores=frozenset(), od=None):
     c_mid = np.full(nb, np.nan)
     t_exp = np.full(nb, np.nan)
     trans = np.zeros(nb, bool)
-    n_r = np.zeros(nb, int)  # full driving lanes on the right (travel +s)
-    n_l = np.zeros(nb, int)
+    # which way a lane travels: road@rule (LHT: lanes with id > 0 travel +s) and lane@direction (1.8.0)
+    lht = (r.el.get("rule") or "RHT").upper() == "LHT"
+    ldir = lane_directions(r)
+    n_r = np.zeros(nb, int)  # full driving lanes that travel +s (the right side under RHT, the left under LHT)
+    n_l = np.zeros(nb, int)  # ... that travel -s
     n_bi = np.zeros(nb, int)
     w_r, w_l = [None] * nb, [None] * nb
     secidx = np.zeros(nb, int)
@@ -401,19 +419,20 @@ def analyze_road(r, osm, gores=frozenset(), od=None):
             w = abs(to - ti)
             if l.type in CARRIAGEWAY and w > 0.01:
                 vals += [ti, to]
-            if l.type in ("driving", "bidirectional"):
+            if l.type in COUNTED:
                 fw = full_w[(si, l.id)]
                 if 0.05 < w < 0.9 * fw:
                     trans[i] = True
                 if w >= 0.9 * fw and w > 1.5:
-                    if l.type == "bidirectional":
+                    d = ldir.get((si, l.id), "standard")
+                    if l.type == "bidirectional" or d == "both":
                         n_bi[i] += 1
-                    elif l.id < 0:
+                    elif ((l.id < 0) != lht) != (d == "reversed"):
                         n_r[i] += 1
                         wr.append((abs(l.id), w))
                     else:
                         n_l[i] += 1
-                        wl.append((l.id, w))
+                        wl.append((abs(l.id), w))
         w_r[i], w_l[i] = [w for _, w in sorted(wr)], [w for _, w in sorted(wl)]
         if not vals:
             continue
@@ -423,7 +442,7 @@ def analyze_road(r, osm, gores=frozenset(), od=None):
             sp = specs[wayat[i]]
             pl = sp["placement"]
             if pl:
-                te = placement_t(sp, pl, dirat[i], b, sec)
+                te = placement_t(sp, pl, dirat[i], b, sec, lht)
                 if te is not None:
                     t_exp[i] = te
     e = t_osm - t_exp
@@ -453,22 +472,26 @@ def analyze_road(r, osm, gores=frozenset(), od=None):
                 w_r=w_r, w_l=w_l, secidx=secidx, way_end_s=sorted(way_end_s), hwy=hwy, R=R)
 
 
-def placement_t(sp, pl, dr, b, sec):
-    """t where the way should lie from placement tags (None if not applicable). Lanes counted from
-    the driver's left = from the inner side (RHT)."""
+def placement_t(sp, pl, dr, b, sec, lht=False):
+    """t where the way should lie from placement tags (None if not applicable). OSM counts lanes from
+    the driver's left: from the inner side under RHT, from the outer side under LHT."""
     if sp["oneway"]:
         key = "placement"
-        side = -1 if (dr > 0) != sp["reverse"] else 1  # right side lanes travel +s
+        side = -1 if (dr > 0) != sp["reverse"] else 1  # RHT: right side lanes travel +s
     else:
         key = "placement:forward" if "placement:forward" in pl else "placement:backward"
         fwd = key == "placement:forward"
         side = -1 if (dr > 0) == fwd else 1
+    if lht:  # LHT: the left side travels +s
+        side = -side
     if key not in pl:
         return None
     mode, n = pl[key]
     if mode == "transition" or n is None:
         return None
     lanes = [l for l in (sec.right if side < 0 else sec.left) if l.type in CARRIAGEWAY]
+    if lht:  # sec lists lanes from the reference line outwards; the LHT driver's left is the outer side
+        lanes = lanes[::-1]
     if not (1 <= n <= len(lanes)):
         return None
     ti, to = b[lanes[n - 1].id]

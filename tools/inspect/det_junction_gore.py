@@ -4,10 +4,13 @@ Checks every junction (plain intersections and the lane-level gores built by src
 OpenDRIVE file against itself and against the OSM source it was built from. Every check is stated
 so that a correct converter produces zero findings on it.
 
-Connecting roads (each OdrForge connecting road is one lane whose reference line is the lane centre,
-src/network_junctions.cpp: laneOffset = width / 2):
+Connecting roads (every lane of a connecting road, measured on the lane's own centre line - laneOffset
+and lane widths applied: a connecting road may carry several lanes and its reference line need not be a
+lane centre; one finding per connecting road and kind, for its worst lane; connecting roads without lanes,
+e.g. 1.8.0 junction boundary helper roads, carry no path; lane directions follow road@rule, RHT or LHT):
   conn_discontinuity  connecting lane start/end does not meet the linked lane centre of the plain road
-                      (gap > 0.10 m or heading step > 2 deg). Spec: lanes link C0/G1.
+                      (gap > 0.10 m or direction step > 2 deg, directions compared as lines).
+                      Spec: lanes link C0/G1.
   conn_wiggle         the path turns more than it has to: total |turning| - |net heading change| > 20 deg
                       (an S-bend or loop; a G1 clothoid path between two poses never needs it unless the
                       ends are misaligned).
@@ -78,6 +81,7 @@ NONROAD = {"footway", "path", "cycleway", "steps", "pedestrian", "corridor", "el
            "construction", "proposed", "platform"}
 EDGE = 40.0  # m: OSM samples this close to the converted area's edge are skipped (clipped ways)
 DRIVING = {"driving", "bus", "entry", "exit", "onRamp", "offRamp", "connectingRamp"}
+WALKING = {"sidewalk", "walking"}  # continuity only (a walking connecting lane has no driven shape)
 
 # thresholds (see module doc)
 T = dict(gap=0.10, hdg=2.0 * D2R, wiggle=20 * D2R, straight=35 * D2R, jog_min=0.5, jog_fw=1 / 15.0, jog_city=1 / 6.0,
@@ -200,13 +204,76 @@ class Net:
         return r.osm_ways[-1] if at_end else r.osm_ways[0]
 
 
+def is_lht(r):
+    return (r.el.get("rule") or "RHT").upper() == "LHT"
+
+
 def lane_pose(r, s, lid):
-    """lane centre (x, y, travel heading) of a plain road lane at s (RHT: id<0 along +s)"""
+    """lane centre (x, y, travel heading) of a plain road lane at s (road@rule: RHT lanes with id < 0
+    travel +s, LHT lanes with id > 0)"""
     b = r.borders_at(s)
     t = 0.5 * (b[lid][0] + b[lid][1])
     x, y, h = (float(v) for v in r.ref(s))
     px, py = x - t * math.sin(h), y + t * math.cos(h)
-    return px, py, h if lid < 0 else h + math.pi
+    return px, py, h if (lid < 0) != is_lht(r) else h + math.pi
+
+
+def axis_diff(a, b):
+    """angle between two directions taken as lines (0..pi/2): a lane path is compared with the lane it
+    links to without assuming which way either is driven"""
+    return abs((a - b + math.pi / 2) % math.pi - math.pi / 2)
+
+
+def lane_centre_t(r, sec, lid, s):
+    """t of the centre of lane lid at the s values (laneOffset and every lane width between the
+    reference line and the lane)"""
+    t = r.lane_offset(s)
+    ds = s - sec.s
+    for l in (sec.left if lid > 0 else sec.right):
+        w = l.width(ds) * (1 if lid > 0 else -1)
+        if l.id == lid:
+            return t + 0.5 * w
+        t = t + w
+    raise KeyError(lid)
+
+
+def lane_path(c, lid, step=0.25):
+    """centre line of lane lid of road c through its sections (following the lane's successors):
+    (s, points (n,2), heading along +s, the lane id in the last section reached)"""
+    S, X, Y = [], [], []
+    for k, sec in enumerate(c.sections):
+        if k:
+            prev = c.sections[k - 1].lane(lid)
+            if prev is None or prev.succ is None or sec.lane(prev.succ) is None:
+                break
+            lid = prev.succ
+        if sec.lane(lid) is None:
+            break
+        if sec.e - sec.s <= 1e-6:
+            continue
+        ss = np.linspace(sec.s, sec.e, max(3, int((sec.e - sec.s) / step) + 1))
+        x, y = c.point(ss, lane_centre_t(c, sec, lid, ss))
+        if S:
+            ss, x, y = ss[1:], x[1:], y[1:]
+        S.append(ss), X.append(x), Y.append(y)
+    if not S:
+        return None
+    S, X, Y = np.concatenate(S), np.concatenate(X), np.concatenate(Y)
+    if len(S) < 3:
+        return None
+    h = np.unwrap(np.arctan2(np.gradient(Y, S, edge_order=2), np.gradient(X, S, edge_order=2)))
+    return S, np.c_[X, Y], h, lid
+
+
+def band_path(c, step=1.0):
+    """the centre line of road c's driving lanes (one path per connecting road for the crossing test)"""
+    lanes = [l.id for l in c.sections[0].lanes() if l.type in DRIVING]
+    paths = [p for p in (lane_path(c, lid, step) for lid in (lanes[0], lanes[-1])) if p is not None] if lanes else []
+    if not paths:
+        return None
+    if len(paths) == 2 and len(paths[0][1]) == len(paths[1][1]):
+        return 0.5 * (paths[0][1] + paths[1][1])
+    return paths[0][1]
 
 
 def driving_ids(r, s, side):
@@ -224,13 +291,14 @@ def drive_extent(r, s):
 
 
 def incoming_lanes(r, at_end):
+    """driving lanes that run into this road end (RHT: the right side at the end; LHT: the left side)"""
     s = r.length if at_end else 0.0
-    return driving_ids(r, min(max(s, 1e-3), r.length - 1e-3), -1 if at_end else 1)
+    return driving_ids(r, min(max(s, 1e-3), r.length - 1e-3), -1 if at_end != is_lht(r) else 1)
 
 
 def outgoing_lanes(r, at_end):
     s = r.length if at_end else 0.0
-    return driving_ids(r, min(max(s, 1e-3), r.length - 1e-3), 1 if at_end else -1)
+    return driving_ids(r, min(max(s, 1e-3), r.length - 1e-3), 1 if at_end != is_lht(r) else -1)
 
 
 def lane_level_gore(conns):
@@ -281,93 +349,116 @@ class Detector:
 
     # -- connecting roads
     def check_connecting(self):
+        """every lane of every connecting road, measured on the lane's own centre line (laneOffset and
+        widths applied): a connecting road may carry several lanes and its reference line need not be a
+        lane centre. A connecting road with no lanes (a 1.8.0 junction boundary helper road) has no path to
+        check. One finding per connecting road and kind: its worst lane."""
         od, n = self.od, self.n
         for c in od.connecting_roads():
             if c.pred is None or c.succ is None or c.pred.id not in od.roads or c.succ.id not in od.roads:
                 continue
-            P, Q = od.roads[c.pred.id], od.roads[c.succ.id]
-            lane = (c.sections[0].right + c.sections[0].left)[0]
-            if lane.pred is None or lane.succ is None:
+            lanes = [l for l in c.sections[0].lanes() if l.id and l.type in DRIVING | WALKING]
+            if not lanes:
                 continue
+            P, Q = od.roads[c.pred.id], od.roads[c.succ.id]
             hw = n.hw(c)
             fw = hw in FREEWAY
             sP = P.length if c.pred.contact == "end" else 0.0
             sQ = Q.length if c.succ.contact == "end" else 0.0
-            try:
-                ax, ay, ah = lane_pose(P, sP, lane.pred)
-                bx, by, bh = lane_pose(Q, sQ, lane.succ)
-            except KeyError:
-                self.add("conn_discontinuity", [c.id, P.id, Q.id], *c.ref(0)[:2], "critical", 99.0, junction=c.junction,
-                         note="linked lane id does not exist", hw=hw)
-                continue
-            s, pts, h = conn_samples(c)
-            cid = lane.id
-            th = h if cid < 0 else h + math.pi
-            # (1) continuity; the start heading is exact (planView), the end heading comes from the
-            # sampled line, whose finite-difference error grows with the curvature there
-            h_start = float(c.el.find("planView").findall("geometry")[0].get("hdg")) + (0 if cid < 0 else math.pi)
-            g0 = math.hypot(pts[0, 0] - ax, pts[0, 1] - ay)
-            g1 = math.hypot(pts[-1, 0] - bx, pts[-1, 1] - by)
-            dh0, dh1 = abs(wrap(h_start - ah)), abs(wrap(th[-1] - bh))
-            k_end = abs(float(th[-1] - th[-3])) / max(float(s[-1] - s[-3]), 1e-6)
-            if max(g0, g1) > T["gap"] or dh0 > T["hdg"] or dh1 > T["hdg"] + 0.5 * k_end:
-                self.add("conn_discontinuity", [c.id, P.id, Q.id], pts[0, 0] if g0 + dh0 > g1 + dh1 else pts[-1, 0],
-                         pts[0, 1] if g0 + dh0 > g1 + dh1 else pts[-1, 1], "critical", max(g0, g1),
-                         junction=c.junction, gap_start=g0, gap_end=g1, hdg_start_deg=dh0 / D2R, hdg_end_deg=dh1 / D2R, hw=hw)
-            # (2) shape
-            dh = np.diff(np.unwrap(h))
-            net = wrap(bh - ah)
-            total = float(np.abs(dh).sum())
-            chord = math.hypot(bx - ax, by - ay)
-            # least turning any path between the two poses needs: it must be parallel to the chord
-            # somewhere (mean value theorem), so >= |chord - start| + |end - chord| (two arcs achieve it)
-            phi = math.atan2(by - ay, bx - ax)
-            need = abs(wrap(phi - ah)) + abs(wrap(bh - phi)) if chord > 0.05 else abs(net)
-            wig = total - need
-            if wig > T["wiggle"]:
-                i = int(np.argmax(np.abs(dh)))
-                self.add("conn_wiggle", [c.id, P.id, Q.id], pts[i, 0], pts[i, 1], "critical" if fw else "major", wig / D2R,
-                         junction=c.junction, excess_turn_deg=wig / D2R, net_turn_deg=net / D2R, length=c.length,
-                         chord=chord, hw=hw)
-            straight = abs(net) < T["straight"]
-            if straight and chord > 0.5:
-                # lateral offset of the exit lane centre from where a constant-curvature arc with the
-                # same net turn would put it (the arc's chord runs along the mean heading)
-                lat = chord * abs(math.sin(wrap(phi - (ah + 0.5 * net))))
-                slope = lat / chord
-                lim = T["jog_fw"] if fw else T["jog_city"]
-                if lat > T["jog_min"] and slope > lim:
-                    self.add("conn_jog", [c.id, P.id, Q.id], *pts[len(pts) // 2], "critical" if fw and slope > 0.15 else
-                             "major" if fw or slope > 0.3 else "minor", lat, junction=c.junction, lateral=lat, slope=slope,
-                             length=c.length, net_turn_deg=net / D2R, hw=hw)
-                # curvature notch
-                kc = np.abs(dh) / np.maximum(np.diff(s), 1e-6)
-                kmax = float(np.percentile(kc, 98)) if len(kc) > 4 else float(kc.max())
-                kin = curv_at(P, sP)
-                kout = curv_at(Q, sQ)
-                lim_k = max(kin, kout) + 1.0 / min_radius(hw)
-                if kmax > lim_k:
-                    i = int(np.argmax(kc))
-                    self.add("conn_curvature", [c.id, P.id, Q.id], pts[i, 0], pts[i, 1],
-                             "critical" if fw else "major" if kmax > 2 * lim_k else "minor", kmax / lim_k, junction=c.junction,
-                             kmax=kmax, radius=1 / max(kmax, 1e-9), limit_radius=1 / lim_k, length=c.length, hw=hw)
-            # (3) OSM deviation for straight / ramp movements
-            if (straight or fw or hw.endswith("_link")) and c.length > 2.0:
-                ways = set(P.osm_ways[-1:] if c.pred.contact == "end" else P.osm_ways[:1])
-                ways |= set(Q.osm_ways[-1:] if c.succ.contact == "end" else Q.osm_ways[:1])
-                ways |= internal_ways(n, P, Q, c)
-                polys = [n.wpoly(w) for w in ways if len(n.wpoly(w)) >= 2]
-                if polys:
-                    d = np.min([seg_dist(pts, A) for A in polys], axis=0)
-                    u = s / c.length
-                    blend = d[0] * (1 - u) + d[-1] * u
-                    ex = d - blend
-                    i = int(np.argmax(ex))
-                    if ex[i] > T["osm_dev"]:
-                        self.add("conn_osm_dev", [c.id, P.id, Q.id], pts[i, 0], pts[i, 1],
+            worst = {}  # kind -> (score, args, kwargs)
+
+            def keep(kind, score, *args, **kw):
+                if kind not in worst or score > worst[kind][0]:
+                    worst[kind] = (score, args, kw)
+
+            for lane in lanes:
+                path = lane_path(c, lane.id)
+                if lane.pred is None or path is None:
+                    continue
+                s, pts, h, end_id = path
+                end_lane = c.sections[-1].lane(end_id)
+                if end_lane is None or end_lane.succ is None:
+                    continue
+                try:
+                    ax, ay, ah = lane_pose(P, sP, lane.pred)
+                    bx, by, bh = lane_pose(Q, sQ, end_lane.succ)
+                except KeyError:
+                    keep("conn_discontinuity", 99.0, [c.id, P.id, Q.id], *pts[0], "critical", 99.0, junction=c.junction,
+                         lane=lane.id, note="linked lane id does not exist", hw=hw)
+                    continue
+                # (1) continuity of the lane centre with the linked lane centres: position, and direction taken
+                # as a line (the path heading comes from the sampled centre, whose error grows with curvature)
+                g0 = math.hypot(pts[0, 0] - ax, pts[0, 1] - ay)
+                g1 = math.hypot(pts[-1, 0] - bx, pts[-1, 1] - by)
+                dh0, dh1 = axis_diff(h[0], ah), axis_diff(h[-1], bh)
+                k0 = abs(float(h[2] - h[0])) / max(float(s[2] - s[0]), 1e-6)
+                k1 = abs(float(h[-1] - h[-3])) / max(float(s[-1] - s[-3]), 1e-6)
+                if max(g0, g1) > T["gap"] or dh0 > T["hdg"] + 0.5 * k0 or dh1 > T["hdg"] + 0.5 * k1:
+                    at0 = g0 + dh0 > g1 + dh1
+                    keep("conn_discontinuity", max(g0, g1) + max(dh0, dh1), [c.id, P.id, Q.id],
+                         pts[0, 0] if at0 else pts[-1, 0], pts[0, 1] if at0 else pts[-1, 1], "critical", max(g0, g1),
+                         junction=c.junction, lane=lane.id, gap_start=g0, gap_end=g1, hdg_start_deg=dh0 / D2R,
+                         hdg_end_deg=dh1 / D2R, hw=hw)
+                if lane.type not in DRIVING:
+                    continue
+                # (2) shape of the driven path, from its own headings along s (the travel direction does not
+                # change these magnitudes)
+                a0, a1 = float(h[0]), float(h[-1])
+                dh = np.diff(h)
+                net = wrap(a1 - a0)
+                total = float(np.abs(dh).sum())
+                chord = float(math.hypot(*(pts[-1] - pts[0])))
+                # least turning any path between the two poses needs: it must be parallel to the chord
+                # somewhere (mean value theorem), so >= |chord - start| + |end - chord| (two arcs achieve it)
+                phi = math.atan2(pts[-1, 1] - pts[0, 1], pts[-1, 0] - pts[0, 0])
+                need = abs(wrap(phi - a0)) + abs(wrap(a1 - phi)) if chord > 0.05 else abs(net)
+                wig = total - need
+                if wig > T["wiggle"]:
+                    i = int(np.argmax(np.abs(dh)))
+                    keep("conn_wiggle", wig, [c.id, P.id, Q.id], pts[i, 0], pts[i, 1], "critical" if fw else "major",
+                         wig / D2R, junction=c.junction, lane=lane.id, excess_turn_deg=wig / D2R, net_turn_deg=net / D2R,
+                         length=c.length, chord=chord, hw=hw)
+                straight = abs(net) < T["straight"]
+                if straight and chord > 0.5:
+                    # lateral offset of the exit lane centre from where a constant-curvature arc with the
+                    # same net turn would put it (the arc's chord runs along the mean heading)
+                    lat = chord * abs(math.sin(wrap(phi - (a0 + 0.5 * net))))
+                    slope = lat / chord
+                    lim = T["jog_fw"] if fw else T["jog_city"]
+                    if lat > T["jog_min"] and slope > lim:
+                        keep("conn_jog", lat, [c.id, P.id, Q.id], *pts[len(pts) // 2],
+                             "critical" if fw and slope > 0.15 else "major" if fw or slope > 0.3 else "minor", lat,
+                             junction=c.junction, lane=lane.id, lateral=lat, slope=slope, length=c.length,
+                             net_turn_deg=net / D2R, hw=hw)
+                    # curvature notch
+                    kc = np.abs(dh) / np.maximum(np.diff(s), 1e-6)
+                    kmax = float(np.percentile(kc, 98)) if len(kc) > 4 else float(kc.max())
+                    lim_k = max(curv_at(P, sP), curv_at(Q, sQ)) + 1.0 / min_radius(hw)
+                    if kmax > lim_k:
+                        i = int(np.argmax(kc))
+                        keep("conn_curvature", kmax / lim_k, [c.id, P.id, Q.id], pts[i, 0], pts[i, 1],
+                             "critical" if fw else "major" if kmax > 2 * lim_k else "minor", kmax / lim_k,
+                             junction=c.junction, lane=lane.id, kmax=kmax, radius=1 / max(kmax, 1e-9),
+                             limit_radius=1 / lim_k, length=c.length, hw=hw)
+                # (3) OSM deviation for straight / ramp movements
+                if (straight or fw or hw.endswith("_link")) and c.length > 2.0:
+                    ways = set(P.osm_ways[-1:] if c.pred.contact == "end" else P.osm_ways[:1])
+                    ways |= set(Q.osm_ways[-1:] if c.succ.contact == "end" else Q.osm_ways[:1])
+                    ways |= internal_ways(n, P, Q, c)
+                    polys = [n.wpoly(w) for w in ways if len(n.wpoly(w)) >= 2]
+                    if polys:
+                        d = np.min([seg_dist(pts, A) for A in polys], axis=0)
+                        u = s / s[-1]
+                        blend = d[0] * (1 - u) + d[-1] * u
+                        ex = d - blend
+                        i = int(np.argmax(ex))
+                        if ex[i] > T["osm_dev"]:
+                            keep("conn_osm_dev", float(ex[i]), [c.id, P.id, Q.id], pts[i, 0], pts[i, 1],
                                  "critical" if fw and ex[i] > 4 else "major" if fw or ex[i] > 4 else "minor", float(ex[i]),
-                                 junction=c.junction, excess=float(ex[i]), d_osm=float(d[i]), length=c.length,
-                                 net_turn_deg=net / D2R, hw=hw)
+                                 junction=c.junction, lane=lane.id, excess=float(ex[i]), d_osm=float(d[i]),
+                                 length=c.length, net_turn_deg=net / D2R, hw=hw)
+            for kind, (_, args, kw) in worst.items():
+                self.add(kind, *args, **kw)
 
     def check_crossings(self):
         n = self.n
@@ -376,8 +467,9 @@ class Detector:
             for c in conns:
                 if c.pred is None or c.succ is None:
                     continue
-                _, pts, _ = conn_samples(c, 1.0)
-                P[c.id] = (c, pts)
+                pts = band_path(c, 1.0)  # the driving lanes' centre, not the reference line
+                if pts is not None and len(pts) >= 2:
+                    P[c.id] = (c, pts)
             items = list(P.values())
             seen = set()
             for i in range(len(items)):
@@ -412,12 +504,15 @@ class Detector:
             conns = n.jconn.get(jid, [])
             out_from = collections.defaultdict(set)  # (road, contact) -> lane ids that have a successor
             in_to = collections.defaultdict(set)
-            for c in conns:
-                lane = (c.sections[0].right + c.sections[0].left)[0]
-                if c.pred is not None and lane.pred is not None:
-                    out_from[(c.pred.id, c.pred.contact)].add(lane.pred)
-                if c.succ is not None and lane.succ is not None:
-                    in_to[(c.succ.id, c.succ.contact)].add(lane.succ)
+            for c in conns:  # every lane of every connecting road (a connecting road may carry several)
+                if c.pred is not None:
+                    for lane in c.sections[0].lanes():
+                        if lane.id and lane.pred is not None:
+                            out_from[(c.pred.id, c.pred.contact)].add(lane.pred)
+                if c.succ is not None:
+                    for lane in c.sections[-1].lanes():
+                        if lane.id and lane.succ is not None:
+                            in_to[(c.succ.id, c.succ.contact)].add(lane.succ)
             for r, at_end in ends:
                 key = (r.id, "end" if at_end else "start")
                 s = r.length if at_end else 0.0
@@ -458,10 +553,12 @@ class Detector:
                 spec = [set(x.split(";")) for x in tl.split("|")]
                 if len(spec) != len(ins):
                     continue
-                byleft = sorted(ins, key=abs)  # RHT: inner (|id| small) = driver's left
+                # turn:lanes count from the driver's left: the inner lane (|id| small) under RHT, the outer under LHT
+                byleft = sorted(ins, key=abs, reverse=is_lht(r))
                 s = r.length if at_end else 0.0
                 ax, ay, ah = lane_pose(r, s, byleft[0])
-                mine = [c for c in conns if c.pred is not None and c.pred.id == r.id and c.pred.contact == ("end" if at_end else "start")]
+                mine = [c for c in conns if c.pred is not None and c.pred.id == r.id and c.pred.contact == ("end" if at_end else "start")
+                        and any(l.type in DRIVING for l in c.sections[0].lanes())]
                 if not mine:
                     continue
                 # turn:lanes describe the lanes where the way ends; a junction the way runs on through
@@ -472,7 +569,9 @@ class Detector:
                 tg = {}
                 for c in mine:
                     _, pts, h = conn_samples(c, 1.0)
-                    net = wrap(h[-1] - h[0] if (c.sections[0].right + c.sections[0].left)[0].id < 0 else h[0] - h[-1])
+                    dl = next(l for l in c.sections[0].lanes() if l.type in DRIVING)
+                    fwd = (dl.id < 0) != is_lht(c if c.el.get("rule") else r)  # the movement runs along +s
+                    net = wrap(h[-1] - h[0] if fwd else h[0] - h[-1])
                     lat = -(pts[-1, 0] - ax) * math.sin(ah) + (pts[-1, 1] - ay) * math.cos(ah)
                     tg.setdefault((c.succ.id, c.succ.contact), []).append((net, lat))
                 info = {k: (np.mean([a for a, _ in v]), np.mean([b for _, b in v])) for k, v in tg.items()}
@@ -483,7 +582,7 @@ class Detector:
                     sp = spec[i] - {"", "none"}
                     if not sp:
                         continue
-                    outs = {(c.succ.id, c.succ.contact) for c in mine if (c.sections[0].right + c.sections[0].left)[0].pred == lid}
+                    outs = {(c.succ.id, c.succ.contact) for c in mine if any(l.pred == lid for l in c.sections[0].lanes())}
                     bad = []
                     for k in outs:
                         rank = order.index(k)

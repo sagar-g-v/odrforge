@@ -14,6 +14,8 @@ and it never leaves a lane with real width hanging at a road / section end witho
 Checked link families
   J  junction laneLink        incoming road end (side that links to the junction) -> connecting road
                               contact end (<junction><connection><laneLink from to>)
+  D  direct junction laneLink incoming road end -> linked road at the connection's contactPoint
+                              (OpenDRIVE 1.8.0 12.6 <junction type="direct">, no connecting road)
   R  road->road lane link     connecting road start/end lane <predecessor>/<successor> -> lane of the
                               linked road at its contactPoint (covers connecting -> outgoing road)
   S  lane-section boundary    lane <successor> in section k -> lane in section k+1 of the same road
@@ -23,8 +25,9 @@ Per linked contact the border tangent is analytic, heading = hdg + atan2(t', 1 -
 1 - k t <= 0 folds back on itself (ref curvature radius smaller than the border offset) - reported
 as border_fold_{road_end | jog | turn} depending on which road folds and the connecting road shape.
 Open ends
-  open_lane_end_junction      plain-road driving lane at a junction end that no laneLink and no
-                              connecting-road lane link reaches
+  open_lane_end_junction      plain-road driving lane at a junction end that no laneLink (default or
+                              direct junction) and no connecting-road lane link reaches; its flow
+                              (inflow / outflow) follows road@rule (LHT: lanes with id > 0 travel +s)
   open_lane_end_connecting    connecting-road lane with no predecessor / successor at a linked end
   open_lane_end_section       lane that ends at a section boundary with width > WIDTH_TOL and no
                               successor (or starts with width > WIDTH_TOL and no predecessor)
@@ -172,9 +175,30 @@ def severity_open(w):
 
 
 # ----------------------------------------------------------------------------- detector
+def direct_junctions(path):
+    """{junction id: [(incoming road, linked road, contactPoint on the linked road, [(from, to)])]} of the
+    OpenDRIVE 1.8.0 direct junctions (12.6: connection@linkedRoad instead of a connecting road)"""
+    import xml.etree.ElementTree as ET
+    out = {}
+    for _, el in ET.iterparse(path):
+        if el.tag == "junction" and el.get("type") == "direct":
+            out[el.get("id")] = [(c.get("incomingRoad"), c.get("linkedRoad"), c.get("contactPoint") or "start",
+                                  [(int(l.get("from")), int(l.get("to"))) for l in c.findall("laneLink")])
+                                 for c in el.findall("connection")]
+        if el.tag == "road":
+            el.clear()
+    return out
+
+
+def travels_plus_s(road, lid):
+    """road@rule: RHT lanes with id < 0 travel +s, LHT lanes with id > 0"""
+    return (lid < 0) != ((road.el.get("rule") or "RHT").upper() == "LHT")
+
+
 class Detector:
-    def __init__(self, od):
+    def __init__(self, od, direct=None):
         self.od = od
+        self.direct = direct or {}
         self.findings = []
         self.links_checked = collections.Counter()
         self.all_metrics = collections.defaultdict(list)  # family -> [gap]
@@ -278,6 +302,21 @@ class Detector:
                                      family="J", lanes=[f, t], connecting_lane_link=own,
                                      detail="junction laneLink vs connecting-road lane link")
                     self.check_pair("J", inc, ie, f, con, ce, t, {"junction_id": jid})
+        # ---- D: direct junctions (1.8.0 12.6): incoming road lane -> linked road lane, no connecting road
+        for jid, conns in self.direct.items():
+            for inc_id, lin_id, cp, pairs in conns:
+                inc, lin = od.roads.get(inc_id), od.roads.get(lin_id)
+                if inc is None or lin is None:
+                    continue
+                ie = self.junction_end(inc, jid, lane_ref_xy(lin, cp))
+                if ie is None:
+                    self.add("link_inconsistent", [inc.id, lin.id], lane_ref_xy(lin, cp), "major",
+                             family="D", detail="incoming road has no link to direct junction %s" % jid)
+                    continue
+                for f, t in pairs:
+                    reach[(inc.id, ie)].add(f)
+                    reach[(lin.id, cp)].add(t)
+                    self.check_pair("D", inc, ie, f, lin, cp, t, {"junction_id": jid})
         # ---- R: road -> road lane links (connecting roads and any plain road->road links)
         for r in od.roads.values():
             for end, lk in (("start", r.pred), ("end", r.succ)):
@@ -354,11 +393,11 @@ class Detector:
                     if w <= WIDTH_TOL:
                         continue
                     st = lane_state(r, end, l.id)
-                    # traffic direction of the lane (right-hand lanes follow +s; bidirectional: both)
+                    # traffic direction of the lane (road@rule decides which side follows +s; bidirectional: both)
                     if l.type == "bidirectional":
                         flow, sev = "bidirectional", "minor"
                     else:
-                        flow = "inflow" if (l.id < 0) == (end == "end") else "outflow"
+                        flow = "inflow" if travels_plus_s(r, l.id) == (end == "end") else "outflow"
                         sev = severity_open(w)
                     self.add("open_lane_end_junction", [r.id], st["p"][1], sev, lane=l.id, end=end,
                              width=w, lane_type=l.type, junction_id=lk.id, flow=flow,
@@ -497,7 +536,7 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     od = G.OpenDrive(a.xodr)
-    det = Detector(od)
+    det = Detector(od, direct_junctions(a.xodr))
     findings = det.run()
     for f in findings:
         f["subclass"] = classify(f)
