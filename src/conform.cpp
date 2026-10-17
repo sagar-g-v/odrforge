@@ -108,4 +108,26 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
   return out;
 }
 
+SeatReport seatObjects(odr::OpenDrive &od, const TerrainGrid &conformed) {
+  SeatReport rep;
+  for (odr::Road &r : od.roads)
+    for (odr::Object &o : r.objects) {
+      const bool standing = o.type == "tree" || o.type == "pole" || o.type == "streetLamp";
+      if (!standing || !o.outline.empty() || !o.repeats.empty()) continue;
+      bool onBridge = false;
+      for (const odr::Structure &b : r.bridges) onBridge |= o.s >= b.s - 1e-6 && o.s <= b.s + b.length + 1e-6;
+      if (onBridge) {
+        ++rep.onBridges;
+        continue;
+      }
+      const Vec2 p = r.planView.eval(o.s).offset(o.t);
+      const double g = conformed.sample(p.x, p.y);
+      if (std::isnan(g)) continue;
+      o.zOffset = g - odr::elevationAt(r, o.s);
+      rep.maxLift = std::max(rep.maxLift, o.zOffset), rep.maxDrop = std::max(rep.maxDrop, -o.zOffset);
+      ++rep.seated;
+    }
+  return rep;
+}
+
 }  // namespace odrforge

@@ -18,6 +18,8 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                cross slope at 8 %, atan = 0.0798, plus the cubic records' overshoot); everywhere <= atan(15 %) + 2 mrad
                (junction planes are capped at a 15 % gradient, elevation.cpp step 4, and road ends bank into them)
   steep        roads with a grade over 20 % at a 5 m step (exactly the validator's quality.max_grade warning)
+  objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
+               (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
   named        named roads with their own limit (London: Adam Street on the Adelphi terrace)
 Exit 0 when every limit holds, 1 otherwise.
 """
@@ -40,6 +42,7 @@ TOUT = os.path.join(DATA, "build", "testareas")
 EXE = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
 SE_PLAIN = 0.085            # plain-road interior: atan(8 %) = 0.0798 + cubic overshoot (measured max 0.0822)
 SE_ALL = math.atan(0.15) + 2e-3  # junction-plane cap (measured max 0.1489 = atan(15 %))
+OBJECT_TOL = 0.3  # m: a tree / street lamp base vs the conformed ground under it (off bridge stretches)
 SE_END = 30.0               # m: a plain road's end blend into its junction plane (opt.junctionBlend) lies within
 
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
@@ -181,7 +184,25 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                     if not math.isnan(v):
                         edges.append(z0 + t * math.tan(roll) - v)
     near = float(np.mean(np.abs(np.asarray(deck)) <= 0.5)) if deck else math.nan
+    # trees and street lamps (point objects without outline / repeat) off bridge stretches: base = elevation(s) +
+    # zOffset (XSD 1.8.1 t_road_objects_object @zOffset) vs the conformed ground under them
+    objects = []
+    if c:
+        for r in roads:
+            sts = structures(r)
+            for o in r.el.findall("objects/object"):
+                if o.get("type") not in ("tree", "pole", "streetLamp") or o.find("outline") is not None or                         o.find("repeat") is not None:
+                    continue
+                s = float(o.get("s"))
+                if on_structure(sts, s, "bridge"):
+                    continue
+                x, y = r.point(np.array([s]), float(o.get("t")))
+                v = c(float(np.ravel(x)[0]), float(np.ravel(y)[0]))
+                if not math.isnan(v):
+                    objects.append(float(r.z(np.array([s]))[0]) + float(o.get("zOffset", 0.0)) - v)
     return dict(centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
+                objects=dict(n=len(objects), off=int(np.sum(np.abs(np.asarray(objects)) > OBJECT_TOL)) if objects else 0,
+                             worst=float(np.max(np.abs(objects))) if objects else 0.0),
                 decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
                 superelev=dict(plain=se_plain, all=se_all), steep=sorted(steep, key=lambda x: int(x) if x.isdigit() else 0),
                 named=named_grade)
@@ -224,6 +245,9 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             q, v = lim["conformed"]
             if not m["conformed"][q] <= v:
                 problems.append(f"{tag} conformed: |paved edge - conformed ground| p{q} {m['conformed'][q]:.3f} m > {v} m")
+            if m["objects"]["off"]:
+                problems.append(f"{tag} objects: {m['objects']['off']} of {m['objects']['n']} trees / street lamps more than "
+                                f"{OBJECT_TOL} m off the ground (worst {m['objects']['worst']:.2f} m)")
         if lim.get("decks"):
             q, v = lim["decks"]
             if not m["decks"][q] <= v:

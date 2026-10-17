@@ -893,6 +893,47 @@ TEST_CASE("terrain: the vertical datum is part of the geoReference (PROJ +geoidg
   CHECK(local.header.userData.count("verticalCRS") == 0);
 }
 
+TEST_CASE("terrain: trees and street lamps stand on the conformed ground, not at the reference line's height") {
+  // XSD 1.8.1 t_road_objects_object @zOffset: "z-offset of object's origin relative to the elevation of the road
+  // reference line". Written as 0, a tree beside a road on a slope stood at the road's height (Munich: 141 of 679 more
+  // than 0.3 m off the ground, worst 8.2 m). seatObjects puts its base on the published conformed ground; an object on
+  // a bridge stretch keeps its height (the deck); objects that are not standing ones are not touched
+  OsmB b;
+  const OsmId w0 = b.node(-150, 0), w1 = b.node(-40, 0), e1 = b.node(40, 0), e0 = b.node(150, 0);
+  b.way({w0, w1}, {{"highway", "residential"}});
+  b.way({w1, e1}, {{"highway", "residential"}, {"bridge", "yes"}, {"layer", "1"}});
+  b.way({e1, e0}, {{"highway", "residential"}});
+  Terrain t;
+  t.ground = makeGrid(-200, -60, 1.0, 401, 121, 1, [](int, double, double y) { return static_cast<float>(100.0 + 0.2 * y); });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  odr::Road *road = nullptr;  // the three ways chain into one road with a bridge stretch in its middle
+  for (auto &r : od.roads)
+    if (r.junction == "-1" && !r.bridges.empty()) road = &r;
+  CHECK(road != nullptr);
+  if (!road) return;
+  double sTree, sLamp, tt;
+  road->planView.project({-100, 0}, sTree, tt);  // off the bridge (it spans x -40 .. 40)
+  road->planView.project({0, 0}, sLamp, tt);     // on it
+  odr::Object tree, lamp, mark;
+  tree.type = "tree", tree.s = sTree, tree.t = 9.0;  // 9 m uphill of the reference line
+  lamp.type = "pole", lamp.subtype = "streetLamp", lamp.s = sLamp, lamp.t = 4.0;
+  mark.type = "crosswalk", mark.s = sTree + 5.0, mark.t = 0.0, mark.zOffset = 0.0;
+  mark.outline = {{0, 0, 0, 0}, {1, 0, 0, 0}, {1, 1, 0, 0}};
+  road->objects = {tree, lamp, mark};
+  const TerrainGrid c = conformGround(od, t.ground);
+  const SeatReport rep = seatObjects(od, c);
+  CHECK(rep.seated == 1);
+  CHECK(rep.onBridges == 1);
+  const odr::Object &seated = road->objects[0];
+  const Vec2 p = road->planView.eval(seated.s).offset(seated.t);
+  CHECK_NEAR(odr::elevationAt(*road, seated.s) + seated.zOffset, c.sample(p.x, p.y), 1e-6);  // on the ground
+  CHECK(seated.zOffset > 0.5);              // uphill of the road: above its reference line
+  CHECK(road->objects[1].zOffset == 0.0);   // on the bridge deck
+  CHECK(road->objects[2].zOffset == 0.0);   // a crosswalk is not a standing object
+}
+
 TEST_CASE("terrain: the conformed ground carries the road and meets the terrain along cut / fill slopes") {
   // a 7 m road across a 40 % hillside of a coarse model: under the lanes the conformed ground is the road surface, beside
   // them a 1:1.5 slope from the road edge down to (fill) or up to (cut) the terrain, beyond 20 m the terrain itself

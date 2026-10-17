@@ -108,6 +108,14 @@ def float_bridge(f):  # bridge roads 3 m above their measured deck
     edit_xodr(f["standard"], fn)
 
 
+def sink_trees(f):  # every tree 2 m under the ground (zOffset as if the road's height were the ground's)
+    def fn(root):
+        for o in root.iter("object"):
+            if o.get("type") == "tree":
+                o.set("zOffset", str(float(o.get("zOffset", 0.0)) - 2.0))
+    edit_xodr(f["standard"], fn)
+
+
 def stale_ground(f):  # the ground grid rebuilt after the outputs (London road 389)
     later = time.time() + 60
     os.utime(f["ground"], (later, later))
@@ -124,6 +132,7 @@ check(planted("stelvio", "centre", lift_all), "centre: roads lifted 1 m off the 
 check(planted("stelvio", "superelev", bank), "superelev: a road banked at 0.2 rad is caught")
 check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than the contract allows is caught")
 if have.get("london"):
+    check(planted("london", "objects", sink_trees), "objects: trees 2 m under the ground are caught")
     check(planted("london", "decks", float_bridge), "decks: bridges 3 m above their measured deck are caught")
     check(planted("london", "named", lambda f: steepen(f, "Adam Street")), "named: Adam Street off its terrace is caught")
 else:

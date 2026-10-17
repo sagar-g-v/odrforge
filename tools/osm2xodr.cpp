@@ -108,16 +108,25 @@ int main(int argc, char **argv) {
       opt.verticalDatum = !terrain.ground.datum.empty() ? terrain.ground.datum : terrain.structures.datum;
     }
     BuildReport rep;
-    const odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
+    odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
+    if (!groundOutPath.empty() && terrain.ground.empty()) {
+      std::fprintf(stderr, "--ground-out needs --terrain\n");
+      return 2;
+    }
+    // on measured terrain the ground conformed to the roads (the grid --ground-out publishes) also seats the trees and
+    // street lamps: their base on that ground, not at the reference line's height
+    TerrainGrid conformed;
+    if (!terrain.ground.empty()) {
+      conformed = conformGround(od, terrain.ground);
+      const SeatReport seat = seatObjects(od, conformed);
+      std::printf("  objects on the ground: %d seated (up to %.2f m up, %.2f m down), %d left on bridge decks\n", seat.seated,
+                  seat.maxLift, seat.maxDrop, seat.onBridges);
+    }
     odr::WriteOptions wo;
     wo.revMinor = opt.target.revMinor;
     odr::write(od, out, wo);
     if (!groundOutPath.empty()) {
-      if (terrain.ground.empty()) {
-        std::fprintf(stderr, "--ground-out needs --terrain\n");
-        return 2;
-      }
-      conformGround(od, terrain.ground).save(groundOutPath);
+      conformed.save(groundOutPath);
       std::printf("  conformed ground: %s\n", groundOutPath.c_str());
     }
     const ValidationReport vr = validate(od, opt.target);

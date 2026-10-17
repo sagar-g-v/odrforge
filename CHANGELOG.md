@@ -37,6 +37,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **Trees and street lamps stand on the ground** (src/conform.cpp seatObjects, osm2xodr): written with zOffset 0 they
+  stood at the reference line's height (XSD 1.8.1 @zOffset: relative to the road reference line's elevation) - on
+  slopes, beside cuttings and above tunnel roads (Munich: 141 of 679 more than 0.3 m off the ground, worst 8.2 m). On
+  --terrain osm2xodr now seats them on the conformed ground it publishes (zOffset = ground - elevation(s)); objects on
+  bridge stretches keep their deck height. Munich / London / Frankfurt / Stelvio: 0 objects more than 0.3 m off; exact
+  checkers unchanged in all areas. Terrain contract check "objects" with a planted defect. Jev 0.83.
 - **Frankfurter Kreuz on real terrain: an underground network nothing measured reaches** (elevation.cpp): its car park
   P15 (118 roads, OSM connects it to no street) stayed at z = 0 under 112-141 m ground. Such a network now keeps its
   relative storeys under the lowest measured surface over it (ground along its roads, roads passing over them).

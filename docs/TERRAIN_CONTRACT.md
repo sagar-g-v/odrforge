@@ -36,6 +36,7 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 | | | london | 5 (9 before the street decks) | ≤ 5 |
 | | | frankfurt_kreuz | 7 | ≤ 7 |
 | | | stelvio | 1 (12 on GLO-30 alone) | ≤ 1 |
+| objects | trees and street lamps off bridge stretches: base = elevation(s) + zOffset (XSD 1.8.1 @zOffset) vs the conformed ground under them; osm2xodr seats them on that ground | all | 0 off (Munich 679, London 598, Frankfurt 276, Stelvio 2 objects; before: Munich 141 of 679 more than 0.3 m off, worst 8.2 m) | none more than 0.3 m off |
 | named | max grade of named streets on structures OSM does not tag as bridges | london | Adam Street 4 %, Lancaster Place 10 % | ≤ 10 % each |
 
 The 99th-percentile Stelvio edge tail (3.2 m) is not limited: it is road 22's hairpin legs, which overlap in plan at
@@ -54,7 +55,8 @@ different heights; a 2-D ground cannot hold both.
   - a plain road banked at 0.2 rad;
   - three roads at 30 %;
   - London bridges 3 m above their deck;
-  - Adam Street at 30 %.
+  - Adam Street at 30 %;
+  - London trees 2 m under the ground.
 
   Each one fails its check.
 

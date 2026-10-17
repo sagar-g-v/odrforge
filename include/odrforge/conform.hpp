@@ -22,4 +22,18 @@ struct ConformOptions {
 /// lane outside bridges and tunnels, and cut / fill slopes from the road edges to the terrain. Same frame and datum.
 TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt = {});
 
+struct SeatReport {
+  int seated = 0;         ///< objects whose zOffset now puts their base on the ground
+  int onBridges = 0;      ///< left on their deck (the ground under a bridge is not where they stand)
+  double maxLift = 0.0;   ///< largest zOffset set upward (m): above a tunnel, beside a cutting
+  double maxDrop = 0.0;   ///< largest zOffset set downward (m): beside an embankment
+};
+
+/// Objects standing on the ground beside or above a road - trees, poles / street lamps (OpenDRIVE 1.8.0 §13.14 point
+/// objects without outline or repeat) - get the zOffset that puts their base on `conformed` (the ground conformed to
+/// the roads, as published): XSD 1.8.1 t_road_objects_object @zOffset is the "z-offset of object's origin relative to
+/// the elevation of the road reference line", so zOffset = ground(x, y) - elevation(s). An object on a road above a
+/// tunnel stands on the surface over it; one on a bridge stretch keeps its height (the deck).
+SeatReport seatObjects(odr::OpenDrive &od, const TerrainGrid &conformed);
+
 }  // namespace odrforge
