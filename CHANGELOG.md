@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Terrain contract `pits`: junction roads with a driving lane only** (terrain_contract.py, user decision): the check is
+  for covered junctions without a tunnel record; a corner sidewalk round a lay-by cut into a hillside (Stelvio road 245,
+  3.1 m under the 30 m GLO-30 ground, after the street-side parking areas) is no such junction. Limit stays 0; removing
+  the scope fails the self-test on the clean Stelvio output.
 - **Street-side parking areas as parking lanes** (parking.cpp, OpenDRIVE 1.8.0 §11.7.1 / §11.3): OSM
   `amenity=parking` + `parking=street_side|lane|layby` areas become a parking lane over the stretch they lie beside,
   measured every 1 m from the fitted reference line (carriageway edge to the area's outer edge; a road-level border strip

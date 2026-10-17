@@ -78,10 +78,11 @@ def sink_conformed(f):  # the conformed ground 0.5 m under the roads
         h.write((grid[3] - 0.5).astype("<f4").tobytes())
 
 
-def dig_pit(f):  # the conformed ground 3 m deeper over 6 m around the middle of one open junction road
+def dig_pit(f, driving=True):  # the conformed ground 3 m deeper over 6 m around the middle of one open junction road
     od = C.G.OpenDrive(f["standard"])
     roads = od.roads.values() if isinstance(od.roads, dict) else od.roads
-    r = next(r for r in roads if r.el.get("junction") != "-1" and r.length > 4.0 and not C.structures(r))
+    r = next(r for r in roads if r.el.get("junction") != "-1" and r.length > 4.0 and not C.structures(r)
+             and C.carries_driving(r) == driving)
     x, y = r.point(np.array([r.length / 2]), 0.0)
     x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
     ox, oy, cell, z = C.read_grid(f["conformed"])
@@ -172,6 +173,8 @@ check(planted("stelvio", "superelev", bank), "superelev: a road banked at 0.2 ra
 check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than the contract allows is caught")
 check(planted("stelvio", "buried", sink_road), "buried: a road 3 m under the ground is caught")
 check(planted("stelvio", "pits", dig_pit), "pits: a 3 m pit in the conformed ground at a junction road is caught")
+# scope (driving junction roads only): the clean Stelvio output passes although corner sidewalk 245 lies 3.1 m deep - the
+# "passes on the outputs as they are" condition of planted() fails if the scope is lost
 check(planted("stelvio", "cliffs", cliff), "cliffs: one more short road at 80 % is caught")
 if have.get("london"):
     check(planted("london", "objects", sink_trees), "objects: trees 2 m under the ground are caught")

@@ -23,7 +23,7 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                plain road and the conformed ground trenched it; elevation.cpp coveredUnderpasses)
   objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
                (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
-  pits         no junction road outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
+  pits         no junction road carrying a driving lane outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
                ground (Frankfurt's underground car park: connecting roads without tunnel records dug 723 pit points into
                the published ground; elevation.cpp junctionsUnderCover)
   cliffs       roads of 0.1 m and more with a grade over 50 % between samples 0.25 m apart: short stubs the steep check's
@@ -248,11 +248,13 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                 if not math.isnan(v):
                     objects.append(float(r.z(np.array([s]))[0]) + float(o.get("zOffset", 0.0)) - v)
     # pits: junction-road points (2 m steps on the reference line) outside tunnel / bridge records where the conformed
-    # ground lies more than PIT_DEPTH under the raw ground - a junction under cover without a tunnel record
+    # ground lies more than PIT_DEPTH under the raw ground - a junction under cover without a tunnel record. Only roads
+    # carrying a driving lane: a corner sidewalk round a lay-by cut into a hillside the terrain model cannot resolve (Stelvio
+    # road 245, GLO-30) is not a covered junction (user decision 2026-10-18)
     pits = []
     if c and g:
         for r in roads:
-            if r.el.get("junction") == "-1" or r.length < 0.5:
+            if r.el.get("junction") == "-1" or r.length < 0.5 or not carries_driving(r):
                 continue
             sts = structures(r)
             for s in np.arange(0.25, r.length, 2.0):
@@ -286,6 +288,15 @@ def files(area, d, out=None):
     return dict(osm=os.path.join(DATA, "data", "testareas", area + ".osm"), ground=p(f"{area}_ground.odrz"),
                 decks=decks if os.path.exists(decks) else None, carla=o(f"{area}.xodr"),
                 standard=o(f"{area}_standard.xodr"), conformed=o(f"{area}_ground_conformed.odrz"))
+
+
+DRIVING = {"driving", "entry", "exit", "onRamp", "offRamp", "connectingRamp", "bidirectional", "slipLane", "bus", "taxi",
+           "HOV", "mwyEntry", "mwyExit"}
+
+
+def carries_driving(r):
+    """does road r have a lane motor vehicles drive on in any of its sections?"""
+    return any(l.type in DRIVING for sec in r.sections for l in sec.lanes())
 
 
 def stale(f, exe=EXE):
