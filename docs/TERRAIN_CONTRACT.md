@@ -33,7 +33,7 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 | superelev | plain roads more than 30 m from their ends: the terrain cross slope is capped at 8 % (elevation.cpp), atan = 0.0798 rad, plus cubic overshoot | all | max 0.0822 | ≤ 0.085 rad |
 | | everywhere: junction planes are capped at a 15 % gradient (elevation.cpp), and road ends bank into them | all | max 0.1489 = atan(15 %) | ≤ atan(15 %) + 2 mrad |
 | steep | roads with a grade over 20 % at a 5 m step (the validator's `quality.max_grade`) | munich | 2 | ≤ 2 |
-| | | london | 5 (9 before the street decks) | ≤ 5 |
+| | | london | 4 (9 before the street decks, 5 before the local grade guard) | ≤ 4 |
 | | | frankfurt_kreuz | 7 | ≤ 7 |
 | | | stelvio | 1 (12 on GLO-30 alone) | ≤ 1 |
 | objects | trees and street lamps off bridge stretches: base = elevation(s) + zOffset (XSD 1.8.1 @zOffset) vs the conformed ground under them; osm2xodr seats them on that ground | all | 0 off (Munich 679, London 598, Frankfurt 276, Stelvio 2 objects; before: Munich 141 of 679 more than 0.3 m off, worst 8.2 m) | none more than 0.3 m off |

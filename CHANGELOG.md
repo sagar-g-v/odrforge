@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Re-fit guards the local grade over unmeasured stretches** (elevation.cpp fitRoadElevation): besides the ~10 m chord
+  the grade guard checks neighbouring samples (~2 m) where at least one is not a terrain measurement, so a level step at
+  a junction is spread along a bridge / tunnel / unmeasured stretch instead of pressed into its first metres (Frankfurt
+  service bridge 108: chord 0.175, local 0.6). Between measured samples the terrain decides (guarding there pulled real
+  ramps off the ground). Steep roads LA 11 -> 9, London 5 -> 4; exact checkers unchanged; contract London steep <= 4.
+  Jev 0.70 (doubt: no unit test - a synthetic case did not reproduce the step), committed by the user's decision.
 - **Junctions under cover** (elevation.cpp `junctionsUnderCover`, OpenDRIVE 1.8.0 §13.11): a connecting road between
   tunnel ends gets a tunnel record over its length; one at a portal (a single end in a tunnel) over the part 2 m or more
   under the terrain, at most 20 m. An arm's tunnel counts from its OSM range too (a stub shorter than 1 m has no

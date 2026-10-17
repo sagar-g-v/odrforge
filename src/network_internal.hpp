@@ -82,6 +82,7 @@ struct RoadMeta {
   std::vector<double> zGround; ///< terrain mode: the measured ground at the carriageway centre per sample (NaN: none)
   std::optional<double> fixedTrimStart, fixedTrimEnd;  ///< set by the gore stage: not re-trimmed
   std::vector<double> zy, zw, ztc;  ///< observed centre heights (NaN: none), robust weights, carriageway centre t
+  std::vector<char> zMeasured;      ///< per sample: a terrain measurement (not a guess between / beyond measurements)
   double zLambda = 0.0;             ///< Whittaker smoothing weight used for the profile
   double obs0 = 1e9, obs1 = 1e9;    ///< distance from the start / end to the nearest observed sample
   std::string highway;

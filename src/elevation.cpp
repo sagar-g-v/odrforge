@@ -993,6 +993,8 @@ void Builder::sampleElevation() {
     }
     // kept for the re-fit against the junction surfaces (fitRoadElevation)
     m.zy = y, m.zw = w, m.ztc = P[mi].tc, m.zLambda = lambda;
+    m.zMeasured.assign(n, 0);
+    for (size_t i = 0; i < n; ++i) m.zMeasured[i] = w0[i] > 0.0;
     for (size_t i = 0; i < n; ++i)
       if (w0[i] > 0) {
         m.obs0 = std::min(m.obs0, m.zs[i]);
@@ -1298,7 +1300,21 @@ void Builder::fitRoadElevation() {
         const double gMax = std::max(opt.maxGrade, maxGrade(m.zz));
         double lambda = m.zLambda;
         z = whittaker(y, w, lambda);
-        for (int it = 0; it < 6 && maxGrade(z) > gMax; ++it) {
+        // the local grade (neighbouring samples, ~2 m) too, where the profile is a guess: a level step pressed into one
+        // 10 m window of unmeasured samples passes the window average and still breaks the validator's 20 %
+        // (quality.max_grade, 5 m steps of the derivative) - Frankfurt service bridge 108 below a junction raised
+        // 1.8 m by its neighbours' measured decks. Between two measured samples the terrain decides (a steep ramp
+        // stays steep: guarding there pulled Munich road 305 0.5 m off its measured ground)
+        const bool measuredMask = m.zMeasured.size() == static_cast<size_t>(n);
+        auto localGrade = [&](const std::vector<double> &v) {
+          double g = 0;
+          for (int i = 1; i < n; ++i)
+            if (!measuredMask || !(m.zMeasured[i] && m.zMeasured[i - 1]))
+              g = std::max(g, std::abs(v[i] - v[i - 1]) / std::max(1e-9, m.zs[i] - m.zs[i - 1]));
+          return g;
+        };
+        const double gLocal = std::max(opt.maxGrade, localGrade(m.zz));
+        for (int it = 0; it < 8 && (maxGrade(z) > gMax || localGrade(z) > gLocal); ++it) {
           lambda *= 4.0;
           z = whittaker(y, w, lambda);
         }

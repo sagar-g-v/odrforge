@@ -62,7 +62,7 @@ PIT_DEPTH = 2.0  # m: conformed ground this far under the raw ground on a juncti
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
 CONTRACT = {
     "munich": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], steep=2),
-    "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), decks_near=0.98, steep=5,
+    "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), decks_near=0.98, steep=4,
                    named={"Adam Street": 0.10, "Lancaster Place": 0.10}),
     # Frankfurter Kreuz: decks as a share - a surface model sees the top structure only (the ICE viaduct over road
     # bridges) and narrow service bridges drawn a few metres off their deck sample the ground beside it
