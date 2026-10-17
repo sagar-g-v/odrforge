@@ -482,6 +482,35 @@ TEST_CASE("junction: a side road ending inside the junction gets no connection t
   CHECK(fromStreet >= 2);
 }
 
+TEST_CASE("junction: lanes going straight on into a wider road stay side by side, no lane skipped") {
+  // Junction Guideline §6: lanes continue in order. Two lanes going straight on into three were spread over all
+  // three and fed the outer two, leaving the middle lane with no feeder while it lies between fed lanes (the LLM
+  // review's "lane skip": Munich junction 5, roads 602 -> 440)
+  for (const char *country : {"US", "GB"}) {
+    OsmB b;
+    const OsmId c = b.node(0, 0);
+    b.way({b.node(-200, 0), b.node(-100, 0), c}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "2"}});
+    b.way({c, b.node(100, 0), b.node(200, 0)}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "3"}});
+    b.way({c, b.node(0, -100), b.node(0, -200)}, {{"highway", "residential"}});
+    BuildOptions o = opts();
+    o.country = CountryProfile::load(country);
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    const odr::Road *in = roadNear(od, -50, 0), *out = roadNear(od, 50, 0);
+    CHECK(in && out);
+    if (!in || !out) continue;
+    std::set<int> fed;  // outgoing lanes reached from the incoming road's driving lanes
+    for (const auto &r : od.roads) {
+      if (r.junction == "-1" || !r.predecessor || !r.successor || r.predecessor->elementId != in->id || r.successor->elementId != out->id)
+        continue;
+      for (const auto *side : {&r.lanes.back().left, &r.lanes.back().right})
+        for (const odr::Lane &l : *side)
+          if (l.type == "driving" && l.link.successor) fed.insert(*l.link.successor);
+    }
+    CHECK(fed.size() == 2);
+    if (fed.size() == 2) CHECK(std::abs(std::abs(*fed.begin()) - std::abs(*fed.rbegin())) == 1);  // adjacent lanes
+  }
+}
+
 TEST_CASE("junction: a single lane going straight on continues in the lane it lines up with") {
   // a one-lane oneway becomes a three-lane oneway at a side street; both ways are centred on the OSM
   // line, so the lane continues in the middle lane (the added lanes begin on either side of it)

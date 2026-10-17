@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Lanes going straight on stay side by side** (network_junctions.cpp buildJunctions, Junction Guideline §6): fewer
+  lanes than the road ahead were spread over all its lanes, leaving a middle lane with no feeder (the LLM review's
+  "lane skip"). Straight lanes, lane splits and the no-path fallback now place a movement's lanes as one block (where
+  the first lines up, else its own side). Skipped outgoing lanes LA 124 -> 7, Munich 26 -> 2, London 10 -> 0, Frankfurt
+  4 -> 1, Tokyo 15 -> 3; lanes starting with no predecessor LA 214 -> 133; fewer connecting roads (LA -144); no exact
+  checker worse. Unit test (US / GB) with a mutation. Jev 0.80.
 - **Gate publishes atomically** (gate.py, terrain_contract.py): a run converts and measures in build/tmp/inspect/gate_stage
   and moves every output (carla file, HTML view, standard file, conformed ground) into place only at its end, followed
   by the build records - the review folder never holds a half-published build (a real run: nothing published changed

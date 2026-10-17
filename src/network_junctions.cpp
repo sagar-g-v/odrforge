@@ -877,6 +877,23 @@ void Builder::buildJunctions() {
             const double d = std::min(10.0, r.length());
             return r.planView.eval(e.atEnd ? r.length() - d : d).pos();
           };
+          // a single lane going straight on across a short gap (less than a taper: no room to move
+          // over) continues in the outgoing lane its centre lies in - the lanes added beside it begin
+          // there, on whichever side; otherwise (a wide junction, ends that do not face each other)
+          // the lanes keep their order
+          auto lineUp = [&](int li, int fallback) {
+            const odr::Road &ro0 = od.roads[metas[tg.end->road].roadIndex];
+            const double s0 = tg.end->atEnd ? ro0.length() : 0.0;
+            const Pose p0 = ro0.planView.eval(s0);
+            Pose a;
+            if (!odr::laneCenter(ri, sIn, li, a) || (a.pos() - p0.pos()).norm() > opt.taperLength) return fallback;
+            const double t = Vec2(-std::sin(p0.hdg), std::cos(p0.hdg)).dot(a.pos() - p0.pos());
+            for (int o = 0; o < nOut; ++o) {
+              double ta, tb;
+              if (odr::laneBorders(ro0, s0, tg.lanes[o], ta, tb) && t > std::min(ta, tb) && t < std::max(ta, tb)) return o;
+            }
+            return fallback;
+          };
           // lane split: one road continuing straight on as several roads - its lanes are divided
           // left to right in the order the roads leave (no crossing connecting lanes)
           std::vector<const Target *> straight;
@@ -901,8 +918,14 @@ void Builder::buildJunctions() {
               if (q >= c && q < c + nOut) mine.push_back(src[k]);
             }
             if (mine.empty()) mine.push_back(src[std::clamp(static_cast<int>((c + 0.5 * nOut) * ns / total), 0, ns - 1)]);
-            for (int k = 0; k < static_cast<int>(mine.size()); ++k)
-              pairs.push_back({byLeft[mine[k]], tg.lanes[prop(k, static_cast<int>(mine.size()), nOut)]});
+            // fewer lanes than the road takes stay side by side (spread, two lanes into three skipped the middle one:
+            // Munich junction 5, road 602 -> 440): from the outgoing lane the first of them lines up with, else the left
+            // road of the split keeps them on its left, the right road on its right, a road between centres them
+            const int nm = static_cast<int>(mine.size());
+            const int side = straight.front() == &tg ? 0 : straight.back() == &tg ? nOut - nm : (nOut - nm) / 2;
+            const int start = nm >= nOut ? 0 : std::clamp(lineUp(byLeft[mine[0]], side), 0, nOut - nm);
+            for (int k = 0; k < nm; ++k)
+              pairs.push_back({byLeft[mine[k]], tg.lanes[nm >= nOut ? prop(k, nm, nOut) : start + k]});
             partitioned = true;
           }
           // lane merge: several roads continuing straight on into one - each takes the outgoing
@@ -940,29 +963,20 @@ void Builder::buildJunctions() {
             }
           }
           const int ns = partitioned ? 0 : static_cast<int>(src.size());
-          // a single lane going straight on across a short gap (less than a taper: no room to move
-          // over) continues in the outgoing lane its centre lies in - the lanes added beside it begin
-          // there, on whichever side; otherwise (a wide junction, ends that do not face each other)
-          // the lanes keep their order
-          auto lineUp = [&](int li, int fallback) {
-            const odr::Road &ro0 = od.roads[metas[tg.end->road].roadIndex];
-            const double s0 = tg.end->atEnd ? ro0.length() : 0.0;
-            const Pose p0 = ro0.planView.eval(s0);
-            Pose a;
-            if (!odr::laneCenter(ri, sIn, li, a) || (a.pos() - p0.pos()).norm() > opt.taperLength) return fallback;
-            const double t = Vec2(-std::sin(p0.hdg), std::cos(p0.hdg)).dot(a.pos() - p0.pos());
-            for (int o = 0; o < nOut; ++o) {
-              double ta, tb;
-              if (odr::laneBorders(ro0, s0, tg.lanes[o], ta, tb) && t > std::min(ta, tb) && t < std::max(ta, tb)) return o;
-            }
-            return fallback;
-          };
+          // several lanes straight on into a road with more lanes stay side by side: spread over all of them, two lanes
+          // into three took the outer two and left the middle lane without a feeder (Junction Guideline §6: lanes
+          // continue in order; the LLM review's "lane skip", e.g. Munich junction 5, roads 602 -> 440). The block
+          // starts at the outgoing lane the leftmost one lines up with, else on the inner side (the lanes added
+          // beside it begin there); with more lanes than room they merge, spread over all outgoing lanes
+          const int inner = LHT ? std::max(0, nOut - ns) : 0;
+          const int block = ns >= 2 && ns < nOut ? std::clamp(lineUp(byLeft[src[0]], inner), 0, nOut - ns) : 0;
           for (int k = 0; k < ns; ++k) {
             int o;
             if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
             else if (tg.turn == Turn::Left) o = k;                    // align on the left
-            else o = ns == 1 ? lineUp(byLeft[src[k]], std::min(nOut - 1, src[k] * nOut / std::max(1, nIn)))
-                             : static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
+            else if (ns == 1) o = lineUp(byLeft[src[k]], std::min(nOut - 1, src[k] * nOut / std::max(1, nIn)));
+            else if (ns < nOut) o = block + k;
+            else o = static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
             o = std::clamp(o, 0, nOut - 1);
             pairs.push_back({byLeft[src[k]], tg.lanes[o]});
           }
@@ -972,6 +986,7 @@ void Builder::buildJunctions() {
       // has a path through it. A lane left without one (its tagged turn has no road to take, or a
       // lane split gave it none) takes the target on its own side of the approach: lanes ordered
       // from the driver's left meet the targets ordered from the left by turn angle.
+      std::map<size_t, std::vector<int>> orphans;  // target -> its lanes without a path (left to right)
       for (int i = 0; i < nIn; ++i) {
         const bool hasPath = std::any_of(pairsOf.begin(), pairsOf.end(), [&](const auto &ps) {
           return std::any_of(ps.begin(), ps.end(), [&](const auto &p) { return p.first == byLeft[i]; });
@@ -985,13 +1000,18 @@ void Builder::buildJunctions() {
         std::sort(candidates.begin(), candidates.end(),
                   [&](size_t a, size_t b) { return targets[a].angle > targets[b].angle; });
         const double side = nIn > 1 ? i / double(nIn - 1) : 0.5;  // 0 = leftmost lane
-        const size_t pick = candidates[static_cast<size_t>(std::lround(side * (candidates.size() - 1)))];
+        orphans[candidates[static_cast<size_t>(std::lround(side * (candidates.size() - 1)))]].push_back(i);
+      }
+      // the lanes that fall back to one target stay side by side, placed where the first of them lies on its approach
+      // (each placed alone, two right-turn lanes into a road the junction counts as straight on took its outer lanes:
+      // Munich junction 37, road 404 -> 405)
+      for (const auto &[pick, idx] : orphans) {
         const Target &tg = targets[pick];
-        const int nOut = static_cast<int>(tg.lanes.size());
-        const int o = tg.turn == Turn::Left    ? 0
-                      : tg.turn == Turn::Right ? nOut - 1
-                                               : std::min(nOut - 1, static_cast<int>(std::lround(side * (nOut - 1))));
-        pairsOf[pick].push_back({byLeft[i], tg.lanes[o]});
+        const int nOut = static_cast<int>(tg.lanes.size()), n = static_cast<int>(idx.size());
+        const double side0 = nIn > 1 ? idx.front() / double(nIn - 1) : 0.5;
+        const int room = std::max(0, nOut - n);
+        const int start = tg.turn == Turn::Left ? 0 : tg.turn == Turn::Right ? room : static_cast<int>(std::lround(side0 * room));
+        for (int k = 0; k < n; ++k) pairsOf[pick].push_back({byLeft[idx[k]], tg.lanes[std::min(nOut - 1, start + k)]});
       }
       for (size_t ti = 0; ti < targets.size(); ++ti) {
         const Target &tg = targets[ti];
