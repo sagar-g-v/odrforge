@@ -87,7 +87,16 @@ int main(int argc, char **argv) {
   }
   try {
     const auto t0 = std::chrono::steady_clock::now();
+    // ODRFORGE_VERBOSE: the time of each phase outside the network build too (the build prints its own stages)
+    const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
+    auto mark = t0;
+    auto phase = [&](const char *name) {
+      const auto now = std::chrono::steady_clock::now();
+      if (verbose) std::fprintf(stderr, "[odrforge] phase %-21s %8.0f ms\n", name, std::chrono::duration<double, std::milli>(now - mark).count());
+      mark = now;
+    };
     const OsmData osm = OsmData::readXml(in);
+    phase("read OSM");
     if (lat0 > 1e8) lat0 = 0.5 * (osm.minLat + osm.maxLat), lon0 = 0.5 * (osm.minLon + osm.maxLon);
     const Projection proj(lat0, lon0);
     opt.country = CountryProfile::load(country);
@@ -107,8 +116,10 @@ int main(int argc, char **argv) {
       opt.terrain = &terrain;
       opt.verticalDatum = !terrain.ground.datum.empty() ? terrain.ground.datum : terrain.structures.datum;
     }
+    phase("load terrain");
     BuildReport rep;
     odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
+    phase("build network");
     if (!groundOutPath.empty() && terrain.ground.empty()) {
       std::fprintf(stderr, "--ground-out needs --terrain\n");
       return 2;
@@ -122,6 +133,7 @@ int main(int argc, char **argv) {
       std::printf("  objects on the ground: %d seated (up to %.2f m up, %.2f m down), %d left on bridge decks\n", seat.seated,
                   seat.maxLift, seat.maxDrop, seat.onBridges);
     }
+    phase("conform ground, objects");
     odr::WriteOptions wo;
     wo.revMinor = opt.target.revMinor;
     odr::write(od, out, wo);
@@ -129,13 +141,16 @@ int main(int argc, char **argv) {
       conformed.save(groundOutPath);
       std::printf("  conformed ground: %s\n", groundOutPath.c_str());
     }
+    phase("write");
     const ValidationReport vr = validate(od, opt.target);
+    phase("validate");
     if (!vizPath.empty()) {
       VizOptions vo;
       vo.title = opt.name;
       vo.validation = &vr;
       vo.basemapDir = basemapDir;
       writeVizHtml(od, vizPath, vo);
+      phase("HTML view");
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("osm2xodr %s: %s -> %s in %.2f s\n", ODRFORGE_VERSION, in.c_str(), out.c_str(), secs);
