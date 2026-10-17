@@ -1479,15 +1479,50 @@ void Builder::coveredUnderpasses() {
   // (real runs: mean 5.38 .. 7.10 m; simulated 1 m DEM noise on the 30 at-grade stretches: false underpasses in 2 of
   // 6000 trials with it, 149 without; build/tmp/underpass_variants.py)
   constexpr double kRunMeanDepth = 3.0;
+  // m: a tunnel record grows at most this far past each end of its OSM way - ways end "a few metres short" (largest
+  // measured: London's Strand Underpass, 11.2 m); a longer deep stretch beyond is a cutting the DEM does not resolve
+  constexpr double kMaxTunnelExtension = 20.0;
   auto within = [](const std::vector<std::pair<double, double>> &rg, double a, double b) {
     for (const auto &[p, q] : rg)
       if (a >= p - 1e-6 && b <= q + 1e-6) return true;
     return false;
   };
   for (RoadMeta &m : metas) {
-    if (m.roadIndex < 0 || m.covered.empty() || m.zGround.size() != m.zs.size()) continue;
+    if (m.roadIndex < 0 || m.zGround.size() != m.zs.size()) continue;
     odr::Road &r = od.roads[m.roadIndex];
+    if (m.covered.empty() && r.tunnels.empty()) continue;
     const double len = r.length();
+    const double half = 0.5 * len / std::max<size_t>(1, m.zs.size() - 1);  // half the sample spacing
+    auto deepAt = [&](size_t i) {
+      return !std::isnan(m.zGround[i]) && m.zGround[i] - odr::elevationAt(r, m.zs[i]) >= kUnderpassDepth;
+    };
+    // tunnel ends: an OSM tunnel way often ends short of the portal (see "bridge / tunnel ways often end a few metres
+    // short" in sampleElevation's crossings): where the road keeps running kUnderpassDepth or more under the measured
+    // terrain beyond a tunnel record, the record is extended over those samples, up to the next tunnel (OpenDRIVE 1.8.0
+    // §13.11: "the part of the road that is the tunnel"). London's Strand Underpass ran 3.8-4.3 m under the street for
+    // 12 m past its tunnel way, so the conformed ground trenched down to it there
+    std::vector<size_t> order(r.tunnels.size());  // in s order (records of a reversed chain come in reverse); the
+    for (size_t k = 0; k < order.size(); ++k) order[k] = k;  // written order stays as it is
+    std::sort(order.begin(), order.end(), [&](size_t x, size_t y) { return r.tunnels[x].s < r.tunnels[y].s; });
+    for (size_t k = 0; k < order.size(); ++k) {
+      odr::Structure &st = r.tunnels[order[k]];
+      const double a0 = st.s, b0 = st.s + st.length;
+      double a = a0, b = b0;
+      for (size_t i = 0; i < m.zs.size(); ++i)
+        if (m.zs[i] > b + 1e-6) {
+          if (m.zs[i] - b > 2.0 * half + 1e-6 || !deepAt(i)) break;
+          b = std::min({len, m.zs[i] + half, b0 + kMaxTunnelExtension});
+        }
+      for (size_t i = m.zs.size(); i-- > 0;)
+        if (m.zs[i] < a - 1e-6) {
+          if (a - m.zs[i] > 2.0 * half + 1e-6 || !deepAt(i)) break;
+          a = std::max({0.0, m.zs[i] - half, a0 - kMaxTunnelExtension});
+        }
+      if (k + 1 < order.size()) b = std::min(b, r.tunnels[order[k + 1]].s);
+      if (k > 0) a = std::max(a, r.tunnels[order[k - 1]].s + r.tunnels[order[k - 1]].length);
+      st.s = a, st.length = b - a;
+    }
+    if (m.covered.empty()) continue;
     // the terrain noise under this road: robust spread (1.4826 MAD) of the raw ground at its carriageway centre around
     // its profile, outside covered / tunnel / bridge stretches (the road's own observations are outlier-filtered and
     // hide the noise). A run must lie deeper on average than kUnderpassDepth + 3 sigma, so a noisy model does not invent
@@ -1523,7 +1558,6 @@ void Builder::coveredUnderpasses() {
       if (!runs.empty() && sa <= runs.back().second + 1e-6) runs.back().second = std::max(runs.back().second, sb);
       else runs.push_back({sa, sb});
     }
-    const double half = 0.5 * len / std::max<size_t>(1, m.zs.size() - 1);  // half the sample spacing
     bool added = false;
     for (const auto &[sa, sb] : runs) {
       // deep runs: consecutive samples at least kUnderpassDepth under the terrain, each reaching half a spacing past

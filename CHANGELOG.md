@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Tunnel records reach the portal** (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11): an OSM tunnel way
+  often ends short of the portal; a tunnel record is extended over the samples that continue 2 m or more under the
+  measured terrain past its ends, at most 20 m per end, up to the neighbouring tunnel. London's Strand Underpass +11.2 m
+  (it ran 4 m under the street past its tunnel way and the conformed ground trenched it), Frankfurt / LA 1.2-2.7 m;
+  exact checkers unchanged. Unit test with mutations. Jev 0.83.
 - **Covered roads under the terrain are underpasses** (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11
   `<tunnel type="underpass">`): the parts of a covered=yes stretch whose road lies 2 m or more under the measured
   terrain are written as underpasses (deep runs closer than 10 m joined; runs shorter than 5 m, or less deep on average

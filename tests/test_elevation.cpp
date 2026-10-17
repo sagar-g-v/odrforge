@@ -1059,6 +1059,45 @@ TEST_CASE("terrain: a covered stretch below the terrain is an underpass, one at 
   }
 }
 
+TEST_CASE("terrain: a tunnel record reaches where the road comes out of the ground, past a short OSM tunnel way") {
+  // OpenDRIVE 1.8.0 §13.11: the tunnel is "the part of the road that is the tunnel". London's Strand Underpass ran
+  // 3.8-4.3 m under the street for 12 m past its OSM tunnel way, and the conformed ground trenched down to it. Here the
+  // tunnel way spans x -12 .. 12 under a 6 m plateau that reaches x 20: the road cannot climb the plateau (the grade
+  // guard), stays under it, and the tunnel record is extended to the plateau's edge - at most 20 m past the way's end
+  auto tunnelSpan = [](double plateauEnd) -> std::optional<std::pair<double, double>> {
+    OsmB b;
+    const OsmId w0 = b.node(-200, 0), w1 = b.node(-12, 0), e1 = b.node(12, 0), e0 = b.node(200, 0);
+    b.way({w0, w1}, {{"highway", "primary"}});
+    b.way({w1, e1}, {{"highway", "primary"}, {"tunnel", "yes"}, {"layer", "-1"}});
+    b.way({e1, e0}, {{"highway", "primary"}});
+    Terrain t;
+    t.ground = makeGrid(-250, -60, 1.0, 501, 121, 1, [plateauEnd](int, double x, double) {
+      return static_cast<float>(x >= -12.0 && x <= plateauEnd ? 306.0 : 300.0);
+    });
+    BuildOptions o = baseOptions();
+    o.terrain = &t;
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    for (const auto &r : od.roads)
+      if (r.junction == "-1" && r.tunnels.size() == 1) {
+        const odr::Structure &tn = r.tunnels[0];
+        const double xa = r.planView.eval(tn.s).pos().x, xb = r.planView.eval(tn.s + tn.length).pos().x;
+        return std::make_pair(std::min(xa, xb), std::max(xa, xb));
+      }
+    return std::nullopt;
+  };
+  const auto span = tunnelSpan(20.0);
+  CHECK(span.has_value());
+  if (span) {
+    CHECK_NEAR(span->first, -12.0, 2.5);  // the west end: the plateau starts where the tunnel way does
+    CHECK_NEAR(span->second, 20.0, 2.5);  // the east end: extended from x 12 to the plateau's edge
+  }
+  // a plateau to x 34: the road stays under it for ~23 m past the way (35 without the cap), more than ways end short:
+  // the record stops 20 m past the way's end
+  const auto capped = tunnelSpan(34.0);
+  CHECK(capped.has_value());
+  if (capped) CHECK(capped->second <= 12.0 + 20.0 + 0.5);
+}
+
 TEST_CASE("terrain: the conformed ground carries the road and meets the terrain along cut / fill slopes") {
   // a 7 m road across a 40 % hillside of a coarse model: under the lanes the conformed ground is the road surface, beside
   // them a 1:1.5 slope from the road edge down to (fill) or up to (cut) the terrain, beyond 20 m the terrain itself
