@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Run times with their UTC offset** (metrics.py, gate.py): provenance records and gate history times carry the
+  offset (2026-10-17T13:27:14+09:00), so a viewer in another zone reads the same instant; the gate diffs each run
+  against the latest earlier run by the time in the history name (offset-aware), not by name order. Self-test with
+  mutations. Jev 0.80.
 - **Build provenance next to every output** (gate.py, metrics.py): <file>.xodr.metrics.json (schema 1: run, commit,
   osm2xodr build time, folder, file, sha256 / size / mtime of the exact bytes, that file's metrics), so a viewer shows
   numbers only for the build it loaded; snapshots carry each file's identity and the real folder. Jev 0.82.

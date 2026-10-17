@@ -51,6 +51,19 @@ raw = open(os.path.join(rec["folder"], rec["file"]), "rb").read()
 check(rec["schema"] == 1 and rec["sha256"] == hashlib.sha256(raw).hexdigest() and rec["bytes"] == len(raw),
       "the page record identifies the file by its exact bytes")
 check(rec["metrics"] is a["files"]["t.standard.xodr"], "the page record carries that file's metrics")
+import datetime  # noqa: E402
+check(all(datetime.datetime.fromisoformat(x).utcoffset() is not None for x in (rec["mtime"], a["time"])),
+      "record times carry their UTC offset")
+
+hist = tempfile.mkdtemp()  # the previous run is the latest run time in the names, not name order nor file times
+# 13:58:56+09:00 = 04:58:56Z < 05:00:00Z; the offset-less (local) name is a day earlier in any zone; file times reversed
+for name, t in (("2026-10-17T135856+0900_x_a.json", 3000.0), ("2026-10-17T050000Z_x_a.json", 1000.0),
+                ("2026-10-16T000000_x_a.json", 2000.0), ("2026-10-18T000000Z_x_b.json", 500.0)):
+    open(os.path.join(hist, name), "w").write("{}")
+    os.utime(os.path.join(hist, name), (t, t))
+check(os.path.basename(M.latest(hist, "_a.json") or "") == "2026-10-17T050000Z_x_a.json",
+      "the previous run is the latest run time with its UTC offset, not the name order or file time")
+check(M.latest(hist, "_c.json") is None, "no previous run for an area set never run")
 
 lines, n = M.diff(a, snap(xodr(0.10)))
 check(n == 0, "an unchanged file: no metric changed")

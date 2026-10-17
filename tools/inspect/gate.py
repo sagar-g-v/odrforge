@@ -286,7 +286,7 @@ def main():
                     snap["files"][f]["terrain:decks_within_0.5m"] = round(near, 4)
     os.makedirs(METRICS, exist_ok=True)
     stamp = snap["time"].replace(":", "")
-    previous = sorted(f for f in os.listdir(METRICS) if f.endswith("_" + "-".join(sorted(areas)) + ".json"))
+    previous = metrics.latest(METRICS, "_" + "-".join(sorted(areas)) + ".json")  # before this run's file is written
     path = os.path.join(METRICS, f"{stamp}_{snap['commit'].replace('+', '_')}_{'-'.join(sorted(areas))}.json")
     json.dump(snap, open(path, "w", encoding="utf-8"), indent=1)
     res["metrics"] = path
@@ -295,7 +295,7 @@ def main():
         page = os.path.join(ident["folder"], name)
         json.dump(metrics.page_record(snap, name), open(page + ".metrics.json", "w", encoding="utf-8"), indent=1)
     if previous:
-        lines, n = metrics.diff(json.load(open(os.path.join(METRICS, previous[-1]), encoding="utf-8")), snap)
+        lines, n = metrics.diff(json.load(open(previous, encoding="utf-8")), snap)
         res["metrics_vs_previous_run"] = lines
     if a.baseline:
         base = json.load(open(BASELINE)) if os.path.exists(BASELINE) and set(areas) != set(AREAS) else {}

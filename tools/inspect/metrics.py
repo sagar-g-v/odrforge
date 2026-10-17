@@ -25,6 +25,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -153,7 +154,38 @@ def identity(path):
     data = open(path, "rb").read()
     return {"folder": os.path.dirname(os.path.abspath(path)), "file": os.path.basename(path),
             "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
-            "mtime": datetime.datetime.fromtimestamp(os.path.getmtime(path)).isoformat(timespec="seconds")}
+            "mtime": stamp(os.path.getmtime(path))}
+
+
+def run_time(path):
+    """POSIX time of a history file's run, from its name (gate.py: <time without ':'>_<commit>_<areas>.json, the time
+    with its UTC offset - '+0900' or 'Z' - or, in older names, without one: local time); the modification time when the
+    name has none. Name order alone misorders local times across a zone change; modification times change on a copy"""
+    m = re.match(r"(\d{4}-\d{2}-\d{2}T\d{6})(Z|[+-]\d{4})?_", os.path.basename(path))
+    if not m:
+        return os.path.getmtime(path)
+    t = datetime.datetime.strptime(m.group(1), "%Y-%m-%dT%H%M%S")
+    if m.group(2) == "Z":
+        t = t.replace(tzinfo=datetime.timezone.utc)
+    elif m.group(2):
+        sign = 1 if m.group(2)[0] == "+" else -1
+        off = datetime.timedelta(hours=int(m.group(2)[1:3]), minutes=int(m.group(2)[3:5]))
+        t = t.replace(tzinfo=datetime.timezone(sign * off))
+    return t.timestamp()  # naive: read as local time
+
+
+def latest(folder, suffix):
+    """path of the most recent run's file in folder ending with suffix (run_time); None when there is none"""
+    if not os.path.isdir(folder):
+        return None
+    paths = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(suffix)]
+    return max(paths, key=run_time) if paths else None
+
+
+def stamp(t=None):
+    """ISO 8601 local time with its UTC offset (a viewer in another zone reads the same instant)"""
+    d = datetime.datetime.now() if t is None else datetime.datetime.fromtimestamp(t)
+    return d.astimezone().isoformat(timespec="seconds")
 
 
 def snapshot(folder, label="", paths=None):
@@ -171,9 +203,8 @@ def snapshot(folder, label="", paths=None):
         ident[os.path.basename(path)] = identity(path)
     exe = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
     folders = {i["folder"] for i in ident.values()}
-    return {"label": label, "time": datetime.datetime.now().isoformat(timespec="seconds"), "commit": git_commit(),
-            "osm2xodr_built": datetime.datetime.fromtimestamp(os.path.getmtime(exe)).isoformat(timespec="seconds")
-            if os.path.exists(exe) else None,
+    return {"label": label, "time": stamp(), "commit": git_commit(),
+            "osm2xodr_built": stamp(os.path.getmtime(exe)) if os.path.exists(exe) else None,
             "folder": os.path.abspath(folder) if folder else (folders.pop() if len(folders) == 1 else None),
             "files": files, "identity": ident}
 
