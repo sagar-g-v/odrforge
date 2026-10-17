@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Junctions under cover** (elevation.cpp `junctionsUnderCover`, OpenDRIVE 1.8.0 §13.11): a connecting road between
+  tunnel ends gets a tunnel record over its length; one at a portal (a single end in a tunnel) over the part 2 m or more
+  under the terrain, at most 20 m. An arm's tunnel counts from its OSM range too (a stub shorter than 1 m has no
+  record). Frankfurt's underground car park no longer digs pits into the conformed ground: junction-road pit points
+  Frankfurt 723 -> 0, London 31 -> 0, Munich 2 -> 0; tunnel records on connecting roads in every area with tunnels;
+  exact checkers unchanged. New contract check `pits` (limit 0) with a planted defect. Unit test with a mutation.
 - **Terrain contract check `buried`** (terrain_contract.py, docs/TERRAIN_CONTRACT.md): no plain road more than 2 m
   under the raw ground over 10 m outside bridges / tunnels (samples under a bridge road neither count nor end a run),
   limit 0 in every terrain area. Caught all five Frankfurt covered stretches before their underpasses and the Strand

@@ -23,7 +23,10 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                plain road and the conformed ground trenched it; elevation.cpp coveredUnderpasses)
   objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
                (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
-  named        named roads with their own limit (London: Adam Street on the Adelphi terrace)
+  pits         no junction road outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
+               ground (Frankfurt's underground car park: connecting roads without tunnel records dug 723 pit points into
+               the published ground; elevation.cpp junctionsUnderCover)
+  named       named roads with their own limit (London: Adam Street on the Adelphi terrace)
 Exit 0 when every limit holds, 1 otherwise.
 """
 import argparse
@@ -54,6 +57,7 @@ BURIED_DEPTH = 2.0  # m
 # m: catches all five Frankfurt covered stretches before their underpasses were written (20 m caught two); samples
 # under a bridge road neither count nor end a run
 BURIED_RUN = 10.0
+PIT_DEPTH = 2.0  # m: conformed ground this far under the raw ground on a junction road outside tunnels / bridges
 
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
 CONTRACT = {
@@ -224,7 +228,23 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                 v = c(float(np.ravel(x)[0]), float(np.ravel(y)[0]))
                 if not math.isnan(v):
                     objects.append(float(r.z(np.array([s]))[0]) + float(o.get("zOffset", 0.0)) - v)
-    return dict(centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
+    # pits: junction-road points (2 m steps on the reference line) outside tunnel / bridge records where the conformed
+    # ground lies more than PIT_DEPTH under the raw ground - a junction under cover without a tunnel record
+    pits = []
+    if c and g:
+        for r in roads:
+            if r.el.get("junction") == "-1" or r.length < 0.5:
+                continue
+            sts = structures(r)
+            for s in np.arange(0.25, r.length, 2.0):
+                if on_structure(sts, s):
+                    continue
+                x, y = r.point(np.array([s]), 0.0)
+                x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+                vg, vc = g(x, y), c(x, y)
+                if not (math.isnan(vg) or math.isnan(vc)) and vc < vg - PIT_DEPTH and r.id not in pits:
+                    pits.append(r.id)
+    return dict(pits=sorted(pits, key=lambda x: int(x) if x.isdigit() else 0),centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
                 objects=dict(n=len(objects), off=int(np.sum(np.abs(np.asarray(objects)) > OBJECT_TOL)) if objects else 0,
                              worst=float(np.max(np.abs(objects))) if objects else 0.0),
                 decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
@@ -272,6 +292,9 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             if m["objects"]["off"]:
                 problems.append(f"{tag} objects: {m['objects']['off']} of {m['objects']['n']} trees / street lamps more than "
                                 f"{OBJECT_TOL} m off the ground (worst {m['objects']['worst']:.2f} m)")
+            if m["pits"]:
+                problems.append(f"{tag} pits: the conformed ground lies more than {PIT_DEPTH} m under the raw ground on "
+                                f"{len(m['pits'])} junction roads outside tunnels / bridges ({', '.join(m['pits'][:8])})")
         if lim.get("decks"):
             q, v = lim["decks"]
             if not m["decks"][q] <= v:

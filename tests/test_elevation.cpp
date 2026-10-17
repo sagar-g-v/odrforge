@@ -1059,6 +1059,36 @@ TEST_CASE("terrain: a covered stretch below the terrain is an underpass, one at 
   }
 }
 
+TEST_CASE("terrain: a junction inside a tunnel is under cover, the ground over it stays the terrain") {
+  // Frankfurt's underground car park: tunnel=yes aisles meet in junctions 7-12 m under the ground; their connecting
+  // roads had no tunnel record and the conformed ground dug a pit down to them. Three tunnel ways meet under a 10 m hill:
+  // every connecting road gets a tunnel record over its whole length, and the conformed ground over the junction is the
+  // terrain (OpenDRIVE 1.8.0 §13.11)
+  OsmB b;
+  const OsmId c = b.node(0, 0);
+  for (const Vec2 &d : {Vec2{1, 0}, Vec2{-1, 0}, Vec2{0, 1}}) {
+    b.way({b.node(d.x * 150.0, d.y * 150.0), b.node(d.x * 60.0, d.y * 60.0)}, {{"highway", "service"}});
+    b.way({b.node(d.x * 60.0, d.y * 60.0), c}, {{"highway", "service"}, {"tunnel", "yes"}, {"layer", "-1"}});
+  }
+  Terrain t;
+  t.ground = makeGrid(-200, -200, 1.0, 401, 401, 1, [](int, double x, double y) {
+    return static_cast<float>(300.0 + 10.0 * std::exp(-(x * x + y * y) / (2.0 * 40.0 * 40.0)));
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  int connecting = 0, covered = 0;
+  for (const auto &r : od.roads)
+    if (r.junction != "-1" && !r.lanes.empty() && r.length() > 0.5) {
+      ++connecting;
+      covered += !r.tunnels.empty() && r.tunnels[0].s <= 0.01 && r.tunnels[0].length >= r.length() - 0.01;
+    }
+  CHECK(connecting > 0);
+  CHECK(covered == connecting);
+  const TerrainGrid g = conformGround(od, t.ground);
+  CHECK_NEAR(g.sample(0, 0), t.ground_at(0, 0), 0.01);  // no pit over the junction
+}
+
 TEST_CASE("terrain: a tunnel record reaches where the road comes out of the ground, past a short OSM tunnel way") {
   // OpenDRIVE 1.8.0 §13.11: the tunnel is "the part of the road that is the tunnel". London's Strand Underpass ran
   // 3.8-4.3 m under the street for 12 m past its OSM tunnel way, and the conformed ground trenched down to it. Here the

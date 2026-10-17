@@ -1592,5 +1592,75 @@ void Builder::coveredUnderpasses() {
   }
 }
 
+void Builder::junctionsUnderCover() {
+  // A junction inside a tunnel or an underpass: Frankfurt's underground car park P15, whose ramps and aisles are mapped
+  // tunnel=yes, meets in junctions 7-12 m under the ground. Its connecting roads carry no OSM tag of their own, so they
+  // got no tunnel record, and the conformed ground (conform.cpp leaves only bridges and tunnels out) dug a pit down to
+  // them at every garage junction. A connecting road whose both ends lie inside tunnels of the roads it links is under
+  // the same cover: it gets a tunnel record over its whole length. One with a single end in a tunnel (a junction at a
+  // portal, Munich road 2373) gets one from that end over the stretch 2 m or more under the measured terrain, at most
+  // 20 m - the coveredUnderpasses depth limit and tunnel-end cap. OpenDRIVE 1.8.0 §13.11; objects, tunnels among them,
+  // are allowed on every road, connecting roads included (XSD 1.8.1 t_road / t_road_objects)
+  constexpr double kDeep = 2.0, kMaxPartial = 20.0, kStep = 1.0;  // m
+  std::map<std::string, size_t> index;
+  for (size_t i = 0; i < od.roads.size(); ++i) index[od.roads[i].id] = i;
+  std::map<int, const RoadMeta *> metaOf;
+  for (const RoadMeta &m : metas)
+    if (m.roadIndex >= 0) metaOf[m.roadIndex] = &m;
+  auto coveredEnd = [&](const std::optional<odr::LinkTarget> &l) {
+    if (!l || l->elementType != "road") return false;
+    const auto it = index.find(l->elementId);
+    if (it == index.end()) return false;
+    const odr::Road &arm = od.roads[it->second];
+    const double s = l->contactPoint == "end" ? arm.length() : 0.0;
+    for (const odr::Structure &t : arm.tunnels)
+      if (s >= t.s - 0.5 && s <= t.s + t.length + 0.5) return true;
+    // a stub's tunnel shorter than 1 m gets no record (buildRoads), its OSM range still covers it (Frankfurt road 244)
+    const auto mi = metaOf.find(static_cast<int>(it->second));
+    if (mi != metaOf.end()) {
+      const double sf = mi->second->trimStart + s;
+      for (const auto &[a, b] : mi->second->tunnels)
+        if (sf >= a - 0.5 && sf <= b + 0.5) return true;
+    }
+    return false;
+  };
+  auto deep = [&](const odr::Road &c, double s) {
+    const Vec2 p = c.planView.eval(s).pos();
+    const double g = opt.terrain->ground_at(p.x, p.y);
+    return !std::isnan(g) && g - odr::elevationAt(c, s) >= kDeep;
+  };
+  struct Cover {
+    odr::Road *road;
+    double s0, s1;
+  };
+  std::vector<Cover> covers;  // decided first, written after: a new record must not decide a neighbour
+  for (odr::Road &c : od.roads) {
+    if (c.junction == "-1" || !c.tunnels.empty() || c.length() <= 0.0) continue;
+    const bool atStart = coveredEnd(c.predecessor), atEnd = coveredEnd(c.successor);
+    const double L = c.length();
+    if (atStart && atEnd) {
+      covers.push_back({&c, 0.0, L});
+      continue;
+    }
+    if (!(atStart || atEnd) || !opt.terrain || opt.terrain->ground.empty()) continue;
+    double reach = 0.0;
+    for (double d = 0.0; d <= std::min(L, kMaxPartial) + 1e-9; d += kStep) {
+      if (!deep(c, atStart ? d : L - d)) break;
+      reach = std::min({L, d + 0.5 * kStep, kMaxPartial});
+    }
+    if (reach >= 0.5) covers.push_back(atStart ? Cover{&c, 0.0, reach} : Cover{&c, L - reach, L});
+  }
+  for (const Cover &cv : covers) {
+    odr::Structure st;
+    st.id = std::to_string(nextObjectId++);
+    st.name = "tunnel";
+    st.type = "standard";
+    st.s = cv.s0;
+    st.length = cv.s1 - cv.s0;
+    cv.road->tunnels.push_back(st);
+  }
+  rep.junctionRoadsUnderCover = static_cast<int>(covers.size());
+}
+
 }  // namespace detail
 }  // namespace odrforge

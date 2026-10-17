@@ -233,6 +233,7 @@ struct Builder {
   void junctionSurfaces();
   void fitRoadElevation();
   void coveredUnderpasses();  // elevation.cpp: covered stretches below the terrain as <tunnel type="underpass">
+  void junctionsUnderCover();  // elevation.cpp: connecting roads between tunnel ends get a tunnel record
   void connectingElevation(odr::Road &c, const Cluster &cl,
                            std::optional<std::pair<double, double>> flatEnds = std::nullopt) const;
   double planeZ(const Cluster &c, const Vec2 &p) const;

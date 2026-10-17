@@ -1208,6 +1208,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("lowered curbs", &detail::Builder::lowerCurbsAtCrosswalks);
   stage("junction boundaries", &detail::Builder::junctionBoundaries);  // helper roads first: the grid covers them
   stage("junction grids", &detail::Builder::junctionGrids);
+  stage("junctions under cover", &detail::Builder::junctionsUnderCover);  // every junction road exists now
   stage("barriers", &detail::Builder::roadBarriers);  // on the final lanes (curbs, lowered curbs)
   stage("finish", &detail::Builder::finish);
   if (verbose)

@@ -78,6 +78,22 @@ def sink_conformed(f):  # the conformed ground 0.5 m under the roads
         h.write((grid[3] - 0.5).astype("<f4").tobytes())
 
 
+def dig_pit(f):  # the conformed ground 3 m deeper over 6 m around the middle of one open junction road
+    od = C.G.OpenDrive(f["standard"])
+    roads = od.roads.values() if isinstance(od.roads, dict) else od.roads
+    r = next(r for r in roads if r.el.get("junction") != "-1" and r.length > 4.0 and not C.structures(r))
+    x, y = r.point(np.array([r.length / 2]), 0.0)
+    x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+    ox, oy, cell, z = C.read_grid(f["conformed"])
+    i, j = int(round((x - ox) / cell)), int(round((y - oy) / cell))
+    k = int(round(3.0 / cell))
+    z[0, max(0, j - k):j + k + 1, max(0, i - k):i + k + 1] -= 3.0
+    with open(f["conformed"], "r+b") as h:
+        magic = h.read(8)
+        h.seek(8 + 32 + (4 if magic == b"ODRZGRD2" else 0) + 32)
+        h.write(z.astype("<f4").tobytes())
+
+
 def bank(f):  # one plain road banked at 0.2 rad (11 deg) along its middle
     def fn(root):
         r = plain(root)[0]
@@ -147,6 +163,7 @@ check(planted("stelvio", "centre", lift_all), "centre: roads lifted 1 m off the 
 check(planted("stelvio", "superelev", bank), "superelev: a road banked at 0.2 rad is caught")
 check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than the contract allows is caught")
 check(planted("stelvio", "buried", sink_road), "buried: a road 3 m under the ground is caught")
+check(planted("stelvio", "pits", dig_pit), "pits: a 3 m pit in the conformed ground at a junction road is caught")
 if have.get("london"):
     check(planted("london", "objects", sink_trees), "objects: trees 2 m under the ground are caught")
     check(planted("london", "decks", float_bridge), "decks: bridges 3 m above their measured deck are caught")
