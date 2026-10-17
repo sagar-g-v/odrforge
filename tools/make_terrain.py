@@ -128,14 +128,19 @@ def on_top(tags):
     return tags.get("tunnel", "no") == "no" and tags.get("covered", "no") == "no" and layer >= 0
 
 
-def raised_smooth(dsm, ground, cell, above=2.5, rough=0.3):
-    """cells where the surface model stands more than `above` m over the bare earth and is smooth (standard deviation
-    under `rough` m over 2.5 m): a deck or terrace surface; tree crowns are rough"""
+def smooth(dsm, cell, rough=0.3):
+    """cells where the surface model is smooth: standard deviation under `rough` m over 2.5 m. A deck or terrace
+    surface is smooth; tree crowns, vehicles and the edge of a building or structure are not"""
     from scipy.ndimage import uniform_filter
     k = max(3, int(round(2.5 / cell)) | 1)
     d0 = np.nan_to_num(dsm)
     sd = np.sqrt(np.maximum(uniform_filter(d0 * d0, k) - uniform_filter(d0, k) ** 2, 0.0))
-    return (dsm - ground > above) & (sd < rough)
+    return sd < rough
+
+
+def raised_smooth(dsm, ground, cell, above=2.5, rough=0.3):
+    """cells where the surface model stands more than `above` m over the bare earth and is smooth: a deck or terrace"""
+    return (dsm - ground > above) & smooth(dsm, cell, rough)
 
 
 def bin_mean(ix, iy, z, nx, ny):
@@ -317,7 +322,11 @@ def main():
         # surface is the smooth DSM along its centre line. The elevation solver (elevation.cpp 2.) takes such a
         # deck only where it continues the road better than the ground (vehicles, roofs over the road: jumps)
         street_deck = near_ways(streets, 3.0) & raised_smooth(dsm, ground, a.cell)
-        deck = np.where((near_ways(bridges, 10.0) & (dsm - ground > 2.5)) | street_deck, dsm, np.nan)
+        # near an OSM bridge the deck must be smooth too: the 10 m buffer also reaches buildings and structure edges
+        # beside the bridge (Frankfurt, junction 64 at the airport station: a "deck" falling 3.4 m within 1.3 m put
+        # bridges 96 / 183 on a building edge and made the 2 m stubs between their junctions climb 5-6 m)
+        bridge_deck = near_ways(bridges, 10.0) & raised_smooth(dsm, ground, a.cell)
+        deck = np.where(bridge_deck | street_deck, dsm, np.nan)
         decks = deck[None] if decks is None else np.concatenate([decks, deck[None]])
         print(f"surface model: {len(bridges)} OSM road bridges, {np.mean(~np.isnan(deck)) * 100:.2f} % deck cells "
               f"({np.mean(street_deck) * 100:.2f} % on streets not mapped as bridges)")

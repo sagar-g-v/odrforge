@@ -66,7 +66,7 @@ CONTRACT = {
                    named={"Adam Street": 0.10, "Lancaster Place": 0.10}),
     # Frankfurter Kreuz: decks as a share - a surface model sees the top structure only (the ICE viaduct over road
     # bridges) and narrow service bridges drawn a few metres off their deck sample the ground beside it
-    "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.85, steep=7),
+    "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.92, steep=4),
     "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1),
 }
 

@@ -5,6 +5,12 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Bridge deck cells need a smooth surface** (make_terrain.py): within 10 m of an OSM bridge the surface model counts as
+  a deck only where it is smooth (std < 0.3 m over 2.5 m), as along streets already - the buffer also reached structure
+  edges (Frankfurt junction 64: falling cells pulled junction 15 7 m down; 2 m stubs climbed 5-6 m). Frankfurt (grid
+  regenerated, street-deck rule applied for the first time): steep roads 7 -> 4, decks within 0.5 m 86.7 -> 92.9 %, decks
+  p95 6.0 -> 1.2 m, no cliffs; bridges 96 / 183 on their measured deck, bridge 108 level. London identical. Contract
+  Frankfurt steep <= 4, decks >= 92 %. New ctest make_terrain_selftest with a mutation. Jev 0.85.
 - **Re-fit guards the local grade over unmeasured stretches** (elevation.cpp fitRoadElevation): besides the ~10 m chord
   the grade guard checks neighbouring samples (~2 m) where at least one is not a terrain measurement, so a level step at
   a junction is spread along a bridge / tunnel / unmeasured stretch instead of pressed into its first metres (Frankfurt
