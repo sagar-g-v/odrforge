@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Terrain contract check `buried`** (terrain_contract.py, docs/TERRAIN_CONTRACT.md): no plain road more than 2 m
+  under the raw ground over 10 m outside bridges / tunnels (samples under a bridge road neither count nor end a run),
+  limit 0 in every terrain area. Caught all five Frankfurt covered stretches before their underpasses and the Strand
+  Underpass end (fixed first). Two planted defects. Jev 0.43, committed by the user's decision.
 - **Tunnel records reach the portal** (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11): an OSM tunnel way
   often ends short of the portal; a tunnel record is extended over the samples that continue 2 m or more under the
   measured terrain past its ends, at most 20 m per end, up to the neighbouring tunnel. London's Strand Underpass +11.2 m

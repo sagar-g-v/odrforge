@@ -26,7 +26,7 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 | | | stelvio | p95 0.132 | p95 ≤ 0.20 |
 | centre | reference line vs the raw ground grid, plain roads outside bridges / tunnels | munich | p50 0.005, p95 0.045 | p50 ≤ 0.05, p95 ≤ 0.40 |
 | | | london | p50 0.008, p95 0.077 | p50 ≤ 0.05, p95 ≤ 0.40 |
-| | | frankfurt_kreuz | p50 0.005, p95 0.044 | p50 ≤ 0.05, p95 ≤ 0.40 |
+| | | frankfurt_kreuz | p50 0.005, p95 0.039 (0.044 before its covered underpasses were left out) | p50 ≤ 0.05, p95 ≤ 0.40 |
 | | | stelvio | p50 0.025, p95 0.160 | p50 ≤ 0.05, p95 ≤ 0.25 |
 | decks | bridge roads vs the measured deck where the deck grid has a value under them and no other road passes more than 2 m above within 4 m (a surface model sees the top deck only) | london | p95 0.144 (Waterloo Bridge 13.5–15.0 m), 100 % within 0.5 m | p95 ≤ 0.30, ≥ 98 % within 0.5 m |
 | | the share of those samples within 0.5 m of the deck: a structure above a road bridge that is not a road (the ICE viaduct) and narrow bridges drawn beside their deck make a quantile meaningless there | frankfurt_kreuz | 86.7 % within 0.5 m | ≥ 85 % |
@@ -37,6 +37,7 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 | | | frankfurt_kreuz | 7 | ≤ 7 |
 | | | stelvio | 1 (12 on GLO-30 alone) | ≤ 1 |
 | objects | trees and street lamps off bridge stretches: base = elevation(s) + zOffset (XSD 1.8.1 @zOffset) vs the conformed ground under them; osm2xodr seats them on that ground | all | 0 off (Munich 679, London 598, Frankfurt 276, Stelvio 2 objects; before: Munich 141 of 679 more than 0.3 m off, worst 8.2 m) | none more than 0.3 m off |
+| buried | plain roads more than 2 m under the raw ground over 10 m or more, outside bridges / tunnels; samples under a bridge road (more than 2 m above within 4 m: the raw grid there may hold the deck, Frankfurt roads 57 and 276 under bridges 34 and 58) neither count nor end a run. The conformed ground trenches such a road. The parts of covered=yes stretches that deep are written as underpasses (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11). Measured over every covered stretch of Munich, London, Frankfurt and LA (36): at grade never more than 0.81 m deep at any sample, under a deck or hill a median of 5.54 m or more, so any limit between makes the same decisions. A 10 m run catches all five Frankfurt stretches before their underpasses (a 20 m run caught two) | all | 0 (before: Frankfurt 5 - roads 35, 136, 154, 224, 431 - and London 1, the Strand Underpass running 3.8-4.3 m under the street for 12 m past its OSM tunnel way; tunnel records are now extended over such ends, elevation.cpp `coveredUnderpasses`) | 0 |
 | named | max grade of named streets on structures OSM does not tag as bridges | london | Adam Street 4 %, Lancaster Place 10 % | ≤ 10 % each |
 
 The 99th-percentile Stelvio edge tail (3.2 m) is not limited: it is road 22's hairpin legs, which overlap in plan at
@@ -56,7 +57,9 @@ different heights; a 2-D ground cannot hold both.
   - three roads at 30 %;
   - London bridges 3 m above their deck;
   - Adam Street at 30 %;
-  - London trees 2 m under the ground.
+  - London trees 2 m under the ground;
+  - a Stelvio road 3 m under the ground;
+  - Frankfurt's underpasses removed (the covered stretches as plain roads again).
 
   Each one fails its check.
 

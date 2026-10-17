@@ -18,6 +18,9 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                cross slope at 8 %, atan = 0.0798, plus the cubic records' overshoot); everywhere <= atan(15 %) + 2 mrad
                (junction planes are capped at a 15 % gradient, elevation.cpp step 4, and road ends bank into them)
   steep        roads with a grade over 20 % at a 5 m step (exactly the validator's quality.max_grade warning)
+  buried       plain roads more than 2 m under the raw ground over 10 m outside bridges / tunnels and not under a
+               bridge (Frankfurt: the Hugo-Eckener-Ring under the terminal forecourt, covered=yes, ran 7 m under it as a
+               plain road and the conformed ground trenched it; elevation.cpp coveredUnderpasses)
   objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
                (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
   named        named roads with their own limit (London: Adam Street on the Adelphi terrace)
@@ -44,6 +47,13 @@ SE_PLAIN = 0.085            # plain-road interior: atan(8 %) = 0.0798 + cubic ov
 SE_ALL = math.atan(0.15) + 2e-3  # junction-plane cap (measured max 0.1489 = atan(15 %))
 OBJECT_TOL = 0.3  # m: a tree / street lamp base vs the conformed ground under it (off bridge stretches)
 SE_END = 30.0               # m: a plain road's end blend into its junction plane (opt.junctionBlend) lies within
+# buried: a plain road more than BURIED_DEPTH under the raw ground outside bridges / tunnels, and not under a bridge,
+# over BURIED_RUN or more (elevation.cpp coveredUnderpasses writes covered stretches that deep as underpasses;
+# the conformed ground trenches whatever stays a plain road)
+BURIED_DEPTH = 2.0  # m
+# m: catches all five Frankfurt covered stretches before their underpasses were written (20 m caught two); samples
+# under a bridge road neither count nor end a run
+BURIED_RUN = 10.0
 
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
 CONTRACT = {
@@ -121,17 +131,20 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
     centre, edges, deck = [], [], []
     tops = {}  # 5 m cells -> centre-line samples (x, y, z) of every road, for "another road passes over"
     for r in roads:
+        sts = structures(r)
         for s in np.arange(0.0, r.length, 2.0):
             x, y = r.point(np.array([s]), 0.0)
             x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
-            tops.setdefault((int(x // 5), int(y // 5)), []).append((x, y, float(r.z(np.array([s]))[0]), r.id))
+            tops.setdefault((int(x // 5), int(y // 5)), []).append(
+                (x, y, float(r.z(np.array([s]))[0]), r.id, on_structure(sts, s, "bridge")))
 
-    def covered(x, y, z, rid):
+    def covered(x, y, z, rid, bridges_only=False):
+        """another road (on a bridge stretch: bridges_only) passes more than 2 m above (x, y, z) within 4 m"""
         cx, cy = int(x // 5), int(y // 5)
-        return any(q[3] != rid and q[2] > z + 2.0 and math.hypot(q[0] - x, q[1] - y) < 4.0
+        return any(q[3] != rid and q[2] > z + 2.0 and (q[4] or not bridges_only) and math.hypot(q[0] - x, q[1] - y) < 4.0
                    for dx in (-1, 0, 1) for dy in (-1, 0, 1) for q in tops.get((cx + dx, cy + dy), ()))
     se_plain = se_all = 0.0
-    steep, named_grade = [], {n: 0.0 for n in named}
+    steep, named_grade, buried = [], {n: 0.0 for n in named}, []
     for r in roads:
         if r.length < 0.5:
             continue
@@ -155,6 +168,7 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
             named_grade[name] = max(named_grade[name], float(grade.max()))
         if r.el.get("junction") != "-1":
             continue
+        run = 0.0  # buried: consecutive 2 m samples outside structures more than BURIED_DEPTH under the raw ground
         for s in np.arange(1.0, r.length - 1.0, 2.0):
             z0 = float(r.z(np.array([s]))[0])
             x, y = r.point(np.array([s]), 0.0)
@@ -166,11 +180,21 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                     deck.append(min((z0 - v for v in lv), key=abs))
                 continue
             if on_structure(sts, s):
+                run = 0.0
                 continue
             if g:
                 v = g(x, y)
                 if not math.isnan(v):
                     centre.append(z0 - v)
+                # under a bridge is not evidence either way: the raw grid there may hold the deck (Frankfurt roads 57,
+                # 276 under bridges 34, 58), so such a sample neither counts nor ends a run - a buried stretch that
+                # passes partly under a bridge is still caught. A plain road above does not excuse it (Hugo-Eckener-Ring
+                # under the forecourt roads)
+                deep = not math.isnan(v) and z0 - v < -BURIED_DEPTH
+                if not (deep and covered(x, y, z0, r.id, bridges_only=True)):
+                    run = run + 2.0 if deep else 0.0
+                if run >= BURIED_RUN and r.id not in buried:
+                    buried.append(r.id)
             if c:
                 b = r.borders_at(s)
                 lanes = [v for k, v in b.items() if k]
@@ -205,7 +229,7 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                              worst=float(np.max(np.abs(objects))) if objects else 0.0),
                 decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
                 superelev=dict(plain=se_plain, all=se_all), steep=sorted(steep, key=lambda x: int(x) if x.isdigit() else 0),
-                named=named_grade)
+                buried=sorted(buried, key=lambda x: int(x) if x.isdigit() else 0), named=named_grade)
 
 
 def files(area, d):
@@ -259,6 +283,10 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             problems.append(f"{tag} superelev: plain roads {m['superelev']['plain']:.4f} rad > {SE_PLAIN} (8 % cap)")
         if m["superelev"]["all"] > SE_ALL:
             problems.append(f"{tag} superelev: {m['superelev']['all']:.4f} rad > atan(15 %) (junction-plane cap)")
+        if len(m["buried"]) > lim.get("buried", 0):
+            problems.append(f"{tag} buried: {len(m['buried'])} plain roads more than {BURIED_DEPTH} m under the ground over "
+                            f"{BURIED_RUN:.0f} m outside bridges / tunnels and not under a bridge > {lim.get('buried', 0)} "
+                            f"({', '.join(m['buried'][:8])})")
         if lim.get("steep") is not None and len(m["steep"]) > lim["steep"]:
             problems.append(f"{tag} steep: {len(m['steep'])} roads over 20 % > {lim['steep']} ({', '.join(m['steep'][:8])})")
         for name, v in lim.get("named", {}).items():
@@ -282,7 +310,8 @@ def main():
         for prof, mm in m.items():
             print(f"  {prof}: centre p50/p95 {mm['centre'][50]:.3f}/{mm['centre'][95]:.3f}, conformed p95/p99 "
                   f"{mm['conformed'][95]:.3f}/{mm['conformed'][99]:.3f}, decks p95 {mm['decks'][95]:.3f} (n {mm['n']['decks']}), "
-                  f"superelev plain/all {mm['superelev']['plain']:.4f}/{mm['superelev']['all']:.4f}, steep {len(mm['steep'])}, named {mm['named']}")
+                  f"superelev plain/all {mm['superelev']['plain']:.4f}/{mm['superelev']['all']:.4f}, steep {len(mm['steep'])}, "
+                  f"buried {len(mm['buried'])}, named {mm['named']}")
     for p in allp:
         print("FAIL", p)
     if a.json:

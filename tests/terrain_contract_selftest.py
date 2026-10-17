@@ -116,6 +116,21 @@ def sink_trees(f):  # every tree 2 m under the ground (zOffset as if the road's 
     edit_xodr(f["standard"], fn)
 
 
+def sink_road(f):  # one plain road 3 m under the ground over its whole length
+    def fn(root):
+        for e in plain(root)[0].find("elevationProfile").findall("elevation"):
+            e.set("a", str(float(e.get("a")) - 3.0))
+    edit_xodr(f["standard"], fn)
+
+
+def drop_underpasses(f):  # covered stretches written as plain roads again (before elevation.cpp coveredUnderpasses)
+    def fn(root):
+        for o in root.iter("objects"):
+            for t in [t for t in o.findall("tunnel") if t.get("type") == "underpass"]:
+                o.remove(t)
+    edit_xodr(f["standard"], fn)
+
+
 def stale_ground(f):  # the ground grid rebuilt after the outputs (London road 389)
     later = time.time() + 60
     os.utime(f["ground"], (later, later))
@@ -131,6 +146,7 @@ check(planted("stelvio", "conformed", sink_conformed), "conformed: a conformed g
 check(planted("stelvio", "centre", lift_all), "centre: roads lifted 1 m off the ground are caught")
 check(planted("stelvio", "superelev", bank), "superelev: a road banked at 0.2 rad is caught")
 check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than the contract allows is caught")
+check(planted("stelvio", "buried", sink_road), "buried: a road 3 m under the ground is caught")
 if have.get("london"):
     check(planted("london", "objects", sink_trees), "objects: trees 2 m under the ground are caught")
     check(planted("london", "decks", float_bridge), "decks: bridges 3 m above their measured deck are caught")
@@ -139,5 +155,6 @@ else:
     print("london outputs missing: decks / named not checked")
 if have.get("frankfurt_kreuz"):  # its deck check is a share of samples within 0.5 m (a surface model sees top decks only)
     check(planted("frankfurt_kreuz", "decks", float_bridge), "decks share: Frankfurt bridges 3 m above their deck are caught")
+    check(planted("frankfurt_kreuz", "buried", drop_underpasses), "buried: Frankfurt covered stretches without underpass are caught")
 print("terrain contract self-test:", "FAILED" if failures else "ok")
 sys.exit(1 if failures else 0)
