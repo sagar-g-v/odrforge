@@ -77,8 +77,9 @@ try:
 except SystemExit:
     pass
 
-# 5. a coarser DEM filling past a finer one's border is shifted onto it: no step at the border, the median
-#    difference far from it (make_terrain.shifted_fill)
+# 5. a coarser DEM filling past a finer one's border is shifted onto it: no step at the border; far from it the
+#    median difference where that is a consistent offset (another datum), else the fill's own heights
+#    (make_terrain.shifted_fill)
 try:
     import numpy as np
     import scipy  # noqa: F401
@@ -86,10 +87,21 @@ try:
     x = np.arange(400.0)[None, :].repeat(50, axis=0)
     fine = np.where(x < 200, 100.0 + 0.1 * x + np.where(x > 150, 0.02 * (x - 150), 0.0), np.nan)  # 3.98 m apart at x 199
     coarse = 97.0 + 0.1 * x  # another datum: 3 m lower
-    filled = np.where(np.isnan(fine), T.shifted_fill(fine, coarse, 100.0), fine)
+    moved, onto = T.shifted_fill(fine, coarse, 100.0)
+    filled = np.where(np.isnan(fine), moved, fine)
+    check(onto, "a consistent offset moves the fill onto the finer source's datum")
     check(abs(filled[25, 200] - filled[25, 199] - 0.1) < 0.05, "no step where the fill takes over")
-    check(abs(filled[25, 399] - (coarse[25, 399] + 3.0)) < 0.05, "far from the border: shifted by the median difference")
+    check(abs(filled[25, 399] - (coarse[25, 399] + 3.0)) < 0.05, "far from the border: shifted by a consistent offset")
     check(np.all(np.abs(np.diff(filled[25])) < 0.2), "the faded shift keeps the slope continuous")
+    # same datum, a coarse model scattered round the fine one (median +1, IQR ~2.7: no consistent offset - Stelvio:
+    # median +1.26, IQR 2.34): far from the border the fill keeps its own heights, the border still has no step
+    scatter = 1.0 + 2.0 * np.sin(0.03 * x) * np.cos(0.13 * np.arange(50.0)[:, None])  # smooth: no step of its own
+    coarse2 = 100.0 + 0.1 * x - scatter
+    moved2, onto2 = T.shifted_fill(fine, coarse2, 100.0)
+    filled2 = np.where(np.isnan(fine), moved2, fine)
+    check(not onto2, "same datum, scattered: the fill keeps its own datum")
+    check(abs(filled2[25, 399] - coarse2[25, 399]) < 0.05, "same datum, scattered: far from the border the fill as it is")
+    check(abs(filled2[25, 200] - filled2[25, 199] - 0.1) < 0.1, "same datum, scattered: no step at the border")
 except ImportError:
     print("numpy / scipy / pyproj missing: the DEM fill not checked")
 

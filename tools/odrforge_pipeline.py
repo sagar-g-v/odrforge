@@ -313,27 +313,29 @@ def stage_osm(name, a, cfg):
 
 
 def stage_source(name, a, cfg, layer):
-    """local raster files of the ground / decks layer, finest first, and the main source (None, None when there is
-    none). With auto, a source whose data ends inside the bbox (a regional model at its border) is completed by the
-    next coarser one; make_terrain.py fills the gap with it, shifted onto the finer data"""
+    """local raster files of the ground / decks layer, finest first, the main source and each file's vertical datum
+    (None, None, None when there is none). With auto, a source whose data ends inside the bbox (a regional model at its
+    border) is completed by the next coarser one; make_terrain.py fills the gap with it"""
     p = pick(layer, a[layer], a["bbox"])
     if p is None:
-        return None, None
+        return None, None, None
     if isinstance(p, str):
-        return [p], a.get("datum", "")
-    files, q = [], p
+        return [p], a.get("datum", ""), [a.get("datum", "")]
+    files, datums, q = [], [], p
     while q is not None:
         folder = os.path.join(cfg["paths"]["data"], "dem", f"{name}_{layer}_{q['name']}")
         print(f"  {layer}: {q['name']} - {q['note']} ({q['res']:g} m, {q['datum']})")
         if not fetch(plan_downloads(q, a["bbox"], a["margin"], folder), cfg, f"{layer} ({q['name']})"):
             break
-        files += [gsi_mosaic(folder)] if q["kind"] == "gsi" else raster_files(folder)
+        got = [gsi_mosaic(folder)] if q["kind"] == "gsi" else raster_files(folder)
+        files += got
+        datums += [q["datum"]] * len(got)
         if a[layer] != "auto" or (share := coverage(files, a["bbox"])) >= 0.995:
             break
         q = next_provider(q, a["bbox"])
         print(f"  {layer}: data on {share * 100:.0f} % of the bbox; the rest from "
               f"{q['name'] if q else 'nowhere (no other source)'}")
-    return (files, p) if files else (None, None)
+    return (files, p, datums) if files else (None, None, None)
 
 
 def stage_terrain(name, a, cfg, osm_path, ground, decks):
@@ -350,8 +352,8 @@ def stage_terrain(name, a, cfg, osm_path, ground, decks):
     s, w, n, e = a["bbox"]
     cmd = [cfg["paths"]["python"], "-I", os.path.join(HERE, "make_terrain.py"), "--origin", f"{a['origin'][0]},{a['origin'][1]}",
            "--bounds", f"{s},{w},{n},{e}", "--ground", gfile, "--cell", str(cell), "--margin", str(a["margin"]), "--datum", datum]
-    for f in ground[0]:
-        cmd += ["--dem", f]
+    for f, dt in zip(ground[0], ground[2]):  # each file with its datum: the grid's label says which its heights are in
+        cmd += ["--dem", f, "--dem-datum", dt]
     if decks[0]:
         for f in decks[0]:
             cmd += ["--dsm", f]
@@ -417,8 +419,8 @@ def main():
                     print(f"  {layer} {p['name']}: {len(files)} file(s), {have} already present")
             continue
         osm_path = stage_osm(name, a, cfg) if "osm" in stages else a.get("osm", os.path.join(cfg["paths"]["data"], "osm", name + ".osm"))
-        ground = stage_source(name, a, cfg, "ground") if "ground" in stages or "terrain" in stages else (None, None)
-        decks = stage_source(name, a, cfg, "decks") if "decks" in stages or "terrain" in stages else (None, None)
+        ground = stage_source(name, a, cfg, "ground") if "ground" in stages or "terrain" in stages else (None, None, None)
+        decks = stage_source(name, a, cfg, "decks") if "decks" in stages or "terrain" in stages else (None, None, None)
         gfile = dfile = None
         if "terrain" in stages:
             gfile, dfile = stage_terrain(name, a, cfg, osm_path, ground, decks)

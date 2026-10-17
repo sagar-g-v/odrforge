@@ -37,6 +37,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **DEM fill keeps its own heights away from the border** (make_terrain.py, audit of 5ef8b71): the fill was shifted by
+  the median fine-minus-fill difference everywhere beyond the seam. At Stelvio that median (+1.26 m) is no datum offset
+  (IQR 2.34 m; GLO-30 meets the mapped Passo delle Platigliole within 0.1-0.6 m) and moved the Lombardy part 1.2 m
+  away from the surveyed heights. Now the median shift applies only where it is a consistent offset (|median| > IQR);
+  Stelvio fill vs OSM spot heights median +1.32 -> +0.06 m, the border step unchanged (p95 0.46 m).
 - **edge_smoothness inspector crash** on roads without <laneOffset> (it reported no findings on any area).
 - **Corner sidewalks follow the turning lane** (Munich review flags 4 / 5; Junction Guideline 1.0.0 §6.3): a corner
   sidewalk's curb is the outer driving-lane border of the connecting road turning round that corner, instead of a fixed

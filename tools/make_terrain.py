@@ -22,8 +22,11 @@ Sources (any country): national lidar (USGS 3DEP, UK EA, NL AHN, FR IGN LiDAR HD
   (e.g. ellipsoidal lidar vs NAVD88 DEM).
 * Several --dem, finest first: a later DEM fills only the cells the earlier ones leave empty (a regional model
   ending at its border, e.g. South Tyrol's 2.5 m DTM at the Lombardy border, completed by GLO-30). The fill is
-  shifted onto the earlier DEMs: by the difference at the nearest cell where both have data, fading over
-  --seam metres to their median difference (another datum, a surface model's trees), so the border has no step.
+  shifted onto the earlier DEMs by the difference at the nearest cell where both have data, so the border has no
+  step, fading over --seam metres to a global shift: their median difference where it is a consistent offset
+  (|median| > interquartile range: another vertical datum), else 0 - the fill keeps its own heights (Stelvio: median
+  +1.26 m, IQR 2.34 m, the 30 m surface model vs the 2.5 m terrain model; at a mapped saddle 7 km into Lombardy the
+  shift by the median put GLO-30 1.2 m further from the surveyed height).
 Requires numpy, pyproj, rasterio (DEM), laspy[lazrs] for .las/.laz.
 """
 import argparse
@@ -98,18 +101,22 @@ def load_lidar(paths, crs):
 
 def shifted_fill(dem, fill, seam_cells):
     """`fill` moved onto `dem` for the cells `dem` leaves empty: the difference dem - fill at the nearest cell where
-    both have data, fading over seam_cells to their median difference; `fill` as it is where they never overlap"""
+    both have data, fading over seam_cells to a global shift - their median difference when that is a consistent
+    offset (|median| > interquartile range: another vertical datum), else 0; `fill` as it is where they never
+    overlap. Returns (the moved fill, whether it was moved onto the other datum)"""
     both = ~np.isnan(dem) & ~np.isnan(fill)
     if not both.any():
-        return fill
+        return fill, False
     from scipy.ndimage import distance_transform_edt
     diff = np.where(both, dem - fill, 0.0)
-    median = float(np.median(diff[both]))
+    q25, median, q75 = (float(v) for v in np.percentile(diff[both], [25, 50, 75]))
+    offset = median if abs(median) > q75 - q25 else 0.0
     d, (ii, jj) = distance_transform_edt(~both, return_indices=True)
     w = np.clip(1.0 - d / max(seam_cells, 1e-9), 0.0, 1.0)
-    print(f"DEM fill: {np.isnan(dem).mean() * 100:.1f} % of the grid, shifted {median:+.2f} m (median), "
-          f"nearest-cell differences faded over {seam_cells:.0f} cells")
-    return fill + w * diff[ii, jj] + (1.0 - w) * median
+    print(f"DEM fill: {np.isnan(dem).mean() * 100:.1f} % of the grid; difference median {median:+.2f} m, IQR "
+          f"{q75 - q25:.2f} m -> shifted {offset:+.2f} m beyond the border, nearest-cell differences faded over "
+          f"{seam_cells:.0f} cells")
+    return fill + w * diff[ii, jj] + (1.0 - w) * offset, offset != 0.0
 
 
 def on_top(tags):
@@ -171,6 +178,9 @@ def main():
     ap.add_argument("--margin", type=float, default=60.0)
     ap.add_argument("--seam", type=float, default=100.0, help="m over which a filling DEM fades onto the earlier ones")
     ap.add_argument("--datum", default="")
+    ap.add_argument("--dem-datum", action="append", default=[],
+                    help="vertical datum of each --dem, in order; the grid's datum is then the datums its heights are in "
+                         "(a fill keeping its own heights adds its datum: Genova1942+EGM2008)")
     ap.add_argument("--dsm", action="append", default=[], help="surface model raster(s): bridge decks (with --deck-osm)")
     ap.add_argument("--deck-osm", help="OSM file whose road bridges select the DSM deck cells")
     a = ap.parse_args()
@@ -193,14 +203,23 @@ def main():
         from rasterio.transform import from_origin
         from rasterio.warp import Resampling, reproject
         dst_tr = from_origin(x0 - a.cell / 2, y1 + a.cell / 2, a.cell, a.cell)
-        for path in a.dem:
+        datums = list(a.dem_datum) + [a.datum] * (len(a.dem) - len(a.dem_datum))
+        label = []  # the vertical datums the grid's heights are in, finest source first
+        for path, datum in zip(a.dem, datums):
             with rasterio.open(path) as src:
                 tmp = np.full((ny, nx), np.nan, dtype=np.float32)
                 reproject(rasterio.band(src, 1), tmp, dst_transform=dst_tr, dst_crs=local,
                           src_nodata=src.nodata, dst_nodata=np.nan, resampling=Resampling.bilinear)
                 tmp = tmp[::-1]  # north-up raster -> row 0 = south
-                dem = np.where(np.isnan(dem), shifted_fill(dem, tmp, a.seam / a.cell), dem)
-        print(f"DEM coverage {np.mean(~np.isnan(dem)) * 100:.1f} %")
+                fills = np.isnan(dem) & ~np.isnan(tmp)
+                moved, onto = shifted_fill(dem, tmp, a.seam / a.cell)
+                dem = np.where(np.isnan(dem), moved, dem)
+                # a fill moved onto the finer source's datum adds none; one keeping its own heights adds its own
+                if fills.any() and datum and not onto and datum not in label:
+                    label.append(datum)
+        if a.dem_datum:
+            a.datum = "+".join(label)
+        print(f"DEM coverage {np.mean(~np.isnan(dem)) * 100:.1f} %, vertical datum {a.datum or '(not given)'}")
 
     ground, decks = dem.copy(), None
     # ---- lidar

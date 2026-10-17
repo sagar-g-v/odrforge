@@ -56,9 +56,10 @@ origin = [48.1385, 11.5725]               # default: bbox centre
 
 A source's coverage is the rectangle round its region; its data ends at the region's border. When the data holds
 less than 99.5 % of the bbox (Stelvio: South Tyrol's DTM stops at the Lombardy border), `auto` adds the next
-coarser source, and `make_terrain.py` fills the gap with it, shifted onto the finer data (the difference at the
-nearest cell where both have data, fading over `--seam` 100 m to their median difference), so the border shows
-no step. The grid keeps the finer source's datum.
+coarser source, and `make_terrain.py` fills the gap with it, shifted onto the finer data by the difference at the
+nearest cell where both have data, so the border shows no step. Over `--seam` 100 m that shift fades to their median
+difference where it is a consistent offset (|median| > IQR: another vertical datum), else to 0, so the fill keeps its
+own heights (Stelvio: median +1.26 m, IQR 2.34 m - no shift). The grid keeps the finer source's datum.
 
 | name | layer | coverage | resolution | vertical datum | access |
 |---|---|---|---|---|---|

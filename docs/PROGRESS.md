@@ -176,13 +176,19 @@ priority; Jev consulted for every decision; kerb lines used where mapped.
   | frankfurt_kreuz | Hesse DGM1 1 m (INSPIRE WCS he_dgm1) | Hesse DOM1 1 m (WCS dom1) | 0.5 m | DHHN2016 |
   | london | EA LIDAR Composite DTM 1 m (WCS) | - | 0.5 m | ODN |
   | tokyo | GSI DEM5A 5 m (tile service, zoom 15) | none open | 1 m | JGD2011 (T.P.) |
-  | stelvio | South Tyrol DTM 2.5 m (WCS, CC0; 54 % of the box) + Copernicus GLO-30 shifted onto it for the Lombardy part | - | 1 m | Genova1942 (EPSG:5214, no open geoid grid) |
+  | stelvio | South Tyrol DTM 2.5 m (WCS, CC0; 54 % of the box) + Copernicus GLO-30 for the Lombardy part (own heights beyond a 100 m seam) | - | 1 m | Genova1942+EGM2008 (no single EPSG code) |
   gate.py builds munich, london and stelvio on terrain. Frankfurter Kreuz with ground + decks validates clean (0 errors,
   7 grade warnings vs 31 errors with ground alone) but a three-level underground car park (layers -1 .. -3, maxheight
   2.1 m, 50 roads) connects to no measured road and keeps height 0 - open: anchor such a network through the roads it
   crosses (a first attempt left decks 2.9 m under their access tunnel, inside the validator's 3 m same-level band).
   Tokyo stays relative (its stacked Shuto flyovers would need deck data: 8 errors with ground alone). Elevation over measured terrain now runs the
   relative-mode level solver too and uses its levels as offsets in unmeasured stretches (elevation.cpp 4.).
+- Audit of the Stelvio DEM change (2026-10-17, user request: scores earned, measured facts only): the 5ef8b71 brief
+  carried an unmeasured explanation (OSM line ~2 m off the bench, retracted) and the fill's median shift (+1.26 m) was
+  shown wrong by OSM spot heights (Lombardy fill +1.32 m vs +0.06 m without it). Corrected: the fill keeps its own heights
+  unless the difference is a consistent offset (|median| > IQR), and the grid is labelled with the datums it holds.
+  Jev re-score of the corrected change with a fully transparent brief: 0.79 (below 0.8); committed by the user's
+  decision. Open: finer Lombardy data (TINITALY 10 m, INGV, CC BY 4.0 - its server refused connections on 2026-10-17).
 - Terrain contract (2026-10-17): docs/TERRAIN_CONTRACT.md holds the proven terrain numbers as absolute gate limits
   with a planted-defect test per check (user rule: harden every proven improvement). The gate baseline itself
   (gate_baseline.json, 2026-10-12) is stale: its deltas (G2 invariants, JCT-8, max_grade from real terrain) come from
