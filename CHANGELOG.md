@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Clip box in the header** (osm2xodr): with `--clip` the output header carries `<userData code="clip"
+  value="lat0,lon0,lat1,lon1"/>`, the box the OSM ways were cut at; parking_coverage.py (the OSM contract's measure) reads
+  it before any box it is given, so the converter's contract and the viewer's check cannot drift apart. Self-test cases and
+  2 mutations caught. Jev 0.87.
 - **Terrain contract `pits`: junction roads with a driving lane only** (terrain_contract.py, user decision): the check is
   for covered junctions without a tunnel record; a corner sidewalk round a lay-by cut into a hillside (Stelvio road 245,
   3.1 m under the 30 m GLO-30 ground, after the street-side parking areas) is no such junction. Limit stays 0; removing

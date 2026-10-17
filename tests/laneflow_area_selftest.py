@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "inspect"))
 import laneflow as LF  # noqa: E402
+import parking_coverage  # noqa: E402
 
 failures = []
 LAT0, LON0 = 48.1, 11.5
@@ -50,9 +51,9 @@ def write_osm(path, with_area):
         f.write(f'<?xml version="1.0"?>\n<osm version="0.6">\n{body}\n</osm>\n')
 
 
-def convert(exe, osm, xodr):
+def convert(exe, osm, xodr, extra=()):
     """osm2xodr, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
-    args = [exe, osm, xodr, "--target", "standard", "--country", "DE", "--origin", f"{LAT0},{LON0}"]
+    args = [exe, osm, xodr, "--target", "standard", "--country", "DE", "--origin", f"{LAT0},{LON0}", *extra]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0:
         time.sleep(3)
@@ -104,6 +105,17 @@ def main():
         check(not any(i.get("kind") == "start" for i in b.get("edge.break.osm_area", [])) and
               any(i.get("kind") == "start" for v in b.values() for i in v),
               "a parking lane starting at full width is not explained by the area")
+        # the clip box in the header (osm2xodr --clip) decides which areas the coverage measure counts
+        for (x0, y0, x1, y1), want in (((-120, -60, 120, 60), 1), ((30, -60, 120, 60), 0)):
+            (la0, lo0), (la1, lo1) = ll(x0, y0), ll(x1, y1)
+            box = f"{la0:.6f},{lo0:.6f},{la1:.6f},{lo1:.6f}"
+            cx = os.path.join(tmp, "clip.xodr")
+            r = convert(exe, osm, cx, ("--clip", box))
+            head = ET.parse(cx).getroot().find("header")
+            written = [u.get("value") for u in head.findall("userData") if u.get("code") == "clip"]
+            check(written == [box], f"the header carries the clip box ({written} vs {box})")
+            summary, _ = parking_coverage.measure(osm, cx)
+            check(summary["polygons"] == want, f"areas wholly inside the header's box: {summary['polygons']} (want {want})")
     print(f"laneflow area self-test: {len(failures)} failures")
     sys.exit(1 if failures else 0)
 

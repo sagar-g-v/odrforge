@@ -119,6 +119,11 @@ int main(int argc, char **argv) {
     phase("load terrain");
     BuildReport rep;
     odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
+    if (haveClip) {  // the box the ways were cut at, for checkers measuring OSM features wholly inside it (header userData)
+      char box[128];
+      std::snprintf(box, sizeof box, "%.6f,%.6f,%.6f,%.6f", clip[0], clip[1], clip[2], clip[3]);
+      od.header.userData["clip"] = box;
+    }
     phase("build network");
     if (!groundOutPath.empty() && terrain.ground.empty()) {
       std::fprintf(stderr, "--ground-out needs --terrain\n");
