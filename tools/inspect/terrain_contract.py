@@ -26,6 +26,8 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
   pits         no junction road outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
                ground (Frankfurt's underground car park: connecting roads without tunnel records dug 723 pit points into
                the published ground; elevation.cpp junctionsUnderCover)
+  cliffs       roads of 0.1 m and more with a grade over 50 % between samples 0.25 m apart: short stubs the steep check's
+               5 m steps cannot see (Frankfurt's 2 m stubs climbing 5-6 m before the smooth-deck filter)
   named       named roads with their own limit (London: Adam Street on the Adelphi terrace)
 Exit 0 when every limit holds, 1 otherwise.
 """
@@ -58,16 +60,23 @@ BURIED_DEPTH = 2.0  # m
 # under a bridge road neither count nor end a run
 BURIED_RUN = 10.0
 PIT_DEPTH = 2.0  # m: conformed ground this far under the raw ground on a junction road outside tunnels / bridges
+# cliffs: roads of 0.1 m and more (junction roads too) with a grade over CLIFF_GRADE between samples CLIFF_STEP apart -
+# the steep check's 5 m steps cannot see a 2 m stub climbing 5 m (Frankfurt 97 / 366 / 367 before the smooth-deck
+# filter, LA 656 / 657). No public road reaches 50 % (the steepest streets: ~35-37 %)
+CLIFF_GRADE = 0.5
+CLIFF_STEP = 0.25  # m
 
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
 CONTRACT = {
     "munich": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], steep=2),
+    # cliffs held at the proven state (open items, docs/TERRAIN_CONTRACT.md): London 250 and Stelvio 31, 4-6 m service
+    # stubs climbing 1.6-2.3 m from a junction surface that cannot follow the terrain step beside it
     "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), decks_near=0.98, steep=4,
-                   named={"Adam Street": 0.10, "Lancaster Place": 0.10}),
+                   named={"Adam Street": 0.10, "Lancaster Place": 0.10}, cliffs=1),
     # Frankfurter Kreuz: decks as a share - a surface model sees the top structure only (the ICE viaduct over road
     # bridges) and narrow service bridges drawn a few metres off their deck sample the ground beside it
     "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.92, steep=4),
-    "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1),
+    "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1, cliffs=1),
 }
 
 
@@ -148,8 +157,16 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
         return any(q[3] != rid and q[2] > z + 2.0 and (q[4] or not bridges_only) and math.hypot(q[0] - x, q[1] - y) < 4.0
                    for dx in (-1, 0, 1) for dy in (-1, 0, 1) for q in tops.get((cx + dx, cy + dy), ()))
     se_plain = se_all = 0.0
-    steep, named_grade, buried = [], {n: 0.0 for n in named}, []
+    steep, named_grade, buried, cliffs = [], {n: 0.0 for n in named}, [], []
+
+    def cliff(r):
+        """a grade over CLIFF_GRADE between samples CLIFF_STEP apart (the whole road when shorter)"""
+        ss = np.append(np.arange(0.0, r.length, CLIFF_STEP), r.length)
+        zz = r.z(ss)
+        return bool(np.max(np.abs(np.diff(zz) / np.maximum(np.diff(ss), 1e-9))) > CLIFF_GRADE)
     for r in roads:
+        if 0.1 <= r.length < 0.5 and cliff(r):  # too short for the loop below, not for a cliff
+            cliffs.append(r.id)
         if r.length < 0.5:
             continue
         sts = structures(r)
@@ -167,6 +184,8 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
         slope = (r.z(np.clip(s5 + h, 0, r.length)) - r.z(np.clip(s5 - h, 0, r.length))) /             np.maximum(np.clip(s5 + h, 0, r.length) - np.clip(s5 - h, 0, r.length), 1e-12)
         if np.any(np.abs(slope) > 0.20):
             steep.append(r.id)
+        if cliff(r):
+            cliffs.append(r.id)
         name = r.el.get("name")
         if name in named_grade and r.el.get("junction") == "-1":
             named_grade[name] = max(named_grade[name], float(grade.max()))
@@ -244,7 +263,8 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                 vg, vc = g(x, y), c(x, y)
                 if not (math.isnan(vg) or math.isnan(vc)) and vc < vg - PIT_DEPTH and r.id not in pits:
                     pits.append(r.id)
-    return dict(pits=sorted(pits, key=lambda x: int(x) if x.isdigit() else 0),centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
+    by_id = lambda ids: sorted(ids, key=lambda x: int(x) if x.isdigit() else 0)  # noqa: E731
+    return dict(pits=by_id(pits), cliffs=by_id(cliffs), centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
                 objects=dict(n=len(objects), off=int(np.sum(np.abs(np.asarray(objects)) > OBJECT_TOL)) if objects else 0,
                              worst=float(np.max(np.abs(objects))) if objects else 0.0),
                 decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
@@ -310,6 +330,9 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             problems.append(f"{tag} buried: {len(m['buried'])} plain roads more than {BURIED_DEPTH} m under the ground over "
                             f"{BURIED_RUN:.0f} m outside bridges / tunnels and not under a bridge > {lim.get('buried', 0)} "
                             f"({', '.join(m['buried'][:8])})")
+        if len(m["cliffs"]) > lim.get("cliffs", 0):
+            problems.append(f"{tag} cliffs: {len(m['cliffs'])} roads with a grade over {CLIFF_GRADE * 100:.0f} % between "
+                            f"0.5 m samples > {lim.get('cliffs', 0)} ({', '.join(m['cliffs'][:8])})")
         if lim.get("steep") is not None and len(m["steep"]) > lim["steep"]:
             problems.append(f"{tag} steep: {len(m['steep'])} roads over 20 % > {lim['steep']} ({', '.join(m['steep'][:8])})")
         for name, v in lim.get("named", {}).items():
@@ -334,7 +357,7 @@ def main():
             print(f"  {prof}: centre p50/p95 {mm['centre'][50]:.3f}/{mm['centre'][95]:.3f}, conformed p95/p99 "
                   f"{mm['conformed'][95]:.3f}/{mm['conformed'][99]:.3f}, decks p95 {mm['decks'][95]:.3f} (n {mm['n']['decks']}), "
                   f"superelev plain/all {mm['superelev']['plain']:.4f}/{mm['superelev']['all']:.4f}, steep {len(mm['steep'])}, "
-                  f"buried {len(mm['buried'])}, named {mm['named']}")
+                  f"buried {len(mm['buried'])}, cliffs {len(mm['cliffs'])}, named {mm['named']}")
     for p in allp:
         print("FAIL", p)
     if a.json:

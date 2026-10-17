@@ -39,6 +39,9 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 | objects | trees and street lamps off bridge stretches: base = elevation(s) + zOffset (XSD 1.8.1 @zOffset) vs the conformed ground under them; osm2xodr seats them on that ground | all | 0 off (Munich 679, London 598, Frankfurt 276, Stelvio 2 objects; before: Munich 141 of 679 more than 0.3 m off, worst 8.2 m) | none more than 0.3 m off |
 | buried | plain roads more than 2 m under the raw ground over 10 m or more, outside bridges / tunnels; samples under a bridge road (more than 2 m above within 4 m: the raw grid there may hold the deck, Frankfurt roads 57 and 276 under bridges 34 and 58) neither count nor end a run. The conformed ground trenches such a road. The parts of covered=yes stretches that deep are written as underpasses (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11). Measured over every covered stretch of Munich, London, Frankfurt and LA (36): at grade never more than 0.81 m deep at any sample, under a deck or hill a median of 5.54 m or more, so any limit between makes the same decisions. A 10 m run catches all five Frankfurt stretches before their underpasses (a 20 m run caught two) | all | 0 (before: Frankfurt 5 - roads 35, 136, 154, 224, 431 - and London 1, the Strand Underpass running 3.8-4.3 m under the street for 12 m past its OSM tunnel way; tunnel records are now extended over such ends, elevation.cpp `coveredUnderpasses`) | 0 |
 | pits | junction roads with a point (2 m steps) outside tunnel / bridge records where the conformed ground lies more than 2 m under the raw ground: a junction under cover without a tunnel record. Connecting roads between tunnel ends get a tunnel record, and at a portal the part under the terrain (elevation.cpp `junctionsUnderCover`) | all | 0 (before: Frankfurt 134 roads / 723 points - the underground car park P15 - London 5, Munich 1) | 0 |
+| cliffs | roads of 0.1 m and more (junction roads too) with a grade over 50 % between samples 0.25 m apart: short stubs the steep check's 5 m steps cannot see; no public road reaches 50 % (the steepest streets are about 35-37 %) | munich, frankfurt_kreuz | 0 (Frankfurt before the smooth-deck filter: 3, the 2 m stubs 97 / 366 / 367 climbing 5-6 m) | 0 |
+| | | london | 1: road 250, a 5.5 m service stub climbing 2.3 m from junction 194 (at ground level, 3.8 m) to the terrain step beside it (open) | ≤ 1 |
+| | | stelvio | 1: road 31, a 4.1 m service stub climbing 1.6 m out of junction 18, whose surface (capped at 15 %) cannot follow the hillside (open) | ≤ 1 |
 | named | max grade of named streets on structures OSM does not tag as bridges | london | Adam Street 4 %, Lancaster Place 10 % | ≤ 10 % each |
 
 The 99th-percentile Stelvio edge tail (3.2 m) is not limited: it is road 22's hairpin legs, which overlap in plan at
@@ -61,7 +64,8 @@ different heights; a 2-D ground cannot hold both.
   - London trees 2 m under the ground;
   - a Stelvio road 3 m under the ground;
   - Frankfurt's underpasses removed (the covered stretches as plain roads again);
-  - a 3 m pit in the conformed ground around one Stelvio junction road.
+  - a 3 m pit in the conformed ground around one Stelvio junction road;
+  - one more short Stelvio road (3-20 m) at an 80 % grade.
 
   Each one fails its check.
 

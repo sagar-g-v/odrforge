@@ -5,6 +5,10 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Terrain contract check `cliffs`** (terrain_contract.py): roads of 0.1 m and more steeper than 50 % between samples
+  0.25 m apart - short stubs the 5 m steep check cannot see (no public road reaches 50 %). Munich / Frankfurt 0
+  (Frankfurt's old grid had 3), London 1 (road 250) and Stelvio 1 (road 31) held as open junction-geometry cases.
+  Planted defect. Jev 0.75, committed by the user's decision.
 - **Bridge deck cells need a smooth surface** (make_terrain.py): within 10 m of an OSM bridge the surface model counts as
   a deck only where it is smooth (std < 0.3 m over 2.5 m), as along streets already - the buffer also reached structure
   edges (Frankfurt junction 64: falling cells pulled junction 15 7 m down; 2 m stubs climbed 5-6 m). Frankfurt (grid

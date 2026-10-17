@@ -139,6 +139,14 @@ def sink_road(f):  # one plain road 3 m under the ground over its whole length
     edit_xodr(f["standard"], fn)
 
 
+def cliff(f):  # one short plain road (3-20 m) at an 80 % grade: a stub the 5 m steep check can miss
+    def fn(root):
+        r = next(r for r in root.findall("road") if r.get("junction") == "-1" and 3.0 < float(r.get("length")) < 20.0)
+        for e in r.find("elevationProfile").findall("elevation"):
+            e.set("b", "0.8"), e.set("c", "0"), e.set("d", "0")
+    edit_xodr(f["standard"], fn)
+
+
 def drop_underpasses(f):  # covered stretches written as plain roads again (before elevation.cpp coveredUnderpasses)
     def fn(root):
         for o in root.iter("objects"):
@@ -164,6 +172,7 @@ check(planted("stelvio", "superelev", bank), "superelev: a road banked at 0.2 ra
 check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than the contract allows is caught")
 check(planted("stelvio", "buried", sink_road), "buried: a road 3 m under the ground is caught")
 check(planted("stelvio", "pits", dig_pit), "pits: a 3 m pit in the conformed ground at a junction road is caught")
+check(planted("stelvio", "cliffs", cliff), "cliffs: one more short road at 80 % is caught")
 if have.get("london"):
     check(planted("london", "objects", sink_trees), "objects: trees 2 m under the ground are caught")
     check(planted("london", "decks", float_bridge), "decks: bridges 3 m above their measured deck are caught")
