@@ -1458,5 +1458,105 @@ void Builder::connectingElevation(odr::Road &c, const Cluster &cl, std::optional
   if (flat) c.superelevation.clear();
 }
 
+void Builder::coveredUnderpasses() {
+  // A covered way (OSM covered=yes) runs under a building, a deck or a hillside. Where its road lies below the
+  // measured terrain it is an underpass: OpenDRIVE 1.8.0 §13.11 tunnel, e_tunnelType "underpass" (XSD 1.4 - 1.8.1),
+  // "the part of the road that is the tunnel or the underpass". Written as one, the ground above it is not the road
+  // surface (conform.cpp leaves tunnels alone) and viewers draw it covered. A covered way at ground level (a canopy,
+  // a passage through a building at grade) stays a plain road: the ground there is its surface. The OSM layer cannot
+  // tell the two apart (Frankfurt, Hugo-Eckener-Ring under the terminal forecourt: covered=yes, layer 0, 7 m deep),
+  // so the measured depth decides, sample by sample: the underpass is the part of the covered stretch whose road lies
+  // under the terrain (Frankfurt road 431: its last 12 m reach the ground at the portal and stay a plain road).
+  // Before this, the conformed ground trenched such stretches down to the road.
+  // Measured depths of all covered stretches (Munich, London, Frankfurt, LA; docs/TERRAIN_CONTRACT.md "buried"): at
+  // grade never more than 0.81 m at any sample, under a deck or hill a median of 5.54 m or more - any limit in between
+  // makes the same decisions.
+  if (!opt.terrain) return;
+  constexpr double kUnderpassDepth = 2.0;  // m: road surface this far under the measured terrain is under cover
+  constexpr double kJoinGap = 10.0;        // m: deep runs closer than this are one underpass (a short dip in the DEM)
+  constexpr double kMinLength = 5.0;       // m: shorter deep runs are DEM noise, not a structure
+  // m: a run's mean depth at least this - a few noisy samples just past the limit on an at-grade way are not a structure
+  // (real runs: mean 5.38 .. 7.10 m; simulated 1 m DEM noise on the 30 at-grade stretches: false underpasses in 2 of
+  // 6000 trials with it, 149 without; build/tmp/underpass_variants.py)
+  constexpr double kRunMeanDepth = 3.0;
+  auto within = [](const std::vector<std::pair<double, double>> &rg, double a, double b) {
+    for (const auto &[p, q] : rg)
+      if (a >= p - 1e-6 && b <= q + 1e-6) return true;
+    return false;
+  };
+  for (RoadMeta &m : metas) {
+    if (m.roadIndex < 0 || m.covered.empty() || m.zGround.size() != m.zs.size()) continue;
+    odr::Road &r = od.roads[m.roadIndex];
+    const double len = r.length();
+    // the terrain noise under this road: robust spread (1.4826 MAD) of the raw ground at its carriageway centre around
+    // its profile, outside covered / tunnel / bridge stretches (the road's own observations are outlier-filtered and
+    // hide the noise). A run must lie deeper on average than kUnderpassDepth + 3 sigma, so a noisy model does not invent
+    // underpasses. Measured: sigma 0.003 .. 0.06 m on the covered roads of Munich, London and Frankfurt, 1.38 m on LA
+    // 987's hillside (floor 6.1 m, its run 7.1 m deep); simulated per-sample noise of 1 / 1.5 m: no false underpass with
+    // this floor, 2 / 210 of 7200 with the plain 3 m floor (build/tmp/underpass_sigma_guard.py). A run it drops keeps the
+    // plain-road behaviour (the conformed ground follows the road), never worse than without this stage
+    auto inRange = [&](const std::vector<std::pair<double, double>> &rg, double s) {
+      for (const auto &[a, b] : rg)
+        if (s + m.trimStart >= a - 1e-6 && s + m.trimStart <= b + 1e-6) return true;
+      return false;
+    };
+    std::vector<double> off;
+    for (size_t i = 0; i < m.zs.size(); ++i)
+      if (!std::isnan(m.zGround[i]) && !inRange(m.covered, m.zs[i]) && !inRange(m.tunnels, m.zs[i]) &&
+          !inRange(m.bridges, m.zs[i]))
+        off.push_back(m.zGround[i] - odr::elevationAt(r, m.zs[i]));
+    double sigma = 0.0;
+    if (off.size() >= 5) {
+      std::nth_element(off.begin(), off.begin() + off.size() / 2, off.end());
+      const double med = off[off.size() / 2];
+      for (double &v : off) v = std::abs(v - med);
+      std::nth_element(off.begin(), off.begin() + off.size() / 2, off.end());
+      sigma = 1.4826 * off[off.size() / 2];
+    }
+    const double runMeanFloor = std::max(kRunMeanDepth, kUnderpassDepth + 3.0 * sigma);
+    // covered segments that are not already a tunnel or a bridge (a covered bridge), adjacent ones merged
+    std::vector<std::pair<double, double>> runs;
+    for (const auto &[a, b] : m.covered) {
+      if (within(m.tunnels, a, b) || within(m.bridges, a, b)) continue;
+      const double sa = std::max(0.0, a - m.trimStart), sb = std::min(len, b - m.trimStart);
+      if (sb <= sa) continue;
+      if (!runs.empty() && sa <= runs.back().second + 1e-6) runs.back().second = std::max(runs.back().second, sb);
+      else runs.push_back({sa, sb});
+    }
+    const double half = 0.5 * len / std::max<size_t>(1, m.zs.size() - 1);  // half the sample spacing
+    bool added = false;
+    for (const auto &[sa, sb] : runs) {
+      // deep runs: consecutive samples at least kUnderpassDepth under the terrain, each reaching half a spacing past
+      // its outer samples (clipped to the covered stretch); runs closer than kJoinGap joined
+      struct Run {
+        double a, b, depthSum;
+        int n;
+      };
+      std::vector<Run> deep;
+      for (size_t i = 0; i < m.zs.size(); ++i) {
+        const double s = m.zs[i];
+        const double d = std::isnan(m.zGround[i]) ? kNaN : m.zGround[i] - odr::elevationAt(r, s);
+        if (s < sa || s > sb || !(d >= kUnderpassDepth)) continue;
+        const double a = std::max(sa, s - half), b = std::min(sb, s + half);
+        if (!deep.empty() && a - deep.back().b < kJoinGap) deep.back().b = b, deep.back().depthSum += d, ++deep.back().n;
+        else deep.push_back({a, b, d, 1});
+      }
+      for (const auto &[a, b, depthSum, n] : deep) {
+        if (b - a < kMinLength || depthSum / n < runMeanFloor) continue;
+        odr::Structure st;
+        st.id = std::to_string(nextObjectId++);
+        st.name = "underpass";
+        st.type = "underpass";
+        st.s = a;
+        st.length = b - a;
+        r.tunnels.push_back(st);
+        added = true;
+      }
+    }
+    if (added)
+      std::sort(r.tunnels.begin(), r.tunnels.end(), [](const odr::Structure &x, const odr::Structure &y) { return x.s < y.s; });
+  }
+}
+
 }  // namespace detail
 }  // namespace odrforge

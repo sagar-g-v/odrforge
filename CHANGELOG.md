@@ -5,6 +5,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Covered roads under the terrain are underpasses** (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11
+  `<tunnel type="underpass">`): the parts of a covered=yes stretch whose road lies 2 m or more under the measured
+  terrain are written as underpasses (deep runs closer than 10 m joined; runs shorter than 5 m, or less deep on average
+  than max(3 m, 2 m + 3 sigma of the road's ground noise), dropped), so the conformed ground no longer trenches down to
+  them; at-grade covered ways and the at-grade ends of a stretch stay plain roads. Frankfurt: five roads (the
+  Hugo-Eckener-Ring under the terminal forecourt, 7 m deep), LA: one driveway under the Bunker Hill plaza; every other
+  output byte-identical, exact checkers unchanged. Over all 36 covered stretches of four terrain areas (LA held out) any
+  depth limit between 0.82 and 5.5 m makes the same decisions. Unit tests with mutations. Jev 0.71 (doubt: few real
+  cases), committed by the user's decision.
 - **Run times with their UTC offset** (metrics.py, gate.py): provenance records and gate history times carry the
   offset (2026-10-17T13:27:14+09:00), so a viewer in another zone reads the same instant; the gate diffs each run
   against the latest earlier run by the time in the history name (offset-aware), not by name order. Self-test with

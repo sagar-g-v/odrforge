@@ -934,6 +934,131 @@ TEST_CASE("terrain: trees and street lamps stand on the conformed ground, not at
   CHECK(road->objects[2].zOffset == 0.0);   // a crosswalk is not a standing object
 }
 
+TEST_CASE("terrain: a covered stretch below the terrain is an underpass, one at ground level stays a plain road") {
+  // OpenDRIVE 1.8.0 §13.11 tunnel, e_tunnelType "underpass" (XSD 1.4 - 1.8.1): "the part of the road that is the tunnel
+  // or the underpass". Frankfurt's Hugo-Eckener-Ring (covered=yes, layer 0) runs 7 m under the terminal forecourt; as a
+  // plain road the conformed ground trenched down to it. Under a canopy (covered=yes at grade) the ground is the road.
+  // The underpass is the part of the covered stretch whose road lies at least 2 m under the terrain.
+  using Ground = std::function<float(int, double, double)>;
+  auto ridgeOf = [](double h) -> Ground {  // a ridge over the covered stretch (x -30 .. 30)
+    return [h](int, double x, double) { return static_cast<float>(300.0 + h * std::exp(-x * x / 450.0)); };
+  };
+  auto build = [](const Ground &ground, const Tags &extra) {
+    OsmB b;
+    const OsmId w0 = b.node(-200, 0), w1 = b.node(-30, 0), e1 = b.node(30, 0), e0 = b.node(200, 0);
+    Tags covered = {{"highway", "tertiary"}, {"covered", "yes"}};
+    covered.insert(extra.begin(), extra.end());
+    b.way({w0, w1}, {{"highway", "tertiary"}});
+    b.way({w1, e1}, covered);
+    b.way({e1, e0}, {{"highway", "tertiary"}});
+    Terrain t;
+    t.ground = makeGrid(-250, -60, 1.0, 501, 121, 1, ground);
+    BuildOptions o = baseOptions();
+    o.terrain = &t;
+    odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    return std::make_pair(std::move(od), std::move(t));
+  };
+  auto underpasses = [](const odr::OpenDrive &od) {
+    std::vector<odr::Structure> out;
+    for (const auto &r : od.roads)
+      for (const auto &st : r.tunnels)
+        if (st.type == "underpass") out.push_back(st);
+    return out;
+  };
+  auto roadWithTunnel = [](const odr::OpenDrive &od) -> const odr::Road * {
+    for (const auto &r : od.roads)
+      if (r.junction == "-1" && !r.tunnels.empty()) return &r;
+    return nullptr;
+  };
+  auto depthAt = [](const odr::Road &r, const Terrain &t, double s) {
+    const Vec2 p = r.planView.eval(s).pos();
+    return t.ground_at(p.x, p.y) - odr::elevationAt(r, s);
+  };
+  {  // 8 m ridge: the road runs between the portals, ~6 m under its crest; the underpass ends where it is 2 m under
+    auto [od, t] = build(ridgeOf(8.0), {});
+    const auto u = underpasses(od);
+    CHECK(u.size() == 1);
+    const odr::Road *road = roadWithTunnel(od);
+    CHECK(road != nullptr);
+    if (road && u.size() == 1) {
+      CHECK(u[0].length > 30.0 && u[0].length < 60.0);  // inside the 60 m covered stretch, not the whole of it
+      for (double s : {u[0].s, u[0].s + u[0].length}) {
+        const double d = depthAt(*road, t, s);
+        CHECK(d > 1.0 && d < 3.0);  // its ends: where the road comes within ~2 m of the terrain
+      }
+      CHECK(depthAt(*road, t, u[0].s + 0.5 * u[0].length) > 2.0);
+      const TerrainGrid c = conformGround(od, t.ground);
+      CHECK_NEAR(c.sample(0, 0), t.ground_at(0, 0), 0.01);  // the ground over the underpass stays the terrain
+    }
+  }
+  {  // the same ridge in a noisy model (+-0.3 m per cell, about a 1 m lidar DEM's noise): still one underpass
+    auto noisy = [](int, double x, double y) {
+      const double n = 0.3 * std::sin(12.9898 * x + 78.233 * y) * std::cos(4.1414 * x - 9.731 * y);
+      return static_cast<float>(300.0 + 8.0 * std::exp(-x * x / 450.0) + n);
+    };
+    auto [od, t] = build(noisy, {});
+    const auto u = underpasses(od);
+    CHECK(u.size() == 1);
+    if (u.size() == 1) CHECK(u[0].length > 30.0 && u[0].length < 60.0);
+  }
+  {  // a plaza over half of the covered stretch (x 0 .. 28, 6 m up): only that half is the underpass, under the
+     // other half the ground is the road surface
+    auto [od, t] = build([](int, double x, double) { return static_cast<float>(x >= 0.0 && x <= 28.0 ? 306.0 : 300.0); }, {});
+    const auto u = underpasses(od);
+    CHECK(u.size() == 1);
+    const odr::Road *road = roadWithTunnel(od);
+    CHECK(road != nullptr);
+    if (road && u.size() == 1) {
+      CHECK_NEAR(u[0].length, 28.0, 3.0);
+      const Vec2 a = road->planView.eval(u[0].s).pos();
+      CHECK_NEAR(a.x, 0.0, 2.0);  // starts at the plaza's edge, not at the covered way's start (x -30)
+      const TerrainGrid c = conformGround(od, t.ground);
+      double s, tt;
+      road->planView.project({-15, 0}, s, tt);
+      CHECK_NEAR(c.sample(-15, 0), odr::elevationAt(*road, s), 0.05);  // at grade: the ground carries the road
+      CHECK_NEAR(c.sample(14, 0), 306.0, 0.01);                        // under the plaza: the terrain stays
+    }
+  }
+  {  // flat ground: covered at grade (a canopy) - the ground is the road surface, no tunnel
+    auto [od, t] = build(ridgeOf(0.0), {});
+    CHECK(underpasses(od).empty());
+  }
+  {  // a 2.6 m mound over a covered way: ~12 m of it more than 2 m deep, but a mean depth ~2.3 m (< 3 m): DEM relief,
+     // not a structure - no underpass
+    auto [od, t] = build([](int, double x, double) { return static_cast<float>(300.0 + 2.6 * std::exp(-x * x / 128.0)); },
+                         {});
+    CHECK(underpasses(od).empty());
+  }
+  {  // a 5 m mound (run ~3.6 m deep on average): an underpass in a clean model, none where the model under the road is
+     // noisy (+-2 m): there the run must average kUnderpassDepth + 3 sigma of the road's own height residuals
+    auto mound = [](double noise) {
+      return [noise](int, double x, double y) {
+        const double n = noise * std::sin(12.9898 * x + 78.233 * y) * std::cos(4.1414 * x - 9.731 * y);
+        return static_cast<float>(300.0 + 5.0 * std::exp(-x * x / 128.0) + n);
+      };
+    };
+    {
+      auto [od, t] = build(mound(0.0), {});
+      CHECK(underpasses(od).size() == 1);
+    }
+    {
+      auto [od, t] = build(mound(2.0), {});
+      CHECK(underpasses(od).empty());
+    }
+  }
+  {  // covered and tunnel=yes: written once, as the tunnel it is tagged
+    auto [od, t] = build(ridgeOf(8.0), {{"tunnel", "yes"}});
+    CHECK(underpasses(od).empty());
+    int tunnels = 0;
+    for (const auto &r : od.roads) tunnels += static_cast<int>(r.tunnels.size());
+    CHECK(tunnels == 1);
+  }
+  {  // a covered bridge is a bridge
+    auto [od, t] = build(ridgeOf(8.0), {{"bridge", "yes"}, {"layer", "1"}});
+    CHECK(underpasses(od).empty());
+  }
+}
+
 TEST_CASE("terrain: the conformed ground carries the road and meets the terrain along cut / fill slopes") {
   // a 7 m road across a 40 % hillside of a coarse model: under the lanes the conformed ground is the road surface, beside
   // them a 1:1.5 slope from the road edge down to (fill) or up to (cut) the terrain, beyond 20 m the terrain itself

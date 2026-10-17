@@ -1198,6 +1198,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("junction surfaces", &detail::Builder::junctionSurfaces);
   stage("elevation profiles", &detail::Builder::fitRoadElevation);
   stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
+  stage("covered underpasses", &detail::Builder::coveredUnderpasses);  // on the final heights
   stage("junctions", &detail::Builder::buildJunctions);
   stage("direct junctions", &detail::Builder::directJunctions);
   stage("objects", &detail::Builder::buildObjects);  // crosswalks before the stop lines placed behind them
