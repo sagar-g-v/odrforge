@@ -45,6 +45,13 @@ check(m["geom_line"] == 1 and m["elevation_records"] == 1 and m["length_plain_m"
 check(abs(m["grade_max"] - 0.10) < 1e-3 and m["roads_over_20pct"] == 0, "grade measured (10 %)")
 check(abs(m["z_max"] - 20.0) < 0.01 and abs(m["z_min"] - 10.0) < 0.01, "height range")
 
+rec = M.page_record(a, "t.standard.xodr")  # the provenance record the gate writes next to each output
+import hashlib  # noqa: E402
+raw = open(os.path.join(rec["folder"], rec["file"]), "rb").read()
+check(rec["schema"] == 1 and rec["sha256"] == hashlib.sha256(raw).hexdigest() and rec["bytes"] == len(raw),
+      "the page record identifies the file by its exact bytes")
+check(rec["metrics"] is a["files"]["t.standard.xodr"], "the page record carries that file's metrics")
+
 lines, n = M.diff(a, snap(xodr(0.10)))
 check(n == 0, "an unchanged file: no metric changed")
 

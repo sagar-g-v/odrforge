@@ -5,6 +5,9 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Build provenance next to every output** (gate.py, metrics.py): <file>.xodr.metrics.json (schema 1: run, commit,
+  osm2xodr build time, folder, file, sha256 / size / mtime of the exact bytes, that file's metrics), so a viewer shows
+  numbers only for the build it loaded; snapshots carry each file's identity and the real folder. Jev 0.82.
 - **Metrics on every run** (tools/inspect/metrics.py): a snapshot of every output - structure, vertical profile, banking,
   exact-checker / validation counts, terrain-fit numbers, with git commit and build time - and the difference of two
   snapshots (every changed metric, before / after / delta); `compare` converts all reference areas with two builds and

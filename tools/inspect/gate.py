@@ -21,7 +21,8 @@ A regression is any gating (area, kind) whose count grows by more than --toleran
 validation error rule count, a failing unit test, a conversion crash, new CARLA sideways
 discontinuities or esmini load errors.
 Every run stores a detailed metrics snapshot of its outputs (metrics.py: structure, vertical, exact counts, with
-commit and time) in build/tmp/inspect/metrics_history/ and reports the difference to the previous run.
+commit and time) in build/tmp/inspect/metrics_history/ and reports the difference to the previous run; next to every
+output it writes <file>.metrics.json (schema 1: run, build, the file's sha256 / size / mtime, its metrics).
 Terrain areas are also converted in the standard profile with the ground conformed to the roads (what the review
 viewer draws), and all their outputs are held to the absolute limits of terrain_contract.py (docs/TERRAIN_CONTRACT.md):
 those never move with the baseline, so a proven terrain result cannot regress through a baseline refresh.
@@ -289,6 +290,10 @@ def main():
     path = os.path.join(METRICS, f"{stamp}_{snap['commit'].replace('+', '_')}_{'-'.join(sorted(areas))}.json")
     json.dump(snap, open(path, "w", encoding="utf-8"), indent=1)
     res["metrics"] = path
+    # provenance next to every published output (<file>.metrics.json): which run, build and bytes these numbers belong to
+    for name, ident in snap["identity"].items():
+        page = os.path.join(ident["folder"], name)
+        json.dump(metrics.page_record(snap, name), open(page + ".metrics.json", "w", encoding="utf-8"), indent=1)
     if previous:
         lines, n = metrics.diff(json.load(open(os.path.join(METRICS, previous[-1]), encoding="utf-8")), snap)
         res["metrics_vs_previous_run"] = lines

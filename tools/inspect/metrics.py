@@ -7,7 +7,7 @@
         # exact checkers run on both (exact_diff.py), a snapshot of each side and OUT_DIR/report.txt with the difference
 
 A snapshot holds, per file (<area>.<profile>.xodr or <area>[_standard].xodr):
-  structure   roads, connecting roads, junctions (by type), lane sections, lanes by type, geometry elements by type,
+  structure   roads, connecting roads, junctions (by type, with a boundary), lane sections, lanes by type, geometry elements by type,
               network length (plain / connecting), signals, objects, junction-boundary helpers, connecting-road lanes
               opening from width 0 (no predecessor), lanes without any link
   vertical    steepest grade (5 m steps, as validate.cpp quality.max_grade), roads over 20 %, banking maxima (plain-road
@@ -21,6 +21,7 @@ stores one for each side.
 import argparse
 import datetime
 import glob
+import hashlib
 import json
 import math
 import os
@@ -68,6 +69,7 @@ def structure(root):
         k = "junctions_" + (j.get("type") or "default")
         m[k] = m.get(k, 0) + 1
     m["connections"] = sum(len(j.findall("connection")) for j in js)
+    m["junctions_with_boundary"] = sum(1 for j in js if j.find("boundary") is not None)
     m["boundary_helpers"] = sum(1 for r in roads if r.get("name") == "JunctionBoundary")
     sections = lanes = opening = unlinked = 0
     for r in roads:
@@ -97,6 +99,9 @@ def structure(root):
     m["connecting_lanes_opening_from_0"], m["lanes_without_link"] = opening, unlinked
     m["signals"] = sum(len(r.findall("signals/signal")) for r in roads)
     m["objects"] = sum(len(r.findall("objects/object")) for r in roads)
+    zo = [abs(float(o.get("zOffset", 0.0))) for r in roads for o in r.findall("objects/object")]
+    m["objects_zoffset_nonzero"] = sum(1 for v in zo if v > 1e-6)
+    m["objects_zoffset_max"] = round(max(zo), 3) if zo else 0.0
     m["bridges"] = sum(len(r.findall("objects/bridge")) for r in roads)
     m["tunnels"] = sum(len(r.findall("objects/tunnel")) for r in roads)
     return m
@@ -143,10 +148,19 @@ def exact(path):
     return m
 
 
+def identity(path):
+    """what makes a record belong to exactly one file: its bytes (sha256, size), modification time and folder"""
+    data = open(path, "rb").read()
+    return {"folder": os.path.dirname(os.path.abspath(path)), "file": os.path.basename(path),
+            "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
+            "mtime": datetime.datetime.fromtimestamp(os.path.getmtime(path)).isoformat(timespec="seconds")}
+
+
 def snapshot(folder, label="", paths=None):
-    """metrics of every *.xodr in folder (or of the given paths)"""
-    files = {}
-    for path in sorted(paths if paths is not None else glob.glob(os.path.join(folder, "*.xodr"))):
+    """metrics of every *.xodr in folder (or of the given paths); each file's identity in the identity map"""
+    files, ident = {}, {}
+    paths = sorted(paths if paths is not None else glob.glob(os.path.join(folder, "*.xodr")))
+    for path in paths:
         root = ET.parse(path).getroot()
         h = root.find("header")
         m = {"file_bytes": os.path.getsize(path), "revMinor": int(h.get("revMinor")) if h is not None else None}
@@ -154,10 +168,21 @@ def snapshot(folder, label="", paths=None):
         m.update(vertical(path))
         m.update(exact(path))
         files[os.path.basename(path)] = m
+        ident[os.path.basename(path)] = identity(path)
     exe = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
+    folders = {i["folder"] for i in ident.values()}
     return {"label": label, "time": datetime.datetime.now().isoformat(timespec="seconds"), "commit": git_commit(),
             "osm2xodr_built": datetime.datetime.fromtimestamp(os.path.getmtime(exe)).isoformat(timespec="seconds")
-            if os.path.exists(exe) else None, "folder": os.path.abspath(folder) if folder else None, "files": files}
+            if os.path.exists(exe) else None,
+            "folder": os.path.abspath(folder) if folder else (folders.pop() if len(folders) == 1 else None),
+            "files": files, "identity": ident}
+
+
+def page_record(snap, name):
+    """the provenance record of one output (schema 1, written next to it as <file>.metrics.json): the run, the file's
+    identity and its metrics - the viewer shows the numbers only when the sha256 matches the bytes it loaded"""
+    return {"schema": 1, "label": snap["label"], "time": snap["time"], "commit": snap["commit"],
+            "osm2xodr_built": snap["osm2xodr_built"], **snap["identity"][name], "metrics": snap["files"][name]}
 
 
 def compare(before_exe, after_exe, out, areas=None, labels=("before", "after")):
