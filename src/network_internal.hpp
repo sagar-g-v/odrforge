@@ -89,6 +89,16 @@ struct RoadMeta {
   int rank = 0;        ///< road class priority (higher = more important)
   /// the crosswalk at this end lies inside the junction (standard profile: a cross path of the junction)
   bool crosswalkInJunctionStart = false, crosswalkInJunctionEnd = false;
+  /// street-side parking areas mapped beside the road, as parking lanes (parking.cpp); s on the full line
+  struct ParkingBay {
+    double s0 = 0.0, s1 = 0.0;
+    bool left = false;
+    double width = 0.0;   ///< parking lane
+    double filler = 0.0;  ///< road-level border lane between the carriageway and the area (0: none)
+    double taperIn = 0.0, taperOut = 0.0;  ///< growth / fall of the area's depth at its ends
+    std::vector<OsmId> ways;  ///< the OSM areas joined into this bay
+  };
+  std::vector<ParkingBay> bays;
 };
 
 struct Cluster {
@@ -202,7 +212,12 @@ struct Builder {
   void attachSeparateSidewalks();  // sidewalk.cpp
   /// re-measures attached sidewalks from the fitted, trimmed reference line (sidewalk.cpp)
   void remeasureSidewalks(const RoadMeta &m, const ReferenceLine &line, std::vector<SectionInfo> &secs) const;
-  /// parking lanes from tags end the country's legal distance from a road end at a junction (parking.cpp)
+  /// street-side parking areas (OSM parking=street_side|lane|layby) measured beside the roads (parking.cpp)
+  void measureStreetSideParking();
+  std::set<OsmId> parkingAreas, parkingAreasDrawn;  ///< street-side parking areas measured / drawn on some road
+  /// the measured areas as parking lanes in the trimmed road's sections (parking.cpp)
+  void applyParkingBays(const RoadMeta &m, double sTrim, double len, std::vector<SectionInfo> &secs);
+  /// parking lanes from tags carry "no stopping at any time" within the country's legal distance of a junction (parking.cpp)
   void keepTagParkingClearOfJunctions(const RoadMeta &m, double len, std::vector<SectionInfo> &secs);
   void findJunctionNodes();
   void buildChains();

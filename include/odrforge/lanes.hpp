@@ -12,13 +12,17 @@
 
 namespace odrforge {
 
-/// Border: the verge between the carriageway and a sidewalk mapped as its own way
+/// Border: the verge between the carriageway and a sidewalk mapped as its own way, or the road-level
+/// strip between the carriageway and a street-side parking area mapped apart from it
 enum class LaneKind { Driving, Bidirectional, Bus, Biking, Parking, Shoulder, Border, Sidewalk };
 
 struct LaneSpec {
   LaneKind kind = LaneKind::Driving;
   double width = 3.25;
   std::vector<std::string> turns;  ///< OSM turn values (left, slight_left, through, right, merge_to_left, ...)
+  /// a lane starting (ending) at its section boundary grows from (falls to) zero over this length; 0: the
+  /// network's taper length. Street-side parking bays carry the length measured from their OSM area.
+  double taperIn = 0.0, taperOut = 0.0;
   /// a lane rule for the whole section (OpenDRIVE 1.8.0 §11.9 <rule>), e.g. "no stopping at any time"; empty: none
   std::string rule;
 };

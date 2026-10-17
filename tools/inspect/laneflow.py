@@ -56,7 +56,8 @@ Each output entry also carries its spec rule id ('spec') and level (MUST / SHOUL
                       classes by order, JCT-2)
     pairs.missing     boundary entry -> exit pairs OSM can drive and the lanes cannot; pairs.*_unmapped
                       edge entries / exits OSM has and no lane has
-    edge.*            sidewalk / shoulder / curb / parking / biking continuity (NAT-4)
+    edge.*            sidewalk / shoulder / curb / parking / biking continuity (NAT-4); a parking or border lane
+                      starting / stopping by a mapped street-side parking area is explained by it (edge.break.osm_area)
     split.*           road_needless (NAT-3), road_to_road (NAT-1), section_redundant (NAT-2)
     rule.osm          the traffic rule the file declares contradicts OSM oneway evidence (TOP-1, SIM-3)
 
@@ -90,6 +91,11 @@ EDGE_TYPES = frozenset({"sidewalk", "shoulder", "curb", "border", "walking"})
 # lanes whose continuity across section / road-to-road boundaries is checked (spec NAT-4 adds biking
 # and parking to the edge lanes)
 CONTINUITY_TYPES = EDGE_TYPES | frozenset({"biking", "parking"})
+# a street-side parking area mapped apart from the road (amenity=parking + parking=street_side | lane | layby) is
+# drawn as a parking lane over its stretch, after a road-level border strip where it lies beyond the carriageway
+# (parking.cpp): such a lane starting or stopping within this distance of the area (the converter's widest strip,
+# kMaxStrip 4 m, plus 0.5 m) is explained by the OSM geometry
+PARKING_AREA_TOL = 4.5
 # converter's motor highway set and exclusions (BuildOptions::highways / excludeService); the OSM
 # reference uses the same set so both sides describe the same network
 HIGHWAYS = frozenset({"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary",
@@ -2012,7 +2018,7 @@ class LaneFlow:
                     continue
                 cand = [q for q in sec_o.lanes() if q.type == l.type and (q.id > 0) == ((l.id > 0) == (f > 0))]
                 kind = "end" if abs(s_at - sec.e) < 1e-9 and sec.e > sec.s else "start"  # in the road's s
-                x, y, _ = lane_centre(r, sec, l.id, s_at)
+                x, y, w_at = lane_centre(r, sec, l.id, s_at)
                 if cand:
                     if side == 1 and any((rA.id, q.id) in unlinked_a for q in cand):
                         continue  # the same missing link, already reported from the A side
@@ -2026,7 +2032,10 @@ class LaneFlow:
                     continue
                 side_o = (1 if l.id > 0 else -1) * f
                 says = self._edge_osm_side(r_o, sec_o, side_o, l.type)
-                if says is True:
+                if l.type in ("parking", "border") and w_at <= 0.05 and self._by_parking_area(x, y):
+                    # it grows from / falls to zero width where a mapped street-side parking area starts / ends
+                    cls, dist = "osm_area", None
+                elif says is True:
                     cls, dist = "unexplained", None  # OSM tags this edge on that side of the gap
                 elif says is False:
                     cls, dist = "osm_absent", None   # OSM tags no such edge on that side of the gap
@@ -2035,10 +2044,27 @@ class LaneFlow:
                 F.add("edge.break." + cls, "defect" if cls == "unexplained" else "info", r.id, l.id, s_at, x, y,
                       value=dist, limit=TAPER_LEN, lane_type=l.type, at=where, kind=kind, osm_side=says,
                       detail=f"{l.type} {'stops' if kind == 'end' else 'starts'} at the {where} boundary; "
-                             + ("OSM tags it on that side of the gap" if says is True else
+                             + ("a mapped street-side parking area starts / ends there" if cls == "osm_area" else
+                                "OSM tags it on that side of the gap" if says is True else
                                 "OSM tags none on that side of the gap" if says is False else
                                 f"OSM has no side tag there; nearest OSM change of its tags "
                                 f"{'none' if dist is None else f'{dist:.1f} m away'}"))
+
+    def _by_parking_area(self, x, y):
+        """does a mapped street-side parking area lie within PARKING_AREA_TOL of (x, y)?"""
+        if self.osm is None:
+            return False
+        if not hasattr(self, "_parking_areas"):
+            from shapely.geometry import Point
+            from shapely.strtree import STRtree
+            import parking_coverage
+            areas = list(parking_coverage.street_side_polygons(self.osm).values())
+            self._parking_areas = (STRtree(areas), areas, Point) if areas else None
+        if self._parking_areas is None:
+            return False
+        tree, areas, Point = self._parking_areas
+        p = Point(x, y)
+        return any(areas[i].distance(p) <= PARKING_AREA_TOL for i in tree.query(p.buffer(PARKING_AREA_TOL)))
 
     def _edge_osm_side(self, r, sec, side, ltype):
         """what the OSM ways mapped onto section sec of road r say about an edge of type ltype on

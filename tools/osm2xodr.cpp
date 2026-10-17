@@ -184,6 +184,10 @@ int main(int argc, char **argv) {
     if (rep.parkingDroppedOnShortRoads)
       std::printf("  parking: %d roads too short to park on beside their junctions keep no tagged parking lane\n",
                   rep.parkingDroppedOnShortRoads);
+    if (rep.streetSideParking || rep.streetSideParkingLeftOut)
+      std::printf("  street-side parking: %d mapped areas drawn as parking lanes, %d left out; %d tag parking lanes "
+                  "gave way to them\n",
+                  rep.streetSideParking, rep.streetSideParkingLeftOut, rep.parkingTagsOverruled);
     if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
       std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk, %d acute (nose)\n",
                   rep.cornerSidewalks, rep.cornerSidewalksTooTight, rep.cornerNoses);

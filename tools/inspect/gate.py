@@ -42,6 +42,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import annex_f  # noqa: E402
 import metrics  # noqa: E402
+import osm_contract  # noqa: E402
 import terrain_contract  # noqa: E402
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -315,6 +316,19 @@ def main():
         if r.returncode != 0:
             res["ok"] = False
             res["problems"].append("terrain contract self-test failed: " + (r.stdout + r.stderr)[-800:])
+    # absolute limits on the mapped OSM geometry the outputs draw (osm_contract.py), and its planted-defect self-test
+    osm_areas = [ar for ar in good if ar in osm_contract.CONTRACT]
+    for ar in osm_areas:
+        problems, measured = osm_contract.check(ar, TOUT)
+        res["areas"][ar]["osm"] = measured
+        for p in problems:
+            res["ok"] = False
+            res["problems"].append("osm contract " + p)
+    if osm_areas:
+        r, _ = run([sys.executable, os.path.join(REPO, "tests", "osm_contract_selftest.py")] + osm_areas)
+        if r.returncode != 0:
+            res["ok"] = False
+            res["problems"].append("osm contract self-test failed: " + (r.stdout + r.stderr)[-800:])
     # detailed metrics of every output of this run (metrics.py), stored with commit and time, and their difference to
     # the previous run over the same areas: what a change did, measured on every run
     outputs = [AREAS[ar]["xodr"] for ar in good]

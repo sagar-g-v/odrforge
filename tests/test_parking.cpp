@@ -1,6 +1,7 @@
-// Street parking: the OSM street-parking tags (wiki Street parking) become lanes of type parking (OpenDRIVE 1.8.0
-// §11.7.1, 1.4H laneType parking) that end the country's no-parking distance short of a junction, in new lane sections
-// (1.8.0 §11.3).
+// Street parking: the OSM street-parking tags (wiki Street parking) and street-side parking areas mapped beside the
+// road (amenity=parking + parking=street_side | lane | layby) become lanes of type parking (OpenDRIVE 1.8.0 §11.7.1,
+// 1.4H laneType parking); near junctions a tagged lane carries the no-stopping lane rule (§11.9), an area's lane runs
+// over the stretch it is mapped, in new lane sections (§11.3).
 #include <algorithm>
 #include <cstdio>
 
@@ -31,6 +32,13 @@ struct OsmB {
     w.tags = std::move(t);
     d.ways[w.id] = w;
     return w.id;
+  }
+  /// a closed area through the points
+  OsmId area(const std::vector<Vec2> &pts, Tags t) {
+    std::vector<OsmId> ids;
+    for (const Vec2 &p : pts) ids.push_back(node(p.x, p.y));
+    ids.push_back(ids.front());
+    return way(ids, std::move(t));
   }
 };
 
@@ -90,6 +98,19 @@ const odr::Road *roadNearPoint(const odr::OpenDrive &od, double x, double y) {
   return best;
 }
 
+
+const odr::Road *street(const odr::OpenDrive &od) {
+  for (const auto &r : od.roads)
+    if (r.junction == "-1" && r.planView.length() > 200.0) return &r;
+  return nullptr;
+}
+
+/// road s at the point (x, 0) of the street drawn along y = 0
+double sAt(const odr::Road &r, double x) {
+  double s, t;
+  r.planView.project({x, 0.0}, s, t);
+  return s;
+}
 
 }  // namespace
 
@@ -185,4 +206,182 @@ TEST_CASE("parking tags: a road too short to park on beside its junctions (a stu
         for (const auto &l : *side) CHECK(l.type != "parking");
   }
   CHECK(stubs == 1);
+}
+
+namespace {
+/// a 300 m two-way residential street along y = 0 (x from -150 to 150) and one area beside it on the right
+/// (south) side: inner edge `inner` m beyond the carriageway edge, `depth` deep, from x0 to x1, ends cut at 45 deg
+struct BayCase {
+  odr::OpenDrive od;
+  BuildReport rep;
+  int errors = 0;
+};
+BayCase buildBay(Tags streetTags, double x0, double x1, double inner, double depth, std::string kind = "street_side") {
+  OsmB b;
+  Tags t{{"highway", "residential"}};
+  for (const auto &[k, v] : streetTags) t[k] = v;
+  b.way({b.node(-150, 0), b.node(0, 0), b.node(150, 0)}, t);
+  const BuildOptions o = opts();
+  const double edge = [&] {
+    const CrossSection x = crossSectionFromTags(t, o.country);
+    double e = -x.laneOffset;
+    for (const auto &l : x.right.lanes)
+      if (l.kind == LaneKind::Driving) e += l.width;
+    return e;
+  }();
+  if (depth > 0.0) {
+    const double yi = -(edge + inner), yo = yi - depth;
+    b.area({{x0, yi}, {x1, yi}, {x1 - depth, yo}, {x0 + depth, yo}}, {{"amenity", "parking"}, {"parking", kind}});
+  }
+  BayCase c;
+  c.od = buildOpenDrive(b.d, b.proj, o, &c.rep);
+  const ValidationReport v = validate(c.od, o.target);
+  for (size_t i = 0; i < v.messages.size() && i < 6; ++i) std::printf("    %s\n", v.messages[i].c_str());
+  c.errors = v.errors;
+  return c;
+}
+}  // namespace
+
+TEST_CASE("street-side parking area: a parking lane over the mapped stretch, as wide as the area, ends as measured") {
+  const BayCase c = buildBay({}, -40.0, 20.0, 0.2, 2.4);
+  CHECK(c.errors == 0);
+  CHECK(c.rep.streetSideParking == 1);
+  CHECK(c.rep.streetSideParkingLeftOut == 0);
+  const odr::Road *r = street(c.od);
+  CHECK(r != nullptr);
+  if (!r) return;
+  // beside the area: carriageway edge to outer edge (0.2 m within kAbsorb: no strip)
+  CHECK_NEAR(widthAt(*r, sAt(*r, -10.0), "parking", true), 2.6, 0.1);
+  CHECK(widthAt(*r, sAt(*r, -10.0), "border", true) < 0.0);
+  // nowhere else, and not on the other side
+  CHECK(widthAt(*r, sAt(*r, -60.0), "parking", true) < 0.05);
+  CHECK(widthAt(*r, sAt(*r, 50.0), "parking", true) < 0.05);
+  CHECK(widthAt(*r, sAt(*r, -10.0), "parking", false) < 0.0);
+  // the 45-degree ends: full width 2.4 m in from each end (the 30 m network taper would still be at a third)
+  CHECK(widthAt(*r, sAt(*r, -40.0 + 3.5), "parking", true) > 0.8 * 2.6);
+  CHECK(widthAt(*r, sAt(*r, 20.0 - 3.5), "parking", true) > 0.8 * 2.6);
+  CHECK(widthAt(*r, sAt(*r, -40.0 - 1.0), "parking", true) < 0.3);
+}
+
+TEST_CASE("street-side parking area: a strip beyond the carriageway becomes a road-level border lane before the parking lane") {
+  const BayCase c = buildBay({}, -40.0, 20.0, 2.0, 2.5);
+  CHECK(c.errors == 0);
+  CHECK(c.rep.streetSideParking == 1);
+  const odr::Road *r = street(c.od);
+  if (!r) return;
+  CHECK_NEAR(widthAt(*r, sAt(*r, -10.0), "border", true), 2.0, 0.1);
+  CHECK_NEAR(widthAt(*r, sAt(*r, -10.0), "parking", true), 2.5, 0.1);
+}
+
+TEST_CASE("street-side parking area: beside the area its measured lane replaces the tagged one (counted); elsewhere the tag decides") {
+  const BayCase tagged = buildBay({{"parking:right", "lane"}}, 0.0, 0.0, 0.0, 0.0);  // no area: the tag's lane all along
+  const odr::Road *r0 = street(tagged.od);
+  if (!r0) return;
+  CHECK(widthAt(*r0, sAt(*r0, -100.0), "parking", true) > 2.0);
+  CHECK(widthAt(*r0, sAt(*r0, 100.0), "parking", true) > 2.0);
+  // perpendicular stalls (4.6 m) beside a lane tagged parallel (2.4 m): the area's lane replaces it there
+  const BayCase c = buildBay({{"parking:right", "lane"}}, -40.0, 20.0, 0.2, 4.4);
+  CHECK(c.errors == 0);
+  CHECK(c.rep.parkingTagsOverruled >= 1);
+  const odr::Road *r = street(c.od);
+  if (!r) return;
+  CHECK_NEAR(widthAt(*r, sAt(*r, -10.0), "parking", true), 4.6, 0.1);
+  const double tagWidth = opts().country.parkingWidthParallel;
+  CHECK_NEAR(widthAt(*r, sAt(*r, -100.0), "parking", true), tagWidth, 0.05);
+  CHECK_NEAR(widthAt(*r, sAt(*r, 100.0), "parking", true), tagWidth, 0.05);
+  // one parking lane along the whole side: it continues through the area (no lane starts or stops there)
+  int sectionsWithout = 0;
+  for (const auto &sec : r->lanes) {
+    bool has = false;
+    for (const auto &l : sec.right) has = has || l.type == "parking";
+    sectionsWithout += !has;
+  }
+  CHECK(sectionsWithout == 0);
+}
+
+TEST_CASE("street-side parking area: an area as wide as the tagged lane (within 0.5 m) confirms it - no section of its own") {
+  const BayCase c = buildBay({{"parking:right", "lane"}}, -40.0, 20.0, 0.2, 2.4);  // 2.6 m beside a 2.4 m tagged lane
+  CHECK(c.errors == 0);
+  CHECK(c.rep.streetSideParking == 1);
+  CHECK(c.rep.parkingTagsOverruled == 0);
+  const odr::Road *r = street(c.od);
+  if (!r) return;
+  CHECK(r->lanes.size() == 1);
+  CHECK_NEAR(widthAt(*r, sAt(*r, -10.0), "parking", true), opts().country.parkingWidthParallel, 0.05);
+}
+
+TEST_CASE("street-side parking area: left out when it is a lot (too deep), too short, or drawn over the road") {
+  // each left out with its own reason in the warning
+  auto warned = [](const BayCase &c, const char *why) {
+    return std::any_of(c.rep.warnings.begin(), c.rep.warnings.end(),
+                       [&](const std::string &w) { return w.find("street-side parking") != std::string::npos && w.find(why) != std::string::npos; });
+  };
+  const BayCase deep = buildBay({}, -40.0, 20.0, 0.2, 12.0);  // 12 m deep: wider than kMaxWidth
+  CHECK(deep.rep.streetSideParkingLeftOut == 1 && warned(deep, "m wide"));
+  const BayCase shortBay = buildBay({}, -40.0, -36.0, 0.2, 1.8);  // 4 m long: shorter than kMinBay
+  CHECK(shortBay.rep.streetSideParkingLeftOut == 1 && warned(shortBay, "shorter than"));
+  const BayCase over = buildBay({}, -40.0, 20.0, -8.0, 9.0);  // from 8 m inside the edge across the reference line
+  CHECK(over.rep.streetSideParking == 0);
+  CHECK(over.rep.streetSideParkingLeftOut == 1 && warned(over, "drawn over the road"));
+  CHECK(over.errors == 0);
+}
+
+TEST_CASE("street-side parking area: layby counts, a parking area that is not street-side does not") {
+  CHECK(buildBay({}, -40.0, 20.0, 0.2, 2.4, "layby").rep.streetSideParking == 1);
+  const BayCase surface = buildBay({}, -40.0, 20.0, 0.2, 2.4, "surface");
+  CHECK(surface.rep.streetSideParking == 0 && surface.rep.streetSideParkingLeftOut == 0);
+}
+
+TEST_CASE("street-side parking area: between a street and a parallel service road it is drawn once, on the nearer road") {
+  OsmB b;
+  const BuildOptions o = opts();
+  const Tags street{{"highway", "residential"}}, service{{"highway", "service"}};
+  b.way({b.node(-150, 0), b.node(150, 0)}, street);
+  b.way({b.node(-150, -11), b.node(150, -11)}, service);
+  double edge = 0.0;
+  for (const auto &l : crossSectionFromTags(street, o.country).right.lanes)
+    if (l.kind == LaneKind::Driving) edge += l.width;
+  // 0.2 m beyond the street's carriageway, a strip of about 2 m to the service road's
+  const double yi = -(edge + 0.2), yo = yi - 2.4;
+  b.area({{-40, yi}, {20, yi}, {17.6, yo}, {-37.6, yo}}, {{"amenity", "parking"}, {"parking", "street_side"}});
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.streetSideParking == 1);
+  int roadsWithParking = 0;
+  for (const auto &r : od.roads) {
+    bool has = false;
+    for (const auto &sec : r.lanes)
+      for (const auto *side : {&sec.left, &sec.right})
+        for (const auto &l : *side) has = has || l.type == "parking";
+    if (!has) continue;
+    ++roadsWithParking;
+    double s, t;
+    r.planView.project({0.0, 0.0}, s, t);
+    CHECK(std::abs(t) < 1.0);  // the street, not the service road 11 m away
+  }
+  CHECK(roadsWithParking == 1);
+}
+
+TEST_CASE("street-side parking area: two bays joined far behind the road are two stretches, nothing drawn between") {
+  OsmB b;
+  const BuildOptions o = opts();
+  const Tags residential{{"highway", "residential"}};
+  b.way({b.node(-150, 0), b.node(150, 0)}, residential);
+  double edge = 0.0;
+  for (const auto &l : crossSectionFromTags(residential, o.country).right.lanes)
+    if (l.kind == LaneKind::Driving) edge += l.width;
+  // a U: bays x -60..-42 and 2..20 beside the road, their legs joined 30 m south (beyond the rays' reach)
+  const double yi = -(edge + 0.2), yo = yi - 2.4;
+  b.area({{-60, yi}, {-40, yi}, {-40, -30}, {0, -30}, {0, yi}, {20, yi}, {20, yo}, {2, yo}, {2, -32}, {-42, -32}, {-42, yo}, {-60, yo}},
+         {{"amenity", "parking"}, {"parking", "street_side"}});
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.streetSideParking == 1);
+  const odr::Road *r = street(od);
+  if (!r) return;
+  CHECK(widthAt(*r, sAt(*r, -50.0), "parking", true) > 2.0);
+  CHECK(widthAt(*r, sAt(*r, 10.0), "parking", true) > 2.0);
+  CHECK(widthAt(*r, sAt(*r, -20.0), "parking", true) < 0.05);
 }

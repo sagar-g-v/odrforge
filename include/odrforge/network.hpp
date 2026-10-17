@@ -94,6 +94,9 @@ struct BuildReport {
   int inheritedLinkLanes = 0;  ///< untagged *_link pieces given the lanes of the tagged piece they continue one to one
   int parkingAisles = 0;
   int separateSidewalks = 0;  ///< road sides extended to a separately mapped sidewalk
+  int streetSideParking = 0;         ///< OSM street-side parking areas (parking=street_side|lane|layby) drawn as parking lanes
+  int streetSideParkingLeftOut = 0;  ///< ... beside no road, or not fitting as a parking lane (warned)
+  int parkingTagsOverruled = 0;      ///< section sides whose parking:* tag lane gave way to the mapped areas
   int parkingNoStoppingAtJunctions = 0; ///< roads whose tagged parking lanes carry the no-stopping rule near a junction (country parkingClearOfJunction)
   int parkingDroppedOnShortRoads = 0;   ///< roads too short to park on beside their junctions: no tagged parking lane
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added

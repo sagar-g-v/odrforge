@@ -119,6 +119,9 @@ if(ODRFORGE_BUILD_TESTS)
       # laneflow.py / invariants.py NAT-2: a section boundary where a lane rule changes (no-stopping near junctions)
       add_test(NAME lane_rule_selftest COMMAND ${Python3_EXECUTABLE} -I
                ${CMAKE_CURRENT_SOURCE_DIR}/tests/lane_rule_selftest.py $<TARGET_FILE:osm2xodr>)
+      # laneflow.py: a parking lane growing from zero by a mapped street-side parking area is explained
+      add_test(NAME laneflow_area_selftest COMMAND ${Python3_EXECUTABLE} -I
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/laneflow_area_selftest.py $<TARGET_FILE:osm2xodr>)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()

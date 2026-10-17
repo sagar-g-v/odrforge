@@ -749,6 +749,7 @@ void Builder::buildRoads() {
     mergeEqualSections(secs);
     remeasureSidewalks(m, r.planView, secs);
     keepTagParkingClearOfJunctions(m, len, secs);  // tagged parking: no stopping within the legal distance of junctions
+    applyParkingBays(m, s0, len, secs);            // mapped street-side areas win where they lie
     for (size_t k = 0; k < secs.size(); ++k)
       keepVergeFoldSafe(secs[k].xs, r.planView, secs[k].s, k + 1 < secs.size() ? secs[k + 1].s : len);
     // lane sections, tapers and links
@@ -852,22 +853,26 @@ void Builder::buildRoads() {
             }
           }
           if (!g && ta <= 0.0 && !d) continue;
-          const double T = std::min(opt.taperLength, (d ? (g ? 0.5 : ta > 0.0 ? 0.6 : 0.8) : 0.8) * secLen);
+          const double cap = (d ? (g ? 0.5 : ta > 0.0 ? 0.6 : 0.8) : 0.8) * secLen;
+          // growth / fall: the taper length, or the length measured for the lane (street-side parking bays)
+          const LaneSpec &spec = (side == &r.lanes[k].left ? secs[k].xs.left : secs[k].xs.right).lanes[i];
+          const double Tg = std::min(spec.taperIn > 0.0 ? spec.taperIn : opt.taperLength, cap);
+          const double Td = std::min(spec.taperOut > 0.0 ? spec.taperOut : opt.taperLength, cap);
           l.widths.clear();
           double s0 = 0.0;  // start of the full-width stretch
-          if (g) l.widths.push_back(odr::Poly3::hermite(0.0, T, 0.0, 0.0, w, 0.0)), s0 = T, addTaper[k] = std::max(addTaper[k], T);
-          if (d) dropTaper[k + 1] = std::max(dropTaper[k + 1], T);
+          if (g) l.widths.push_back(odr::Poly3::hermite(0.0, Tg, 0.0, 0.0, w, 0.0)), s0 = Tg, addTaper[k] = std::max(addTaper[k], Tg);
+          if (d) dropTaper[k + 1] = std::max(dropTaper[k + 1], Td);
           // a lane that blends to a new width at its start and ends at its section's end does both
-          // (T leaves room for the blend): the blend keeps its borders continuous across the boundary
+          // (Td leaves room for the blend): the blend keeps its borders continuous across the boundary
           if (!g && ta > 0.0) l.widths.push_back(odr::Poly3::hermite(0.0, ta, wm, mm, w, 0.0)), s0 = ta;
-          const double hold = secLen - s0 - (d ? T : 0.0);
+          const double hold = secLen - s0 - (d ? Td : 0.0);
           if (hold > 1e-6) l.widths.push_back({s0, w, 0, 0, 0});
-          if (d) l.widths.push_back(odr::Poly3::hermite(secLen - T, T, w, 0.0, 0.0, 0.0));
+          if (d) l.widths.push_back(odr::Poly3::hermite(secLen - Td, Td, w, 0.0, 0.0, 0.0));
           if (const size_t line = taperLineLane(*side, i); line != std::string::npos) {
             auto &[sectionLength, spans] = quietSpans[{side, line}];
             sectionLength = secLen;
-            if (g) spans.push_back({0.0, T});
-            if (d) spans.push_back({secLen - T, secLen});
+            if (g) spans.push_back({0.0, Tg});
+            if (d) spans.push_back({secLen - Td, secLen});
           }
         }
     }
@@ -1193,6 +1198,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
     stage("trim roads", &detail::Builder::trimRoads);
     if (pass > 0 || !b.joinSqueezedJunctions()) break;
   }
+  stage("street-side parking", &detail::Builder::measureStreetSideParking);  // on the fitted, trimmed lines
   stage("roads", &detail::Builder::buildRoads);
   stage("resolve overlaps", &detail::Builder::resolveOverlaps);
   stage("elevation samples", &detail::Builder::sampleElevation);

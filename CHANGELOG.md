@@ -5,6 +5,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Street-side parking areas as parking lanes** (parking.cpp, OpenDRIVE 1.8.0 §11.7.1 / §11.3): OSM
+  `amenity=parking` + `parking=street_side|lane|layby` areas become a parking lane over the stretch they lie beside,
+  measured every 1 m from the fitted reference line (carriageway edge to the area's outer edge; a road-level border strip
+  first where the area lies beyond the edge), growing and falling over the area's own ends. Left out with a warning when
+  too narrow, too deep, too short, too far or drawn over the road; the nearest road claims an area two could reach.
+  Beside an area its lane replaces the tagged one (geometry over tags, user decision); an area as wide as the tagged lane
+  confirms it. Areas >= 80 % under parking lanes, both profiles: Munich 0/30 -> 20/30, London 0/17 -> 12/17, Frankfurt
+  5/12 -> 11/12, Stelvio 0/8 -> 1/8 (the viewer's independent check agrees). New OSM fidelity contract
+  (tools/inspect/osm_contract.py, docs/OSM_CONTRACT.md) in the gate with a planted-defect self-test; laneflow explains a
+  parking lane growing from zero by a mapped area (edge.break.osm_area, NAT-4 case by user decision). Validation
+  unchanged; worse: corners Munich / London +2, G2_ref_junction London +5. New ctest laneflow_area_selftest; 13 of 13
+  mutations caught. Jev 0.47, committed by the user's decision.
 - **Street parking from more OSM tags, and no stopping near junctions** (lanes.cpp, parking.cpp, rules/countries,
   OpenDRIVE 1.8.0 §11.7.1 / §11.9): `parking:<side>` = `yes`, `on_kerb` and `half_on_kerb` now give parking lanes and
   `:width` is read; parking on the kerb takes its share out of the sidewalk (user decision); plain `parking=*` on a road

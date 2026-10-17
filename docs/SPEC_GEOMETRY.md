@@ -232,7 +232,10 @@ A curb, shoulder, sidewalk/walking, border, biking or parking lane present at th
 - same type,
 - same side,
 - outer border continuous (`|ΔB| ≤ ε_pos`, `|ΔB'| ≤ ε_hdg`),
-- unless the OSM tags change at that node (e.g. `sidewalk=no` on the next way).
+- unless the OSM tags change at that node (e.g. `sidewalk=no` on the next way),
+- or (user decision 2026-10-18) a street-side parking area mapped apart from the road starts or ends there: its
+  parking lane, and the road-level border strip before it, grows from zero width at the area's start and falls to
+  zero at its end, so the borders beyond stay continuous (laneflow `edge.break.osm_area`).
 
 At junctions, edge lanes end, and the crossing is represented by a crosswalk object or a 1.8
 `crossPath`. Every edge-lane end that is not at a junction, the map boundary, a dead end, or an OSM
