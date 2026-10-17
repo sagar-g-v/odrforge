@@ -451,7 +451,8 @@ class Detector:
             node = common[0]
             s_node, _, dist = r.project(*osm.nodes[node])
             for side in ("R", "L"):
-                ka, kb = self.per_side(osm_counts(ta), cov[wa][2], side), self.per_side(osm_counts(tb), cov[wb][2], side)
+                ka = self.per_side(osm_counts(ta), cov[wa][2], side, v)
+                kb = self.per_side(osm_counts(tb), cov[wb][2], side, v)
                 changes.append(dict(node=node, side=side, s=s_node, ka=ka, kb=kb, wa=wa, wb=wb, ta=ta, tb=tb,
                                     da=cov[wa][2], db=cov[wb][2], x=osm.nodes[node][0], y=osm.nodes[node][1], dist=dist))
         # (a) count disagreement runs
@@ -459,7 +460,7 @@ class Detector:
         for side in ("R", "L"):
             exp = np.full(len(ss), -1)
             for w, (lo, hi, d) in cov.items():
-                k = self.per_side(osm_counts(osm.ways[w][1]), d, side)
+                k = self.per_side(osm_counts(osm.ways[w][1]), d, side, v)
                 if k is None:
                     continue
                 m = (ss > lo + 1.0) & (ss < hi - 1.0)
@@ -560,25 +561,30 @@ class Detector:
                      osm_lanes=[(c["wa"], c["ka"], c["wb"], c["kb"]) for c in near])
 
     @staticmethod
-    def per_side(c, d, side):
+    def per_side(c, d, side, v):
+        """OSM lanes (forward, backward) -> the count on one side: the way's forward lanes are on the side
+        whose traffic runs the way's direction (v.tsign: RHT right side +s, LHT left side +s)"""
         if c is None or d is None:
             return None
-        return c[0] if (side == "R") == (d > 0) else c[1]
+        return c[0] if (v.tsign[side] > 0) == (d > 0) else c[1]
 
     def expected_side(self, r, v, ch, kind):
         """(#changed lanes expected at the inner end, # at the outer end, evidence) or None.
-        inner = the driver's left in RHT.  A pocket lane is one whose turn values are all left-ish
-        (right-ish); shared lanes such as through;right are not pockets."""
+        inner = toward the centre line: the driver's left under RHT, the driver's right under LHT.
+        A pocket lane is one whose turn values are all left-ish (right-ish); shared lanes such as
+        through;right are not pockets."""
+        lht = v.tsign["L"] > 0
         wide_tags, wide_dir = (ch["ta"], ch["da"]) if ch["ka"] > ch["kb"] else (ch["tb"], ch["db"])
         c = osm_counts(wide_tags)
         oneway = c is not None and 0 in c
-        direction = "forward" if (ch["side"] == "R") == (wide_dir > 0) else "backward"
+        direction = "forward" if (v.tsign[ch["side"]] > 0) == (wide_dir > 0) else "backward"
         tl = turn_list(wide_tags, direction, oneway)
         if tl and len(tl) >= 2:
             nl = next((i for i, t in enumerate(tl) if not (t <= LEFTISH)), len(tl))
             nr = next((i for i, t in enumerate(reversed(tl)) if not (t <= RIGHTISH)), len(tl))
             if (nl or nr) and nl + nr < len(tl):
-                return (nl, nr, "turn:lanes=" + "|".join(";".join(sorted(x)) for x in tl))
+                ev = "turn:lanes=" + "|".join(";".join(sorted(x)) for x in tl)
+                return (nr, nl, ev) if lht else (nl, nr, ev)
         links = [(w, k) for w, k in self.node_ways[ch["node"]] if self.osm.ways[w][1].get("highway") in LINKS
                  and w not in (ch["wa"], ch["wb"])]
         if len(links) != 1 or self.osm.ways[ch["wa"]][1].get("highway") in LINKS:
@@ -590,7 +596,9 @@ class Detector:
             return None
         _, t, _ = r.project(*self.osm.nodes[other])
         left_of_travel = (t > 0) == (v.tsign[ch["side"]] > 0)
-        return (1, 0, "link way %s at node %s" % (w, ch["node"])) if left_of_travel else             (0, 1, "link way %s at node %s" % (w, ch["node"]))
+        inner = left_of_travel != lht  # the link leaves on the centre-line side of the traffic
+        ev = "link way %s at node %s" % (w, ch["node"])
+        return (1, 0, ev) if inner else (0, 1, ev)
 
     # -------------------------------------------------------- gore side (merge / diverge in uncovered stretches)
     def branch_role(self, v, e):

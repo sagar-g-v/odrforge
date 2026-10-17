@@ -2093,12 +2093,52 @@ def merge_one(b, dest=None):
     return len(errors)
 
 
+FLAG_ID0 = 1001  # review flags take ids from here: a viewer page left open numbers its new flags max(loaded) + 1
+
+
+def add_flags(review_path, flags_path):
+    """append the review's defect / uncertain verdicts to the viewer's <stem>.flags.json as open flags, so they
+    are listed and answered like hand-made ones (flags.py, viz_server.py). Existing flags are never changed or
+    removed; a verdict already added (same llm_key) is not added again. Returns the number added."""
+    rv = load(review_path)
+    data = load(flags_path) if os.path.exists(flags_path) else {}
+    flags = data.setdefault("flags", [])
+    have = {f.get("llm_key") for f in flags if isinstance(f, dict)}
+    nxt = max([FLAG_ID0 - 1] + [f["id"] for f in flags if isinstance(f, dict) and isinstance(f.get("id"), int)]) + 1
+    added = 0
+    for f in rv["flags"]:
+        key = f"{rv['prompt_version']}|{rv['sha256'][:12]}|{f['chunk']}|{f['spot']}|{f['kind']}|{f['x']:.1f}|{f['y']:.1f}"
+        if key in have:
+            continue
+        note = (f"[LLM review {f['verdict']}, {f['severity']}, confidence {f['confidence']:.2f}] {f['note']}"
+                + (f" (OSM ways {', '.join(f['osm_ways'])})" if f["osm_ways"] else ""))
+        flags.append(dict(id=nxt, x=f["x"], y=f["y"], road=f["road"], lane=f["lane"], laneType=f.get("laneType"),
+                          junction=f["junction"], s=f["s"], category=f["category"], note=note, created=f["created"],
+                          status="open", source="llm-review", llm_key=key, kind=f["kind"], severity=f["severity"],
+                          perspective=f["perspective"], osm_ways=f["osm_ways"], evidence=f["evidence"],
+                          reasoning=f["reasoning"], spec=f["spec"], confidence=f["confidence"],
+                          reviewed_sha256=rv["sha256"], review_file=os.path.basename(review_path)))
+        have.add(key)
+        nxt += 1
+        added += 1
+    if added:
+        dump(data, flags_path)
+    return added
+
+
 def cmd_merge(a):
     bs = bundles(a.dir)
     if not bs:
         print(f"no bundles under {a.dir}")
         return 1
     bad = sum(merge_one(b, a.dest) for b in bs)
+    if a.as_flags:
+        for b in bs:
+            m = load(os.path.join(b, "manifest.json"))
+            rp = os.path.join(a.dest, m["stem"] + ".review.json") if a.dest else m["review_path"]
+            fp = os.path.join(os.path.dirname(rp), m["stem"] + ".flags.json")
+            n = add_flags(rp, fp)
+            print(f"{m['stem']}: {n} review flags added to {fp}")
     return 1 if bad else 0
 
 
@@ -2187,6 +2227,8 @@ def main():
     p = sub.add_parser("merge", help="verdicts -> <stem>.review.json next to each output")
     p.add_argument("dir")
     p.add_argument("--dest", help="write the review files here instead of next to the outputs")
+    p.add_argument("--as-flags", action="store_true",
+                   help="also append the defect / uncertain verdicts to <stem>.flags.json as open flags (ids from 1001)")
     p = sub.add_parser("check-prompt", help="is the prompt older than the checkers, specs or OdrForge?")
     p.add_argument("--xodr", nargs="*")
     p.add_argument("--print-fingerprint", action="store_true")

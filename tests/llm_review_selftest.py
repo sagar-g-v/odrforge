@@ -480,6 +480,18 @@ def main():
     check(rc == 0 and rv["flags"][0]["candidates"] == sp["candidates"][:1],
           "merge: a candidate given by its list number resolves to that spot's candidate id")
     check(L.chunk_errors(b, m["chunks"][0]) == [], "chunk_errors: the claude-cli runner's per-chunk check agrees")
+    fpath = os.path.join(dest, "base.flags.json")
+    L.dump({"flags": [{"id": 3, "x": 1.0, "y": 2.0, "category": "geometry", "note": "mine", "status": "fixed"}]}, fpath)
+    rc, out = run("merge", os.path.join(work, "bundles"), "--dest", dest, "--as-flags")
+    rc2, out2 = run("merge", os.path.join(work, "bundles"), "--dest", dest, "--as-flags")
+    fl = L.load(fpath)["flags"]
+    mine = [f for f in fl if f["id"] == 3]
+    new = [f for f in fl if f.get("source") == "llm-review"]
+    check(rc == 0 and len(fl) == 2 and mine and mine[0]["note"] == "mine" and mine[0]["status"] == "fixed"
+          and len(new) == 1 and new[0]["id"] == L.FLAG_ID0 and new[0]["status"] == "open"
+          and new[0]["note"].startswith("[LLM review defect") and "10" in new[0]["note"],
+          "merge --as-flags: review verdicts appended to <stem>.flags.json as open flags from id 1001, the user's "
+          "flag untouched, a second run adds nothing")
     L.dump(dict(chunk=m["chunks"][0], prompt_version="0.0.0", reviewer="selftest", verdicts=[good]),
            os.path.join(vdir, m["chunks"][0] + ".json"))
     rc, out = run("merge", os.path.join(work, "bundles"), "--dest", dest)

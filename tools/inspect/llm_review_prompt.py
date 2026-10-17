@@ -10,7 +10,7 @@ Never edit the fingerprint without reading what changed: the fingerprint is the 
 against those versions.
 """
 
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.0.1"  # 1.0.1: four checkers fixed after the first review (lane centres, LHT, direct junctions)
 REVISED = "2026-10-17"
 ODRFORGE_VERSION = "0.6.0"  # the repository's VERSION file when the prompt was last revised
 
@@ -34,10 +34,10 @@ CHECKERS = {
     "boundary_audit.py": ("be0a7fdca3b1", "junction boundaries vs 1.8.0 12.10 / 12.11"),
     "crosspath_audit.py": ("839eab453412", "crossPath elements vs 1.9 12.5 / 12.7.1"),
     "det_edge_smoothness.py": ("3b580567d2c7", "lane borders C1-smooth, no folds"),
-    "det_junction_gore.py": ("6902f3dff5ff", "junction and gore quality, connecting-road discontinuities"),
-    "det_lane_transitions.py": ("f31b4876274c", "lane count / width transitions, jogs, tapers"),
-    "det_link_continuity.py": ("0a143940cc56", "lane-link continuity, open lane ends at junctions"),
-    "det_osm_fidelity.py": ("ef13e5eed4d2", "plain roads on their OSM ways, lane counts as tagged"),
+    "det_junction_gore.py": ("c7eaff690c1e", "junction and gore quality on every connecting lane's centre, RHT and LHT"),
+    "det_lane_transitions.py": ("9be2c8e15144", "lane count / width transitions, jogs, tapers; RHT and LHT"),
+    "det_link_continuity.py": ("cef8bb005d62", "lane-link continuity, open lane ends at default and direct junctions"),
+    "det_osm_fidelity.py": ("e04783e4e79f", "plain roads on their OSM ways, lane counts as tagged; RHT and LHT"),
     "gate.py": ("d9c44cfc6b0d", "runs everything per reference area against a baseline"),
     "grid_audit.py": ("c92fc7521596", "junction reference lines and elevation grids vs 1.8.0 12.9 / 12.11"),
     "invariants.py": ("0eb83fe54a39", "exact G0/G1/G2, widths, folds, flow, sidewalk on driving"),
