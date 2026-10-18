@@ -5,6 +5,15 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **No sliver loops in traced junction boundaries** (junction_surface.cpp; found by the viewer session at Munich 235,
+  247, 280, 325, London 86, Frankfurt 99): two connecting roads' edges crossing twice within centimetres made the trace
+  hand over at the second crossing, found on 0.25 m polylines, and one piece doubled back by millimetres. The hand-over
+  is now the first crossing along the run, moved onto the edge curves (Newton), and a traced outline whose two lane
+  pieces cross away from their join (whole pieces every 0.02 m, 0.2 m round the join every 1 mm) is withheld.
+  boundary_audit.py `simple` checks joins the same way (it flags 12 junctions on the c0f186f outputs, five of the six
+  reported - Munich 235 is a 1.2 mm near-touch at the join - and 0 now) and its self-test a join_overshot plant. Common
+  junctions without a boundary 200 -> 202 (LA, Frankfurt +1), boundaries from before the fallback byte-identical, exact
+  checkers / validation / terrain contract unchanged, XSD 0 errors, audit self-test 15/15. Jev 0.84.
 - **Junction boundaries traced along the lanes' contour** (junction_surface.cpp, OpenDRIVE 1.8.0 §12.10, user decision:
   a boundary for every common junction): where the outline of joints, lane edges and corner helpers fails (a corner
   curve between arms side by side turns back across their ends, lanes lie beyond a corner), the outer contour of the

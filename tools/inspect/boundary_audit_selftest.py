@@ -23,6 +23,8 @@ finding. Plants (expected checks):
   joint_lanes_narrowed    a joint across some lanes (jointLaneStart ..        closed
                           jointLaneEnd, Table 78) of a junction traced along its lanes' contour narrowed to one lane fewer
                           (that junction is the planted one for this plant)
+  join_overshot           two lane segments of a traced junction handing      simple
+                          over mid-road: the first runs 0.3 m past the join, the second starts 0.3 m before it
 Exit status 1 when any plant fails; DIR/selftest.json holds the findings per plant.
 """
 import argparse
@@ -77,6 +79,31 @@ def narrow_joint(root):
             if (nb - a) * step < 0:
                 continue
             sg.set("jointLaneEnd", str(nb))
+            return j.get("id")
+    return None
+
+
+def overshoot_join(root):
+    """the first join of two lane segments handing over mid-road (both s numeric there, a traced boundary): the first runs
+    on 0.3 m past it, the second starts 0.3 m before it - the two cross away from the join; its junction's id, or None"""
+    lengths = {r.get("id"): float(r.get("length")) for r in root.findall("road")}
+    for j in root.findall("junction"):
+        segs = j.findall("boundary/segment")
+        for k, a in enumerate(segs):
+            b = segs[(k + 1) % len(segs)]
+            if a.get("type") != "lane" or b.get("type") != "lane":
+                continue
+            try:
+                ae, as_, bs, be = float(a.get("sEnd")), a.get("sStart"), float(b.get("sStart")), b.get("sEnd")
+            except ValueError:
+                continue
+            la, lb = lengths[a.get("roadId")], lengths[b.get("roadId")]
+            da = 1.0 if (0.0 if as_ == "start" else la if as_ == "end" else float(as_)) < ae else -1.0
+            db = 1.0 if bs < (0.0 if be == "start" else lb if be == "end" else float(be)) else -1.0
+            na, nb = ae + 0.3 * da, bs - 0.3 * db
+            if not (0.0 < na < la and 0.0 < nb < lb):
+                continue
+            a.set("sEnd", "%.6f" % na), b.set("sStart", "%.6f" % nb)
             return j.get("id")
     return None
 
@@ -208,6 +235,21 @@ def main():
                                            "at_junction": dict(r["by_junction"].get(jt, {})), "elsewhere": elsewhere}
     failed += not results["joint_lanes_narrowed"]["pass"]
     print(f"{'PASS' if results['joint_lanes_narrowed']['pass'] else 'FAIL'} joint_lanes_narrowed: {results['joint_lanes_narrowed']}")
+    # a traced junction's two lane segments overshooting their join: they cross away from it
+    tree = copy.deepcopy(tree0)
+    jo = overshoot_join(tree.getroot())
+    if jo is None:
+        results["join_overshot"] = {"pass": False, "reason": "no mid-road join of two lane segments in the base"}
+    else:
+        path = os.path.join(a.out, "join_overshot.xodr")
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+        r = boundary_audit.audit(path, quiet=True)
+        here = set(r["by_junction"].get(jo, {}))
+        elsewhere = {k: dict(v) for k, v in r["by_junction"].items() if k != jo}
+        results["join_overshot"] = {"pass": "simple" in here and not elsewhere, "junction": jo,
+                                    "at_junction": dict(r["by_junction"].get(jo, {})), "elsewhere": elsewhere}
+    failed += not results["join_overshot"]["pass"]
+    print(f"{'PASS' if results['join_overshot']['pass'] else 'FAIL'} join_overshot: {results['join_overshot']}")
     with open(os.path.join(a.out, "selftest.json"), "w", encoding="utf-8") as f:
         json.dump({"base": a.base, "junction": jid, "plants": results}, f, indent=1)
     print(f"{len(results) - failed}/{len(results)} plants detected as expected")

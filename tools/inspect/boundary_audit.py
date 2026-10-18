@@ -11,7 +11,8 @@ Measured:
                   joint for every plain road end linked to the junction
   contains_lanes  the outline encloses both borders and the centre of every lane of the junction's roads ("Junction
                   boundaries enclose the area intended for traffic. This also includes the sidewalks for pedestrians.")
-  simple          the outline does not cross itself (a closed boundary around one area)
+  simple          the outline does not cross itself (a closed boundary around one area); where two lane segments meet
+                  also sampled every 0.02 m within 6 m of the join (a sliver loop there is smaller than the 0.5 m steps)
   folded          no lane segment's edge runs against its road's direction (an offset past a turn's centre: a cusp)
   ref_line_crosses  junctions.geometry.correct_junction_boundry (1.8.0 §12.9): the junction reference line crosses the
                   boundary or touches it
@@ -154,7 +155,42 @@ def audit(path, quiet=False):
         P = P[keep]
         if np.linalg.norm(P[0] - P[-1]) <= TOL:
             P = P[:-1]
-        if self_crossing(P[::2] if len(P) > 1500 else P):
+        # and where two lane segments meet, sampled every 0.02 m within 6 m of the join: a sliver loop there (two edges
+        # crossing twice within centimetres, the run handing over at the second crossing) is smaller than 0.5 m steps
+        def fine(sg, step, near=None):  # the segment every `step` m (only its last / first `near` m when given)
+            r, lane = R[sg.get("roadId")], int(sg.get("boundaryLane"))
+            s0, s1 = s_of(r, sg.get("sStart")), s_of(r, sg.get("sEnd"))
+            if near is not None:
+                d, n = (1.0 if s1 >= s0 else -1.0), min(abs(near), abs(s1 - s0))
+                s0, s1 = (s1 - d * n, s1) if near > 0 else (s0, s0 + d * n)
+            return [pt(r, s, edge_t(r, s, lane)) for s in np.linspace(s0, s1, max(2, int(abs(s1 - s0) / step) + 1))]
+        looped = False
+        for k in range(len(segs) * 2):  # each join twice: whole segments every 0.02 m, then 0.2 m round it every 1 mm
+            sa, sb = segs[k % len(segs)], segs[(k + 1) % len(segs)]
+            if looped or sa.get("type") != "lane" or sb.get("type") != "lane":
+                continue
+            micro = k >= len(segs)
+            Bh = np.array(fine(sb, 0.001, -0.2) if micro else fine(sb, 0.02))
+            A = np.array((fine(sa, 0.001, 0.2) if micro else fine(sa, 0.02)) + [Bh[0]])  # through the join to the next
+            # segment's start (a gap within TOL)
+            # only where the two can meet: the edges of each inside the other's bounding box (+ 0.1 m)
+            lo, hi = np.maximum(A.min(axis=0), Bh.min(axis=0)) - 0.1, np.minimum(A.max(axis=0), Bh.max(axis=0)) + 0.1
+            ina = np.all((np.minimum(A[:-1], A[1:]) <= hi) & (np.maximum(A[:-1], A[1:]) >= lo), axis=1)
+            inb = np.all((np.minimum(Bh[:-1], Bh[1:]) <= hi) & (np.maximum(Bh[:-1], Bh[1:]) >= lo), axis=1)
+            if not ina.any() or not inb.any():
+                continue
+            a0, a1 = A[:-1][ina][:, None, :], A[1:][ina][:, None, :]  # every segment of A against every segment of B;
+            b0, b1 = Bh[:-1][inb][None, :, :], Bh[1:][inb][None, :, :]  # a shared point is no proper crossing
+            o = lambda p, q, r: (q[..., 0] - p[..., 0]) * (r[..., 1] - p[..., 1]) - (q[..., 1] - p[..., 1]) * (r[..., 0] - p[..., 0])
+            oa0, oa1, ob0, ob1 = o(b0, b1, a0), o(b0, b1, a1), o(a0, a1, b0), o(a0, a1, b1)
+            x = (ob0 * ob1 < 0) & (oa0 * oa1 < 0)
+            if x.any():  # a crossing more than 1 mm from the join itself (closer is the two segments touching there)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    ta = oa0 / (oa0 - oa1)
+                at = a0 + (a1 - a0) * ta[..., None]
+                x &= (np.linalg.norm(at - A[-2], axis=-1) > 1e-3) & (np.linalg.norm(at - Bh[0], axis=-1) > 1e-3)
+            looped = bool(x.any())
+        if looped or self_crossing(P[::2] if len(P) > 1500 else P):
             add("simple", jid)
         area = 0.5 * float(np.sum(P[:, 0] * np.roll(P[:, 1], -1) - np.roll(P[:, 0], -1) * P[:, 1]))
         if area <= 0:

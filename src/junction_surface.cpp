@@ -658,10 +658,13 @@ void Builder::junctionBoundaries() {
         if (u.key < 0) return {arms[-1 - u.key].right, arms[-1 - u.key].left};
         return {feats[u.f0].p[0], feats[u.f0].p[1]};
       };
-      // the crossing of polylines P and Q (s per point) nearest `near`, within 1.5 m: s on each and the point
+      // the crossing of polylines P and Q (s per point) within 1.5 m of `near`: s on each and the point - the nearest; or,
+      // with a run direction (dir = +-1 along P's s from `from`), the first the run reaches: two edges crossing twice
+      // within a cell (a sliver the raster cannot see) hand over at the first, else the run doubles back in a loop
       const auto cross = [](const std::vector<Vec2> &P, const std::vector<double> &Ps, const std::vector<Vec2> &Q,
-                            const std::vector<double> &Qs, const Vec2 &near, double &sp, double &sq, Vec2 &at) {
-        double best = 1.5;
+                            const std::vector<double> &Qs, const Vec2 &near, double &sp, double &sq, Vec2 &at, double from = 0.0,
+                            double dir = 0.0) {
+        double best = 1e300;
         bool found = false;
         for (size_t i = 1; i < P.size(); ++i) {
           if ((P[i] - near).norm() > 4.0 && (P[i - 1] - near).norm() > 4.0) continue;
@@ -672,11 +675,37 @@ void Builder::junctionBoundaries() {
             if (std::abs(den) < 1e-12) continue;
             const double a = (q - p).cross(dq) / den, b = (q - p).cross(dp) / den;
             if (a < -1e-9 || a > 1.0 + 1e-9 || b < -1e-9 || b > 1.0 + 1e-9) continue;
-            const double d = (p + dp * a - near).norm();
-            if (d < best) best = d, found = true, sp = Ps[i - 1] + a * (Ps[i] - Ps[i - 1]), sq = Qs[j - 1] + b * (Qs[j] - Qs[j - 1]), at = p + dp * a;
+            const double d = (p + dp * a - near).norm(), s = Ps[i - 1] + a * (Ps[i] - Ps[i - 1]);
+            if (d > 1.5) continue;
+            const double rank = dir == 0.0 ? d : (s - from) * dir;
+            if (dir != 0.0 && rank < 1e-6) continue;  // not ahead of the run's start
+            if (rank < best) best = rank, found = true, sp = s, sq = Qs[j - 1] + b * (Qs[j] - Qs[j - 1]), at = p + dp * a;
           }
         }
         return found;
+      };
+      // a border's point at s (the outer border of its lane, the centre line for lane 0)
+      const auto edgeAt = [](const Feature &f, double s) {
+        double in = 0.0, t = odr::laneOffsetAt(*f.road, s);
+        if (f.lane != 0) odr::laneBorders(*f.road, s, f.lane, in, t);
+        return f.road->planView.eval(s).offset(t);
+      };
+      // the crossing of two borders found on their kOutlineStep polylines, moved onto the curves themselves (Newton,
+      // differences of 1e-4 m): both pieces end exactly where the edges cross, not a chord's sag apart (which would
+      // leave a sliver loop or a gap of millimetres at the join); kept as found when it does not converge nearby
+      const auto onCurves = [&](const Feature &P, const Feature &Q, double &sp, double &sq, Vec2 &at) {
+        double a = sp, b = sq;
+        for (int it = 0; it < 12; ++it) {
+          const Vec2 f = edgeAt(P, a) - edgeAt(Q, b);
+          if (f.norm() < 1e-7) break;
+          constexpr double h = 1e-4;
+          const Vec2 da = (edgeAt(P, a + h) - edgeAt(P, a - h)) * (0.5 / h), db = (edgeAt(Q, b + h) - edgeAt(Q, b - h)) * (-0.5 / h);
+          const double det = da.cross(db);
+          if (std::abs(det) < 1e-9) return;
+          a -= (f.cross(db)) / det, b -= (da.cross(f)) / det;
+        }
+        if (std::abs(a - sp) > 0.5 || std::abs(b - sq) > 0.5 || (edgeAt(P, a) - edgeAt(Q, b)).norm() > 1e-5) return;
+        sp = a, sq = b, at = edgeAt(P, a);
       };
       for (size_t k = 0; k < kept.size(); ++k) {
         Run &u = kept[k], &w = kept[(k + 1) % kept.size()];
@@ -685,7 +714,8 @@ void Builder::junctionBoundaries() {
         Vec2 at;
         if (!isEnd(u) && !isEnd(w)) {
           const Feature &P = feats[u.f1], &Q = feats[w.f0];
-          if (cross(P.p, P.s, Q.p, Q.s, near, sp, sq, at)) {
+          if (cross(P.p, P.s, Q.p, Q.s, near, sp, sq, at, u.u0, u.u1 >= u.u0 ? 1.0 : -1.0)) {
+            onCurves(P, Q, sp, sq, at);
             u.u1 = sp, w.u0 = sq, u.e1 = w.e0 = at;
           } else {
             double best = 1e300;
@@ -854,6 +884,55 @@ void Builder::junctionBoundaries() {
           const Vec2 q = p.offset(t);
           if (i > 0 && (q - prev).dot(p.dir()) * (pc.s1 - pc.s0) < 0.0) ok = fail("a lane edge against its road");
           prev = q;
+        }
+      }
+      // no loop where two lane pieces meet (boundary_audit.py `simple` checks the same): the two sampled every 0.02 m
+      // over their whole length, and every 1 mm over 0.2 m round the join, do not cross each other away from the join -
+      // two edges crossing twice within centimetres make a sliver the 0.25 m outline steps over
+      const auto sampled = [&](const Piece &pc, double step, double near) {  // near > 0: its last, < 0: its first metres
+        const odr::Road &r = *pc.road;
+        double a = pc.s0, b = pc.s1;
+        if (near != 0.0) {
+          const double dir = b >= a ? 1.0 : -1.0, n = std::min(std::abs(near), std::abs(b - a));
+          a = near > 0.0 ? b - dir * n : a, b = near > 0.0 ? b : a + dir * n;
+        }
+        const int n = std::max(2, static_cast<int>(std::ceil(std::abs(b - a) / step)) + 1);
+        std::vector<Vec2> pts;
+        for (int i = 0; i < n; ++i) {
+          const double s = a + (b - a) * i / (n - 1);
+          double in = 0.0, t = odr::laneOffsetAt(r, s);
+          if (pc.lane != 0) odr::laneBorders(r, s, pc.lane, in, t);
+          pts.push_back(r.planView.eval(s).offset(t));
+        }
+        return pts;
+      };
+      const auto X = [](const Vec2 &o, const Vec2 &a, const Vec2 &b) { return (a - o).cross(b - o); };
+      for (size_t k = 0; ok && k < 2 * pieces.size(); ++k) {
+        const Piece &pa = pieces[k % pieces.size()], &pb = pieces[(k + 1) % pieces.size()];
+        if (pa.s0 < 0.0 || pb.s0 < 0.0 || !pa.road || !pb.road) continue;  // lane pieces only
+        const bool micro = k >= pieces.size();
+        std::vector<Vec2> A = micro ? sampled(pa, 0.001, 0.2) : sampled(pa, 0.02, 0.0);
+        const std::vector<Vec2> Bh = micro ? sampled(pb, 0.001, -0.2) : sampled(pb, 0.02, 0.0);
+        const Vec2 join = A.back();
+        A.push_back(Bh.front());  // through the join to the next piece's start
+        double lx = -1e300, ly = -1e300, hx = 1e300, hy = 1e300;  // where both can be: their bounding boxes' overlap
+        double ax0 = 1e300, ay0 = 1e300, ax1 = -1e300, ay1 = -1e300, bx0 = 1e300, by0 = 1e300, bx1 = -1e300, by1 = -1e300;
+        for (const Vec2 &p : A) ax0 = std::min(ax0, p.x), ay0 = std::min(ay0, p.y), ax1 = std::max(ax1, p.x), ay1 = std::max(ay1, p.y);
+        for (const Vec2 &p : Bh) bx0 = std::min(bx0, p.x), by0 = std::min(by0, p.y), bx1 = std::max(bx1, p.x), by1 = std::max(by1, p.y);
+        lx = std::max(ax0, bx0) - 0.1, ly = std::max(ay0, by0) - 0.1, hx = std::min(ax1, bx1) + 0.1, hy = std::min(ay1, by1) + 0.1;
+        const auto inBox = [&](const Vec2 &p, const Vec2 &q) {
+          return std::min(p.x, q.x) <= hx && std::max(p.x, q.x) >= lx && std::min(p.y, q.y) <= hy && std::max(p.y, q.y) >= ly;
+        };
+        for (size_t i = 1; ok && i < A.size(); ++i) {
+          if (!inBox(A[i - 1], A[i])) continue;
+          for (size_t j = 1; ok && j < Bh.size(); ++j) {
+            if (!inBox(Bh[j - 1], Bh[j])) continue;
+            const double oa0 = X(Bh[j - 1], Bh[j], A[i - 1]), oa1 = X(Bh[j - 1], Bh[j], A[i]);
+            if (!(X(A[i - 1], A[i], Bh[j - 1]) * X(A[i - 1], A[i], Bh[j]) < 0.0 && oa0 * oa1 < 0.0)) continue;
+            const Vec2 at = A[i - 1] + (A[i] - A[i - 1]) * (oa0 / (oa0 - oa1));
+            // (0.2 mm: stricter than the audit's 1 mm, so its own sampling of the same edges finds none either)
+            if ((at - join).norm() > 2e-4 && (at - Bh.front()).norm() > 2e-4) ok = fail("a loop where two pieces meet");
+          }
         }
       }
       std::vector<double> along(poly.size() + 1, 0.0);  // length along the outline to each point
