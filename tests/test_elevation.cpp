@@ -1165,3 +1165,38 @@ TEST_CASE("terrain: the conformed ground carries the road and meets the terrain 
   // far from the road: the terrain unchanged
   CHECK_NEAR(c.sample(0.0, 45.0), t.ground.sample(0.0, 45.0), 1e-4);
 }
+
+TEST_CASE("terrain: the road floor under a steep outline triangle follows the surface, not its lowest corner") {
+  // a junction <boundary> (OpenDRIVE 1.8.0 §12.10) is triangulated for the road floor; a triangle whose plane is not
+  // trusted (steeper than 50 %: a sliver, or an outline spanning roads at different heights - LA junction 921 sank the
+  // ground 1.25 m under road 7931 to its lowest corner) caps each cell at its lowest point within the cell's square.
+  // A connecting road climbing 60 % along x over 20 m: its outline is one such plane, 12 m from end to end
+  odr::OpenDrive od;
+  odr::Road r;
+  r.id = "1", r.junction = "J";
+  GeomElement g;
+  g.length = 20.0;
+  r.planView.elements = {g};
+  r.planView.finalize();
+  odr::LaneSection sec;
+  odr::Lane l1, r1;
+  l1.id = 1, r1.id = -1;
+  l1.widths = {{0.0, 3.0, 0, 0, 0}};
+  r1.widths = {{0.0, 4.0, 0, 0, 0}};
+  sec.left = {l1}, sec.right = {r1};
+  r.lanes = {sec};
+  r.elevation = {{0.0, 100.0, 0.6, 0, 0}};
+  od.roads = {r};
+  odr::Junction j;
+  j.id = "J";
+  j.boundary = {{"lane", "1", "start", "end", "", -1}, {"joint", "1", "", "", "end", 0},
+                {"lane", "1", "end", "start", "", 1}, {"joint", "1", "", "", "start", 0}};
+  od.junctions = {j};
+  const TerrainGrid ground = makeGrid(-10, -20, 0.5, 101, 81, 1, [](int, double, double) { return 130.0f; });
+  const TerrainGrid c = conformGround(od, ground);
+  for (const double x : {2.0, 10.0, 18.0}) {
+    const double zs = odr::surfaceZ(od.roads[0], x, -2.0), zc = c.sample(x, -2.0);
+    CHECK(zc <= zs - 0.05 + 1e-6);              // the floor: never over the road
+    CHECK(zc >= zs - 0.05 - 0.6 * 0.5 - 0.02);  // at most one cell's rise under it (the lowest corner: 100 - 0.05)
+  }
+}

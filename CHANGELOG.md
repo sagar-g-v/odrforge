@@ -5,6 +5,24 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **The road floor in the conformed ground** (conform.cpp, user decisions 2026-10-18; the viewer draws the same floor):
+  the ground never stands above a road. Every lane of every road (bridges included, a road's own lanes inside its tunnel
+  records not) and every junction `<boundary>` (OpenDRIVE 1.8.0 §12.10; not for a junction with a tunnel road) caps the
+  cells a bilinear reader interpolates it from at its surface minus 0.05 m (`floorEpsilon`), rising at 2 m/m
+  (`floorSlope`); where roads at different heights touch, the lower wins. A triangle steeper than 50 % (a sliver, or an
+  outline spanning roads at different heights) caps each cell at its lowest point within the cell's square, not at its
+  lowest corner (LA junction 921 sank the ground 1.25 m under road 7931 so). Also folded in: a road returning to a cell
+  (a hairpin's other leg) is a separate pass there, and the far lane border is always sampled. Roads with ground over
+  a lane: 9 -> 0 (Munich 584, London 215, Frankfurt 374 / 35 / 57 / 70, Stelvio 22 / 202 / 25; the ground stood up to 2.64 m
+  over Stelvio 22 at 1004 samples). Terrain contract: `conformed` measured against road - 0.05 m with the limits
+  unchanged, leaving out edges a lower road's floor holds down; new `above` (limit 0) and `floating` (lane points more
+  than 1 m over the ground - the cost of lower-wins at walls: Munich 5 -> 71, London 66 -> 179, Frankfurt 160 -> 515,
+  Stelvio 1325 -> 3804, limits at those values; every point accounted for - it floats without the floor too, or a
+  lower road's floor, a hairpin's lower leg or a tunnel portal's cut holds it down; LA likewise) with planted defects.
+  New unit test: a steep outline triangle (caught when the lowest-corner fallback is put back). Trees and lamps re-seated on the lowered ground
+  (Munich 160, London 124, Frankfurt 56 moved down; one Frankfurt lamp stands 2.7 m under its road on the cut down to a
+  road 6.5 m lower). Exact checkers and validation unchanged in all six areas; the floor step takes 3.3 s on LA's 201 M cells (step timers; conform phase 8.1 -> 12.0 s on a quiet machine). Removing the floor from the
+  converter fails `above` in all four terrain areas and `conformed` in Munich and London. Jev 0.85.
 - **Clip box in the header** (osm2xodr): with `--clip` the output header carries `<userData code="clip"
   value="lat0,lon0,lat1,lon1"/>`, the box the OSM ways were cut at; parking_coverage.py (the OSM contract's measure) reads
   it before any box it is given, so the converter's contract and the viewer's check cannot drift apart. Self-test cases and

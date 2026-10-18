@@ -9,7 +9,9 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
   fresh        every output (carla <area>.xodr, <area>_standard.xodr, <area>_ground_conformed.odrz) is newer than its
                inputs (OSM, ground and deck grids, osm2xodr.exe) - London road 389 floated 39 m in a carla file written
                before its deck grid existed
-  conformed    paved edges vs the conformed ground (OpenDRIVE 1.8.0 §10.5: z = elevation + t tan(superelevation))
+  conformed    paved edges minus the 0.05 m road floor vs the conformed ground (OpenDRIVE 1.8.0 §10.5: z = elevation +
+               t tan(superelevation)); edges whose ground another, lower road's floor or cut holds down (lower wins, user
+               decision 2026-10-18) are left out here and counted by `floating`
   centre       carriageway reference line vs the raw ground, plain roads outside bridges / tunnels
   decks        bridge roads vs the measured deck where the deck grid has a value under them and no other road passes
                over them (a surface model sees the top deck only: under a flyover the lower bridge would be measured
@@ -23,6 +25,10 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                plain road and the conformed ground trenched it; elevation.cpp coveredUnderpasses)
   objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
                (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
+  floating     lane points more than 1 m over the conformed ground (outside tunnels / bridges): the road floor's
+               lower-wins cost where roads at different heights lie within a cell or the cut's reach (held at the counts)
+  above        roads with a lane point where the conformed ground stands over the road floor - the lane's surface minus
+               0.05 m (outside tunnels / bridges): limit 0 (conform.cpp step 4, user decision 2026-10-18)
   pits         no junction road carrying a driving lane outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
                ground (Frankfurt's underground car park: connecting roads without tunnel records dug 723 pit points into
                the published ground; elevation.cpp junctionsUnderCover)
@@ -60,6 +66,11 @@ BURIED_DEPTH = 2.0  # m
 # under a bridge road neither count nor end a run
 BURIED_RUN = 10.0
 PIT_DEPTH = 2.0  # m: conformed ground this far under the raw ground on a junction road outside tunnels / bridges
+FLOOR = 0.05  # m: the road floor - the conformed ground stays this far under every lane (conform.cpp step 4)
+ABOVE = 0.01  # m: tolerance over the floor before a lane point counts as having ground above it
+FLOAT = 1.0  # m: a lane point this far over the conformed ground floats (off bridges / tunnels)
+PRESSED_TOL = 0.02  # m under the floor before a paved edge counts as pressed down by another, lower road's floor
+FLOOR_SLOPE = 2.0  # the floor's cut rises 2 m per metre away from a lane (conform.cpp ConformOptions::floorSlope)
 # cliffs: roads of 0.1 m and more (junction roads too) with a grade over CLIFF_GRADE between samples CLIFF_STEP apart -
 # the steep check's 5 m steps cannot see a 2 m stub climbing 5 m (Frankfurt 97 / 366 / 367 before the smooth-deck
 # filter, LA 656 / 657). No public road reaches 50 % (the steepest streets: ~35-37 %)
@@ -68,15 +79,17 @@ CLIFF_STEP = 0.25  # m
 
 # limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
 CONTRACT = {
-    "munich": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], steep=2),
+    # floating: lane points > 1 m over the conformed ground - the road floor's lower-wins cost (user decision 2026-10-18),
+    # held at the measured counts and tightened as they fall
+    "munich": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], steep=2, floating=71),
     # cliffs held at the proven state (open items, docs/TERRAIN_CONTRACT.md): London 250 and Stelvio 31, 4-6 m service
     # stubs climbing 1.6-2.3 m from a junction surface that cannot follow the terrain step beside it
     "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), decks_near=0.98, steep=4,
-                   named={"Adam Street": 0.10, "Lancaster Place": 0.10}, cliffs=1),
+                   named={"Adam Street": 0.10, "Lancaster Place": 0.10}, cliffs=1, floating=179),
     # Frankfurter Kreuz: decks as a share - a surface model sees the top structure only (the ICE viaduct over road
     # bridges) and narrow service bridges drawn a few metres off their deck sample the ground beside it
-    "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.92, steep=4),
-    "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1, cliffs=1),
+    "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.92, steep=4, floating=515),
+    "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1, cliffs=1, floating=3804),
 }
 
 
@@ -142,6 +155,40 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
     dk = read_grid(decks) if decks else None
     dks = [sampler(dk, l) for l in range(dk[3].shape[0])] if dk else []
     centre, edges, deck = [], [], []
+    pressed = 0  # paved edges left out of `conformed`: another, lower road's floor pressed their ground (user decision)
+    # every road's lane points outside tunnels (lane centre and borders, every 1 m): whose floor may press the ground
+    lane_pts = None
+    if c:
+        from scipy.spatial import cKDTree
+        cell = read_grid(conformed)[2]
+        pts, zs, ids, ss = [], [], [], []
+        for r in roads:
+            sts = structures(r)
+            for sec in r.sections:
+                for s in np.arange(sec.s + 0.5, sec.e, 1.0):
+                    if on_structure(sts, s, "tunnel"):
+                        continue
+                    z0 = float(r.z(np.array([s]))[0])
+                    for lid, (ti, to) in r.borders_at(float(s), sec).items():
+                        if lid == 0:
+                            continue
+                        for t in (ti, 0.5 * (ti + to), to):
+                            x, y = r.point(np.array([s]), np.array([t]))
+                            pts.append((float(np.ravel(x)[0]), float(np.ravel(y)[0]))), zs.append(z0), ids.append(r.id)
+                            ss.append(float(s))
+        lane_pts = (cKDTree(np.array(pts)), np.array(zs), np.array(ids), 1.5 * cell, np.array(ss)) if pts else None
+
+    def pressed_by_lower(x, y, z, rid, s):
+        """a lane point of another road - or of this road more than 20 m along it (a hairpin's other leg) - lower by d
+        (> 0.1 m) lies within 1.5 cells + d / FLOOR_SLOPE of (x, y): its floor (lower wins) or the cut rising from it may
+        hold the ground under this point (conform.cpp step 4)"""
+        if lane_pts is None:
+            return False
+        tree, lz, lid, rad, ls = lane_pts
+        idx = tree.query_ball_point((x, y), rad + 20.0)
+        d = np.hypot(tree.data[idx, 0] - x, tree.data[idx, 1] - y) if idx else []
+        return any((lid[i] != rid or abs(ls[i] - s) > 20.0) and lz[i] < z - 0.1 and di <= rad + (z - lz[i]) / FLOOR_SLOPE
+                   for i, di in zip(idx, d))
     tops = {}  # 5 m cells -> centre-line samples (x, y, z) of every road, for "another road passes over"
     for r in roads:
         sts = structures(r)
@@ -229,7 +276,12 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                     xe, ye = r.point(np.array([s]), t)
                     v = c(float(np.ravel(xe)[0]), float(np.ravel(ye)[0]))
                     if not math.isnan(v):
-                        edges.append(z0 + t * math.tan(roll) - v)
+                        e = z0 + t * math.tan(roll) - FLOOR - v  # against the floor (user decision 2026-10-18)
+                        xe0, ye0 = float(np.ravel(xe)[0]), float(np.ravel(ye)[0])
+                        if e > PRESSED_TOL and pressed_by_lower(xe0, ye0, z0, r.id, s):
+                            pressed += 1  # the approved lower-wins cost, counted by `floating` instead
+                        else:
+                            edges.append(e)
     near = float(np.mean(np.abs(np.asarray(deck)) <= 0.5)) if deck else math.nan
     # trees and street lamps (point objects without outline / repeat) off bridge stretches: base = elevation(s) +
     # zOffset (XSD 1.8.1 t_road_objects_object @zOffset) vs the conformed ground under them
@@ -264,9 +316,37 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                 x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
                 vg, vc = g(x, y), c(x, y)
                 if not (math.isnan(vg) or math.isnan(vc)) and vc < vg - PIT_DEPTH and r.id not in pits:
-                    pits.append(r.id)
+                    # pressed by another, lower road's floor (the approved lower-wins cost) is not a missing tunnel record
+                    if not pressed_by_lower(x, y, float(r.z(np.array([s]))[0]), r.id, s):
+                        pits.append(r.id)
+    # above: roads with a lane point (every 1 m; lane centre and 0.05 m inside both borders) outside tunnel / bridge records
+    # where the conformed ground, read as any reader of the grid does (bilinear), stands over the road floor - the lane's
+    # surface (OpenDRIVE 1.8.0 §10.5, no lane height) minus FLOOR - by more than ABOVE (conform.cpp step 4)
+    above, floating = [], 0
+    if c:
+        for r in roads:
+            sts, se = structures(r), piecewise(r, "superelevation", "lateralProfile")
+            for sec in r.sections:
+                for s in np.arange(sec.s + 0.5, sec.e, 1.0):
+                    if on_structure(sts, s):
+                        continue
+                    z0, roll = float(r.z(np.array([s]))[0]), float(se(np.array([s]))[0])
+                    hit = False
+                    for lid, (ti, to) in r.borders_at(float(s), sec).items():
+                        if lid == 0 or abs(to - ti) < 0.1:
+                            continue
+                        lo, hi = min(ti, to), max(ti, to)
+                        for t in (lo + 0.05, 0.5 * (lo + hi), hi - 0.05):
+                            x, y = r.point(np.array([s]), np.array([t]))
+                            v = c(float(np.ravel(x)[0]), float(np.ravel(y)[0]))
+                            if not math.isnan(v) and v > z0 + t * math.tan(roll) - FLOOR + ABOVE:
+                                hit = True
+                            if not math.isnan(v) and z0 + t * math.tan(roll) - v > FLOAT:
+                                floating += 1
+                    if hit and r.id not in above:
+                        above.append(r.id)
     by_id = lambda ids: sorted(ids, key=lambda x: int(x) if x.isdigit() else 0)  # noqa: E731
-    return dict(pits=by_id(pits), cliffs=by_id(cliffs), centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
+    return dict(above=by_id(above), floating=floating, pressed=pressed, pits=by_id(pits), cliffs=by_id(cliffs), centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
                 objects=dict(n=len(objects), off=int(np.sum(np.abs(np.asarray(objects)) > OBJECT_TOL)) if objects else 0,
                              worst=float(np.max(np.abs(objects))) if objects else 0.0),
                 decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
@@ -331,6 +411,12 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             if m["objects"]["off"]:
                 problems.append(f"{tag} objects: {m['objects']['off']} of {m['objects']['n']} trees / street lamps more than "
                                 f"{OBJECT_TOL} m off the ground (worst {m['objects']['worst']:.2f} m)")
+            if m["floating"] > lim.get("floating", 0):
+                problems.append(f"{tag} floating: {m['floating']} lane points more than {FLOAT} m over the conformed "
+                                f"ground (<= {lim.get('floating', 0)})")
+            if len(m["above"]) > lim.get("above", 0):
+                problems.append(f"{tag} above: the conformed ground stands over the road floor (lane - {FLOOR} m) on "
+                                f"{len(m['above'])} roads (<= {lim.get('above', 0)}): {', '.join(m['above'][:8])}")
             if m["pits"]:
                 problems.append(f"{tag} pits: the conformed ground lies more than {PIT_DEPTH} m under the raw ground on "
                                 f"{len(m['pits'])} junction roads outside tunnels / bridges ({', '.join(m['pits'][:8])})")

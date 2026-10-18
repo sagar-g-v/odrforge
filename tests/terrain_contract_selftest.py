@@ -95,6 +95,38 @@ def dig_pit(f, driving=True):  # the conformed ground 3 m deeper over 6 m around
         h.write(z.astype("<f4").tobytes())
 
 
+def raise_under_lane(f):  # the conformed ground 1 m up over 2 m around the middle of one plain road
+    od = C.G.OpenDrive(f["standard"])
+    roads = od.roads.values() if isinstance(od.roads, dict) else od.roads
+    r = next(r for r in roads if r.el.get("junction") == "-1" and r.length > 40.0 and not C.structures(r))
+    x, y = r.point(np.array([r.length / 2]), 0.0)
+    x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+    ox, oy, cell, z = C.read_grid(f["conformed"])
+    i, j = int(round((x - ox) / cell)), int(round((y - oy) / cell))
+    k = max(1, int(round(1.0 / cell)))
+    z[0, j - k:j + k + 1, i - k:i + k + 1] += 1.0
+    with open(f["conformed"], "r+b") as h:
+        magic = h.read(8)
+        h.seek(8 + 32 + (4 if magic == b"ODRZGRD2" else 0) + 32)
+        h.write(z.astype("<f4").tobytes())
+
+
+def sink_under_lanes(f):  # the conformed ground 2 m down over 6 m round the middle of three long plain roads
+    od = C.G.OpenDrive(f["standard"])
+    roads = [r for r in (od.roads.values() if isinstance(od.roads, dict) else od.roads)
+             if r.el.get("junction") == "-1" and r.length > 60.0 and not C.structures(r)][:3]
+    ox, oy, cell, z = C.read_grid(f["conformed"])
+    k = int(round(3.0 / cell))
+    for r in roads:
+        x, y = r.point(np.array([r.length / 2]), 0.0)
+        i, j = int(round((float(np.ravel(x)[0]) - ox) / cell)), int(round((float(np.ravel(y)[0]) - oy) / cell))
+        z[0, j - k:j + k + 1, i - k:i + k + 1] -= 2.0
+    with open(f["conformed"], "r+b") as h:
+        magic = h.read(8)
+        h.seek(8 + 32 + (4 if magic == b"ODRZGRD2" else 0) + 32)
+        h.write(z.astype("<f4").tobytes())
+
+
 def bank(f):  # one plain road banked at 0.2 rad (11 deg) along its middle
     def fn(root):
         r = plain(root)[0]
@@ -172,6 +204,8 @@ check(planted("stelvio", "centre", lift_all), "centre: roads lifted 1 m off the 
 check(planted("stelvio", "superelev", bank), "superelev: a road banked at 0.2 rad is caught")
 check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than the contract allows is caught")
 check(planted("stelvio", "buried", sink_road), "buried: a road 3 m under the ground is caught")
+check(planted("munich", "floating", sink_under_lanes), "floating: the conformed ground 2 m under three lanes is caught")
+check(planted("munich", "above", raise_under_lane), "above: the conformed ground 1 m over a lane is caught")
 check(planted("stelvio", "pits", dig_pit), "pits: a 3 m pit in the conformed ground at a junction road is caught")
 # scope (driving junction roads only): the clean Stelvio output passes although corner sidewalk 245 lies 3.1 m deep - the
 # "passes on the outputs as they are" condition of planted() fails if the scope is lost

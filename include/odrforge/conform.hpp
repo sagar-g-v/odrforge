@@ -15,11 +15,17 @@ namespace odrforge {
 struct ConformOptions {
   double slope = 1.5;      ///< cut / fill slope, horizontal metres per metre of height (1:1.5, a common embankment)
   double maxReach = 20.0;  ///< m from the road edge beyond which the terrain is left as it is
+  /// the road floor: the ground stays this far under every lane and junction surface ...
+  double floorEpsilon = 0.05;
+  /// ... and the cap on it rises this much per metre away from them (2: a 1:0.5 cut, 63 degrees)
+  double floorSlope = 2.0;
 };
 
 /// `ground` (level 0) conformed to the roads of `od`: the road surface (odr::surfaceZ, without lane heights; the lowest
-/// where roads share a cell) under every
-/// lane outside bridges and tunnels, and cut / fill slopes from the road edges to the terrain. Same frame and datum.
+/// where roads share a cell) under every lane outside bridges and tunnels, and cut / fill slopes from the road edges to
+/// the terrain; then the road floor - no cell a reader interpolates a lane or junction-surface point from stands above
+/// that point's surface minus floorEpsilon (a road's own lanes inside its tunnels excepted), the cap rising at
+/// floorSlope away from them, so the road wins over the terrain. Same frame and datum.
 TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt = {});
 
 struct SeatReport {
