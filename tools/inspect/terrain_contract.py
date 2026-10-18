@@ -29,7 +29,9 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                lower-wins cost where roads at different heights lie within a cell or the cut's reach (held at the counts)
   above        roads with a lane point where the conformed ground stands over the road floor - the lane's surface minus
                0.05 m (outside tunnels / bridges): limit 0 (conform.cpp step 4, user decision 2026-10-18)
-  pits         no junction road carrying a driving lane outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
+  junction_fill  points inside junction boundaries where the conformed ground stands over the junction's elevationGrid
+               minus 0.05 m (except under a road beside it more than 0.5 m higher): limit 0 (conform.cpp rasterPolygon)
+  pits        no junction road carrying a driving lane outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
                ground (Frankfurt's underground car park: connecting roads without tunnel records dug 723 pit points into
                the published ground; elevation.cpp junctionsUnderCover)
   cliffs       roads of 0.1 m and more with a grade over 50 % between samples 0.25 m apart: short stubs the steep check's
@@ -68,6 +70,7 @@ BURIED_RUN = 10.0
 PIT_DEPTH = 2.0  # m: conformed ground this far under the raw ground on a junction road outside tunnels / bridges
 FLOOR = 0.05  # m: the road floor - the conformed ground stays this far under every lane (conform.cpp step 4)
 ABOVE = 0.01  # m: tolerance over the floor before a lane point counts as having ground above it
+OTHER_LEVEL = 0.5  # m: a road beside a junction this far over its grid is at another level (conform.cpp kOtherLevel)
 FLOAT = 1.0  # m: a lane point this far over the conformed ground floats (off bridges / tunnels)
 PRESSED_TOL = 0.02  # m under the floor before a paved edge counts as pressed down by another, lower road's floor
 FLOOR_SLOPE = 2.0  # the floor's cut rises 2 m per metre away from a lane (conform.cpp ConformOptions::floorSlope)
@@ -144,6 +147,90 @@ def on_structure(sts, s, kind=None):
 def quantiles(v, qs):
     a = np.abs(np.asarray(v, dtype=float))
     return {q: float(np.percentile(a, q)) if len(a) else math.nan for q in qs}
+
+
+def grid_of(j):
+    """a <junction>'s reference line and <elevationGrid> (OpenDRIVE 1.8.0 §12.9 / §12.11), or None"""
+    pv, eg = j.find("planView/geometry"), j.find("elevationGrid")
+    if pv is None or eg is None:
+        return None
+    rows = [(float(e.get("center")), [float(v) for v in (e.get("left") or "").split()],
+             [float(v) for v in (e.get("right") or "").split()]) for e in eg.findall("elevation")]
+    return dict(x=float(pv.get("x")), y=float(pv.get("y")), hdg=float(pv.get("hdg")), sp=float(eg.get("gridSpacing")),
+                s0=float(eg.get("sStart") or 0.0), rows=rows)
+
+
+def grid_z(g, x, y):
+    """the grid at (x, y): bilinear between its points, linear beyond its outer squares (exact on the planes we write;
+    §12.11.1 interpolates bicubically)"""
+    rows = g["rows"]
+    nl, nr = len(rows[0][1]), len(rows[0][2])
+    c, s = math.cos(g["hdg"]), math.sin(g["hdg"])
+    fk = ((x - g["x"]) * c + (y - g["y"]) * s - g["s0"]) / g["sp"]
+    fj = (-(x - g["x"]) * s + (y - g["y"]) * c) / g["sp"]
+    at = lambda k, j: rows[k][0] if j == 0 else rows[k][1][j - 1] if j > 0 else rows[k][2][-j - 1]  # noqa: E731
+    k0, j0 = min(max(int(math.floor(fk)), 0), len(rows) - 2), min(max(int(math.floor(fj)), -nr), nl - 1)
+    u, v = fk - k0, fj - j0
+    return (1 - u) * (1 - v) * at(k0, j0) + u * (1 - v) * at(k0 + 1, j0) + (1 - u) * v * at(k0, j0 + 1) + u * v * at(k0 + 1, j0 + 1)
+
+
+def junction_fill(xodr, od, roads, c, cell):
+    """points (every 1 m) inside junction boundaries where the conformed ground stands over grid - FLOOR + ABOVE, not
+    under a lane of a road outside every junction"""
+    import xml.etree.ElementTree as ET
+    import boundary_audit as B
+    R = od.roads if isinstance(od.roads, dict) else {r.id: r for r in roads}
+    covered = {r.junction for r in roads if r.junction != "-1" and any(st[0] == "tunnel" for st in structures(r))}
+    bad = 0
+    for j in ET.parse(xodr).getroot().findall("junction"):
+        g = grid_of(j)
+        if j.find("boundary") is None or g is None or j.get("id") in covered:
+            continue
+        segs, pts = j.findall("boundary/segment"), []
+        for sg in segs:
+            r = R.get(sg.get("roadId"))
+            if r is None:
+                pts = []
+                break
+            if sg.get("type") == "joint":
+                s = 0.0 if sg.get("contactPoint") == "start" else r.length
+                b = r.borders_at(s, r.section_at(s))
+                if sg.get("jointLaneStart") is not None:
+                    lo, hi = sorted((int(sg.get("jointLaneStart")), int(sg.get("jointLaneEnd"))))
+                    b = {k: v for k, v in b.items() if k != 0 and lo <= k <= hi}
+                ts = [t for v in b.values() for t in v]
+                end = [B.pt(r, s, min(ts)), B.pt(r, s, max(ts))]
+                if pts and np.linalg.norm(end[1] - pts[-1]) < np.linalg.norm(end[0] - pts[-1]):
+                    end = end[::-1]
+                pts.extend(end)
+            else:
+                lane, s0, s1 = int(sg.get("boundaryLane")), B.s_of(r, sg.get("sStart")), B.s_of(r, sg.get("sEnd"))
+                pts.extend(B.pt(r, s, B.edge_t(r, s, lane)) for s in np.linspace(s0, s1, max(2, int(abs(s1 - s0)) + 1)))
+        if len(pts) < 3:
+            continue
+        P = np.array(pts)
+        (x0, y0), (x1, y1) = P.min(axis=0), P.max(axis=0)
+        for x in np.arange(math.floor(x0), x1, 1.0):
+            for y in np.arange(math.floor(y0), y1, 1.0):
+                if not B.inside(P, (x, y)):
+                    continue
+                v = c(x, y)
+                if math.isnan(v) or v <= grid_z(g, x, y) - FLOOR + ABOVE:
+                    continue
+                plain = False  # under a lane of a road outside every junction at another level (its own floor holds)
+                zg = grid_z(g, x, y)
+                for q in od.roads_near(x, y, 30.0):
+                    if q.junction != "-1":
+                        continue
+                    s, t, _ = q.project(x, y)
+                    if 0.0 <= s <= q.length:
+                        sq = float(min(max(s, 1e-6), q.length - 1e-6))
+                        ts = [tt for v2 in q.borders_at(sq).values() for tt in v2]
+                        if min(ts) - 1.5 * cell <= t <= max(ts) + 1.5 * cell and float(q.z(np.array([sq]))[0]) > zg + OTHER_LEVEL:
+                            plain = True
+                            break
+                bad += not plain
+    return bad
 
 
 def measure(xodr, ground=None, conformed=None, decks=None, named=()):
@@ -345,8 +432,14 @@ def measure(xodr, ground=None, conformed=None, decks=None, named=()):
                                 floating += 1
                     if hit and r.id not in above:
                         above.append(r.id)
+    # junction_fill: inside every junction <boundary> (OpenDRIVE 1.8.0 §12.10; junctions with a tunnel road left out) the
+    # conformed ground stays under the junction's <elevationGrid> (§12.11) minus FLOOR (conform.cpp rasterPolygon):
+    # points every 1 m where it stands more than ABOVE over it, unless a lane of a road outside every junction more than
+    # OTHER_LEVEL over the grid covers the point (within 1.5 cells: the converter's raster footprint) - a road beside the
+    # junction on a wall keeps its own floor there
+    fill = junction_fill(xodr, od, roads, c, read_grid(conformed)[2]) if c else 0
     by_id = lambda ids: sorted(ids, key=lambda x: int(x) if x.isdigit() else 0)  # noqa: E731
-    return dict(above=by_id(above), floating=floating, pressed=pressed, pits=by_id(pits), cliffs=by_id(cliffs), centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
+    return dict(above=by_id(above), floating=floating, pressed=pressed, junction_fill=fill, pits=by_id(pits), cliffs=by_id(cliffs), centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
                 objects=dict(n=len(objects), off=int(np.sum(np.abs(np.asarray(objects)) > OBJECT_TOL)) if objects else 0,
                              worst=float(np.max(np.abs(objects))) if objects else 0.0),
                 decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
@@ -414,6 +507,9 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
             if m["floating"] > lim.get("floating", 0):
                 problems.append(f"{tag} floating: {m['floating']} lane points more than {FLOAT} m over the conformed "
                                 f"ground (<= {lim.get('floating', 0)})")
+            if m["junction_fill"] > lim.get("junction_fill", 0):
+                problems.append(f"{tag} junction_fill: {m['junction_fill']} points inside junction boundaries with the "
+                                f"conformed ground over the junction grid - {FLOOR} m (<= {lim.get('junction_fill', 0)})")
             if len(m["above"]) > lim.get("above", 0):
                 problems.append(f"{tag} above: the conformed ground stands over the road floor (lane - {FLOOR} m) on "
                                 f"{len(m['above'])} roads (<= {lim.get('above', 0)}): {', '.join(m['above'][:8])}")

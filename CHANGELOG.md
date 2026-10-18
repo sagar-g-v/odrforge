@@ -5,6 +5,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **The road floor inside junction boundaries follows the junction's elevation grid** (conform.cpp; agreed with the
+  viewer session, which fills boundaries the same way): OpenDRIVE 1.8.0 §12.10 "the <elevationGrid> is applied to all
+  points within this boundary". Every cell a bilinear reader uses for a point inside a boundary is capped at the grid
+  (§12.11; read bilinearly - exact on the planes the converter writes) minus 0.05 m, instead of the outline ear-clipped
+  at its road heights. A road beside the junction more than 0.5 m over the grid keeps its own floor where the boundary,
+  drawn in plan, reaches under it (Stelvio junction 19 and road 29 on a wall). New terrain-contract check junction_fill
+  (limit 0, planted defect): Munich 19 points up to 0.107 m over the grid -> 0, the other areas 0. Floating / pressed /
+  above / objects identical, exact checkers and validation unchanged in all six areas. Jev 0.82.
 - **No sliver loops in traced junction boundaries** (junction_surface.cpp; found by the viewer session at Munich 235,
   247, 280, 325, London 86, Frankfurt 99): two connecting roads' edges crossing twice within centimetres made the trace
   hand over at the second crossing, found on 0.25 m polylines, and one piece doubled back by millimetres. The hand-over

@@ -58,11 +58,13 @@ double lowestInSquare(const P3 (&tri)[3], double mx, double my, double h) {
 /// one cell overlaps the triangle - is capped at the triangle's plane at the cell centre minus eps. The viewer lowers
 /// that by (|gx| + |gy|) half a cell to stay under any point of its drawn mesh; for a grid read bilinearly the plane
 /// itself is exact (bilinear interpolation reproduces a plane), and the slack would sink the ground under every sloped
-/// road by its gradient times the cell. `box` grows to every cell capped.
+/// road by its gradient times the cell. `box` grows to every cell capped; `highest` (when given) keeps the highest cap
+/// this raster set at each cell.
 struct Box {
   int i0 = std::numeric_limits<int>::max(), j0 = std::numeric_limits<int>::max(), i1 = -1, j1 = -1;
 };
-void rasterTriangle(std::vector<double> &cap, const TerrainGrid &g, const std::array<P3, 3> &t, double eps, Box &box) {
+void rasterTriangle(std::vector<double> &cap, const TerrainGrid &g, const std::array<P3, 3> &t, double eps, Box &box,
+                    std::vector<double> *highest = nullptr) {
   const auto &[a, b, c] = t;
   const double area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
   if (std::abs(area) < 1e-9) return;
@@ -102,6 +104,7 @@ void rasterTriangle(std::vector<double> &cap, const TerrainGrid &g, const std::a
       const double z = (steep ? lowestInSquare(P, mx, my, h) : a.z + gx * (mx - a.x) + gy * (my - a.y)) - eps;
       double &k = cap[static_cast<size_t>(j) * g.nx + i];
       k = std::min(k, z);
+      if (highest) (*highest)[static_cast<size_t>(j) * g.nx + i] = std::max((*highest)[static_cast<size_t>(j) * g.nx + i], z);
     }
   }
 }
@@ -191,6 +194,77 @@ std::vector<P3> outline(const odr::Junction &J, const std::map<std::string, cons
   for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) area += poly[j].x * poly[i].y - poly[i].x * poly[j].y;
   if (area < 0) std::reverse(poly.begin(), poly.end());
   return poly;
+}
+
+/// a junction's <elevationGrid> (OpenDRIVE 1.8.0 §12.11) at (x, y): rows at sStart + k gridSpacing along its reference
+/// line, each with a center value and left / right values from inside to outside (t positive to the left), read
+/// bilinearly between the grid points and linearly beyond the outer squares. §12.11.1 interpolates bicubically; on the
+/// planes this converter writes (junction_surface.cpp junctionGrids) both give the plane exactly. False when the rows
+/// do not form one rectangle of complete squares.
+bool gridHeight(const odr::JunctionGrid &g, double x, double y, double &z) {
+  if (g.rows.size() < 2 || g.gridSpacing <= 0.0) return false;
+  const size_t nl = g.rows[0].left.size(), nr = g.rows[0].right.size();
+  for (const auto &row : g.rows)
+    if (row.left.size() != nl || row.right.size() != nr) return false;
+  const int jlo = -static_cast<int>(nr), jhi = static_cast<int>(nl);
+  if (jhi - jlo < 1) return false;
+  const double c = std::cos(g.hdg), sn = std::sin(g.hdg);
+  const double fk = ((x - g.x) * c + (y - g.y) * sn - g.sStart) / g.gridSpacing;
+  const double fj = (-(x - g.x) * sn + (y - g.y) * c) / g.gridSpacing;
+  const auto at = [&](int k, int j) {
+    const auto &row = g.rows[static_cast<size_t>(k)];
+    return j == 0 ? row.center : j > 0 ? row.left[static_cast<size_t>(j - 1)] : row.right[static_cast<size_t>(-j - 1)];
+  };
+  const int k0 = std::clamp(static_cast<int>(std::floor(fk)), 0, static_cast<int>(g.rows.size()) - 2);
+  const int j0 = std::clamp(static_cast<int>(std::floor(fj)), jlo, jhi - 1);
+  const double u = fk - k0, v = fj - j0;
+  z = (1 - u) * (1 - v) * at(k0, j0) + u * (1 - v) * at(k0 + 1, j0) + (1 - u) * v * at(k0, j0 + 1) + u * v * at(k0 + 1, j0 + 1);
+  return true;
+}
+
+/// every cell a bilinear reader interpolates a point inside the polygon from (centre inside it, or within one cell
+/// diagonal of its edge) capped at the junction grid's height at the cell centre minus eps: a grid read bilinearly
+/// reproduces the grid's plane exactly, as rasterTriangle does for a lane's. A cell under a lane of a road outside every
+/// junction standing more than kOtherLevel over the grid (`plainCap`: that lane's cap) keeps the lane's cap: a boundary
+/// is drawn in plan, and where its polygon reaches under a road beside the junction on a wall above it there is no
+/// junction surface to press the ground to; an arm's lane end at the junction's level is capped by both, the lower wins
+constexpr double kOtherLevel = 0.5;  // m
+void rasterPolygon(std::vector<double> &cap, const TerrainGrid &g, const std::vector<P3> &poly, const odr::JunctionGrid &jg,
+                   double eps, Box &box, const std::vector<double> &plainCap) {
+  const auto capCell = [&](int i, int j) {
+    if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return;
+    double z;
+    if (!gridHeight(jg, g.originX + i * g.cell, g.originY + j * g.cell, z)) return;
+    if (plainCap[static_cast<size_t>(j) * g.nx + i] > z - eps + kOtherLevel) return;
+    double &k = cap[static_cast<size_t>(j) * g.nx + i];
+    k = std::min(k, z - eps);
+    box.i0 = std::min(box.i0, i), box.i1 = std::max(box.i1, i), box.j0 = std::min(box.j0, j), box.j1 = std::max(box.j1, j);
+  };
+  double y0 = 1e300, y1 = -1e300;
+  for (const P3 &p : poly) y0 = std::min(y0, p.y), y1 = std::max(y1, p.y);
+  for (int j = static_cast<int>(std::floor((y0 - g.originY) / g.cell)); j <= static_cast<int>(std::ceil((y1 - g.originY) / g.cell)); ++j) {
+    const double y = g.originY + j * g.cell;  // the cell centres of the row inside the polygon (even-odd)
+    std::vector<double> xs;
+    for (size_t a = 0, b = poly.size() - 1; a < poly.size(); b = a++)
+      if ((poly[a].y > y) != (poly[b].y > y)) xs.push_back(poly[a].x + (y - poly[a].y) * (poly[b].x - poly[a].x) / (poly[b].y - poly[a].y));
+    std::sort(xs.begin(), xs.end());
+    for (size_t m = 0; m + 1 < xs.size(); m += 2)
+      for (int i = static_cast<int>(std::ceil((xs[m] - g.originX) / g.cell)); g.originX + i * g.cell <= xs[m + 1]; ++i) capCell(i, j);
+  }
+  const double reach = g.cell * std::sqrt(2.0);
+  for (size_t a = 0, b = poly.size() - 1; a < poly.size(); b = a++) {  // the cells along every edge
+    const Vec2 p{poly[b].x, poly[b].y}, d{poly[a].x - poly[b].x, poly[a].y - poly[b].y};
+    const int i0 = static_cast<int>(std::floor((std::min(p.x, p.x + d.x) - reach - g.originX) / g.cell));
+    const int i1 = static_cast<int>(std::ceil((std::max(p.x, p.x + d.x) + reach - g.originX) / g.cell));
+    const int j0 = static_cast<int>(std::floor((std::min(p.y, p.y + d.y) - reach - g.originY) / g.cell));
+    const int j1 = static_cast<int>(std::ceil((std::max(p.y, p.y + d.y) + reach - g.originY) / g.cell));
+    for (int j = j0; j <= j1; ++j)
+      for (int i = i0; i <= i1; ++i) {
+        const Vec2 q{g.originX + i * g.cell, g.originY + j * g.cell};
+        const double f = std::clamp((q - p).dot(d) / std::max(d.dot(d), 1e-12), 0.0, 1.0);
+        if ((p + d * f - q).norm() <= reach) capCell(i, j);
+      }
+  }
 }
 
 /// the cap rising `slope` per metre away from where it is set: a two-pass chamfer (never under the true cone) over the
@@ -327,6 +401,7 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
   //    different heights touch, the lower wins. Away from them the cap rises at floorSlope (a 63-degree cut), and the
   //    ground is the lower of itself and the cap.
   std::vector<double> cap(N, kInf);
+  std::vector<double> plainCap(N, -kInf);  // the highest cap a lane of a road outside every junction set at each cell
   Box box;  // every cell capped
   // quads a quarter of a cell long: the triangles' planes follow a banked, curving lane to well under the floor's 5 cm
   const double ds = 0.25 * cell;
@@ -366,8 +441,9 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
           for (size_t m = 0; m < ids.size(); ++m) {
             const Edge &a = ea[m], &b = eb[m];
             if (!a.ok || !b.ok || (a.width < 1e-3 && b.width < 1e-3)) continue;
-            rasterTriangle(cap, ground, {a.inner, b.inner, b.outer}, opt.floorEpsilon, box);
-            rasterTriangle(cap, ground, {a.inner, b.outer, a.outer}, opt.floorEpsilon, box);
+            std::vector<double> *plain = r.junction == "-1" ? &plainCap : nullptr;
+            rasterTriangle(cap, ground, {a.inner, b.inner, b.outer}, opt.floorEpsilon, box, plain);
+            rasterTriangle(cap, ground, {a.inner, b.outer, a.outer}, opt.floorEpsilon, box, plain);
           }
         std::swap(ea, eb);
       }
@@ -383,7 +459,15 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
     // a junction under cover is under the ground on purpose: its outline does not press (its lanes outside their
     // tunnel records still do)
     if (J.boundary.empty() || underCover.count(J.id)) continue;
-    for (const auto &t : triangulate(outline(J, byId, 2.0 * cell))) rasterTriangle(cap, ground, t, opt.floorEpsilon, box);
+    // its surface inside the boundary is its <elevationGrid> ("applied to all points within this boundary", §12.10 /
+    // §12.11); without one (or one that is not a rectangle) the outline triangulated, at the road surface at its points
+    const std::vector<P3> poly = outline(J, byId, 2.0 * cell);
+    double probe;
+    if (J.grid && poly.size() >= 3 && gridHeight(*J.grid, poly[0].x, poly[0].y, probe)) {
+      rasterPolygon(cap, ground, poly, *J.grid, opt.floorEpsilon, box, plainCap);
+      continue;
+    }
+    for (const auto &t : triangulate(poly)) rasterTriangle(cap, ground, t, opt.floorEpsilon, box);
   }
   if (box.i1 < 0) return out;
   // the cone matters only within its reach of a capped cell: farther out it stands above the highest ground. The box of

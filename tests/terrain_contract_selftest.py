@@ -111,6 +111,24 @@ def raise_under_lane(f):  # the conformed ground 1 m up over 2 m around the midd
         h.write(z.astype("<f4").tobytes())
 
 
+def raise_in_junction(f):  # the conformed ground 0.5 m up over 3 m round the middle of a junction road with a boundary
+    root = ET.parse(f["standard"]).getroot()
+    bounded = {j.get("id") for j in root.findall("junction") if j.find("boundary") is not None and j.find("elevationGrid") is not None}
+    od = C.G.OpenDrive(f["standard"])
+    roads = od.roads.values() if isinstance(od.roads, dict) else od.roads
+    r = next(r for r in roads if r.junction in bounded and r.length > 10.0 and not C.structures(r))
+    x, y = r.point(np.array([r.length / 2]), 0.0)
+    x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+    ox, oy, cell, z = C.read_grid(f["conformed"])
+    i, j = int(round((x - ox) / cell)), int(round((y - oy) / cell))
+    k = max(1, int(round(1.5 / cell)))
+    z[0, j - k:j + k + 1, i - k:i + k + 1] += 0.5
+    with open(f["conformed"], "r+b") as h:
+        magic = h.read(8)
+        h.seek(8 + 32 + (4 if magic == b"ODRZGRD2" else 0) + 32)
+        h.write(z.astype("<f4").tobytes())
+
+
 def sink_under_lanes(f):  # the conformed ground 2 m down over 6 m round the middle of three long plain roads
     od = C.G.OpenDrive(f["standard"])
     roads = [r for r in (od.roads.values() if isinstance(od.roads, dict) else od.roads)
@@ -206,6 +224,8 @@ check(planted("stelvio", "steep", steepen), "steep: more roads over 20 % than th
 check(planted("stelvio", "buried", sink_road), "buried: a road 3 m under the ground is caught")
 check(planted("munich", "floating", sink_under_lanes), "floating: the conformed ground 2 m under three lanes is caught")
 check(planted("munich", "above", raise_under_lane), "above: the conformed ground 1 m over a lane is caught")
+check(planted("munich", "junction_fill", raise_in_junction),
+      "junction_fill: the conformed ground 0.5 m over a junction's grid inside its boundary is caught")
 check(planted("stelvio", "pits", dig_pit), "pits: a 3 m pit in the conformed ground at a junction road is caught")
 # scope (driving junction roads only): the clean Stelvio output passes although corner sidewalk 245 lies 3.1 m deep - the
 # "passes on the outputs as they are" condition of planted() fails if the scope is lost
