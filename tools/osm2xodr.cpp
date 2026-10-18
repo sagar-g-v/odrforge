@@ -200,8 +200,10 @@ int main(int argc, char **argv) {
       std::printf("  cross paths: %d (%d inside junctions, %d of those with pedestrian lights)\n", rep.crossPaths,
                   rep.junctionCrossPaths, rep.pedestrianSignals);
     if (rep.junctionGrids || rep.junctionBoundaries || rep.boundariesLeftOut)
-      std::printf("  junction surfaces: %d elevation grids, %d boundaries (%d helper roads), %d left without a boundary\n",
-                  rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesLeftOut);
+      std::printf("  junction surfaces: %d elevation grids, %d boundaries (%d helper roads, %d traced along the lanes' "
+                  "contour), %d left without a boundary\n",
+                  rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesTraced,
+                  rep.boundariesLeftOut);
     if (rep.junctionRoadsUnderCover)
       std::printf("  junction roads under cover: %d (in a tunnel, or the part under the terrain at a portal)\n",
                   rep.junctionRoadsUnderCover);

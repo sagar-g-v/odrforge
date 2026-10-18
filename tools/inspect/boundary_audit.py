@@ -2,8 +2,10 @@
 
 Measured:
   closed          "Segments shall close the entire junction boundary": the end of each segment meets the start of the
-                  next (kTol); a joint runs across all lanes of its road end, a lane segment along the outer edge of
+                  next (kTol); a joint runs across all lanes of its road end (jointLaneStart .. jointLaneEnd when given,
+                  Table 78), a lane segment along the outer edge of
                   boundaryLane (the reference line for 0) from sStart to sEnd ("start" / "end" or a number)
+  empty_segment   a lane segment whose sStart and sEnd are the same point (no length: it closes nothing)
   counter_clockwise  "Segments shall be ordered counter clockwise": positive signed area of the outline
   reaches_all_roads  "Segments shall be defined to reach the start or end of all roads connected to the junction": a
                   joint for every plain road end linked to the junction
@@ -109,11 +111,16 @@ def audit(path, quiet=False):
             elif sg.get("type") == "joint":
                 s = 0.0 if sg.get("contactPoint") == "start" else r.length
                 b = r.borders_at(s, r.section_at(s))
+                if sg.get("jointLaneStart") is not None:  # across the lanes jointLaneStart .. jointLaneEnd (Table 78)
+                    lo, hi = sorted((int(sg.get("jointLaneStart")), int(sg.get("jointLaneEnd"))))
+                    b = {k: v for k, v in b.items() if k != 0 and lo <= k <= hi}
                 ts = [t for v in b.values() for t in v]
                 seg_pts.append([pt(r, s, min(ts)), pt(r, s, max(ts))])
             else:
                 lane = int(sg.get("boundaryLane"))
                 s0, s1 = s_of(r, sg.get("sStart")), s_of(r, sg.get("sEnd"))
+                if abs(s1 - s0) < 1e-3:  # empty_segment: a lane segment of no length (sStart = sEnd)
+                    add("empty_segment", jid)
                 ss = np.linspace(s0, s1, max(2, int(abs(s1 - s0) / 0.5) + 1))
                 pts = [pt(r, s, edge_t(r, s, lane)) for s in ss]
                 # folded: the edge runs against its road's direction somewhere (an offset past a turn's centre)

@@ -157,15 +157,20 @@ std::vector<P3> outline(const odr::Junction &J, const std::map<std::string, cons
         return 0.0;
       }
     };
-    if (seg.type == "joint") {  // across the road's end, from the outer edge nearer the outline so far
+    if (seg.type == "joint") {  // across the road's end (its lanes jointLaneStart .. jointLaneEnd, Table 78, or all),
+                                // from the outer edge nearer the outline so far
       const double s = seg.contactPoint == "start" ? 0.0 : L;
       const odr::LaneSection &sec = odr::sectionAt(r, s);
-      double lo = odr::laneOffsetAt(r, s), hi = lo;
+      const int idLo = std::min(seg.jointLaneStart, seg.jointLaneEnd), idHi = std::max(seg.jointLaneStart, seg.jointLaneEnd);
+      double lo = 1e300, hi = -1e300;
+      if (!seg.jointLanes) lo = hi = odr::laneOffsetAt(r, s);
       for (const auto *side : {&sec.left, &sec.right})
         for (const odr::Lane &l : *side) {
           double a, b;
+          if (seg.jointLanes && (l.id < idLo || l.id > idHi)) continue;
           if (odr::laneBorders(r, s, l.id, a, b)) lo = std::min({lo, a, b}), hi = std::max({hi, a, b});
         }
+      if (lo > hi) return {};
       const Vec2 pl = r.planView.eval(s).offset(lo), ph = r.planView.eval(s).offset(hi);
       const bool loFirst = poly.empty() || std::hypot(pl.x - poly.back().x, pl.y - poly.back().y) <=
                                                std::hypot(ph.x - poly.back().x, ph.y - poly.back().y);

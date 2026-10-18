@@ -599,6 +599,10 @@ pugi::xml_document build(const OpenDrive &od, const WriteOptions &opt) {
             attr(x, "sEnd", sg.sEnd);
           } else {
             attr(x, "contactPoint", sg.contactPoint);
+            if (sg.jointLanes) {
+              attr(x, "jointLaneStart", std::to_string(sg.jointLaneStart));
+              attr(x, "jointLaneEnd", std::to_string(sg.jointLaneEnd));
+            }
           }
         }
       }

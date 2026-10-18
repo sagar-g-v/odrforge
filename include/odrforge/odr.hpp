@@ -205,10 +205,13 @@ struct JunctionGrid {
 };
 
 /// OpenDRIVE 1.8.0 §12.10 junction boundary segment: type "lane" (roadId, boundaryLane, sStart, sEnd as a number or
-/// "start" / "end") or "joint" (roadId, contactPoint; all lanes)
+/// "start" / "end") or "joint" (roadId, contactPoint; all lanes, or with jointLanes from jointLaneStart to jointLaneEnd -
+/// Table 78: "ID of the lane crossed by the segment")
 struct BoundarySegment {
   std::string type, roadId, sStart, sEnd, contactPoint;
   int boundaryLane = 0;
+  bool jointLanes = false;
+  int jointLaneStart = 0, jointLaneEnd = 0;
 };
 
 struct Junction {

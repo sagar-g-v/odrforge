@@ -5,6 +5,24 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Junction boundaries traced along the lanes' contour** (junction_surface.cpp, OpenDRIVE 1.8.0 §12.10, user decision:
+  a boundary for every common junction): where the outline of joints, lane edges and corner helpers fails (a corner
+  curve between arms side by side turns back across their ends, lanes lie beyond a corner), the outer contour of the
+  union of the junction's lanes is traced on a 0.05 m raster and put back on what it follows - lane segments along the
+  outer border of a lane (or a road's centre line, boundaryLane 0) over an s range, and joints across the lanes there
+  (jointLaneStart / jointLaneEnd, Table 78; both forms are in the spec's own example). No additional road. Held to the
+  outline's checks (closed, counter-clockwise, not crossing itself, every lane inside, a joint of every arm) and, being
+  read by others, to their sampling: also closed and simple at 0.5 m steps, no part pinched to within 0.05 m of another,
+  no lane edge running against its road, no lane segment of zero length, no two joints in a row. Common junctions
+  without a boundary 334 -> 200 (LA 89 -> 51, Munich 65 -> 36, London 57 -> 44, Frankfurt 58 -> 36, Stelvio 5 -> 3,
+  Tokyo 60 -> 30); every earlier boundary unchanged. The rest are geometry: connecting roads that do not line up with
+  their arm's lanes at its end (a joint ends on lane borders) or reach past an arm's end. boundary_audit.py reads
+  partial joints and gained `empty_segment`; its self-test two plants; conform.cpp / viz.cpp read partial joints. The
+  200 left, by the reason the converter logs (ODRFORGE_DEBUG_BOUNDARY): a joint end off its arm's lane borders 74, an
+  arm the contour never touches 46, two joints in a row 36, pinched 17, crossing at 0.5 m steps 15, other 12. Audit 0
+  findings, XSD 1.8.1 0 errors, esmini loads them as before; exact checkers, validation and the terrain contract
+  unchanged in all six areas, carla outputs byte-identical. New unit test (a divided road's carriageways side by side);
+  3 of 3 mutations caught. Jev 0.71, committed by the user's decision.
 - **The road floor in the conformed ground** (conform.cpp, user decisions 2026-10-18; the viewer draws the same floor):
   the ground never stands above a road. Every lane of every road (bridges included, a road's own lanes inside its tunnel
   records not) and every junction `<boundary>` (OpenDRIVE 1.8.0 §12.10; not for a junction with a tunnel road) caps the

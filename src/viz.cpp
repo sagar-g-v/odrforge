@@ -317,8 +317,8 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
     juncs << (i ? "," : "") << "[\"" << esc(j.id) << "\"," << j.connections.size() << "," << j.controllers.size() << ",\""
           << esc(j.type) << "\"]";
     // OpenDRIVE 1.8 §12.10 boundary as a closed outline: lane segments along the outer edge of boundaryLane (the centre
-    // lane's line for 0) from sStart to sEnd, joints across all lanes of the road end, run from the end nearer the next
-    // segment's start
+    // lane's line for 0) from sStart to sEnd, joints across the lanes jointLaneStart .. jointLaneEnd (or all) of the road
+    // end, run from the end nearer the next segment's start
     std::vector<std::vector<Vec2>> parts;
     for (const auto &sg : j.boundary) {
       const auto it = roadIdx.find(sg.roadId);
@@ -328,12 +328,15 @@ void writeVizHtml(const odr::OpenDrive &od, const std::string &path, const VizOp
       std::vector<Vec2> pts;
       if (sg.type == "joint") {
         const double s = sg.contactPoint == "start" ? 0.0 : r.length();
-        double lo = odr::laneOffsetAt(r, s), hi = lo;
+        const int idLo = std::min(sg.jointLaneStart, sg.jointLaneEnd), idHi = std::max(sg.jointLaneStart, sg.jointLaneEnd);
+        double lo = sg.jointLanes ? 1e300 : odr::laneOffsetAt(r, s), hi = sg.jointLanes ? -1e300 : lo;
         for (const auto *side : {&odr::sectionAt(r, s).left, &odr::sectionAt(r, s).right})
           for (const odr::Lane &l : *side) {
             double a, b;
+            if (sg.jointLanes && (l.id < idLo || l.id > idHi)) continue;
             if (odr::laneBorders(r, s, l.id, a, b)) lo = std::min({lo, a, b}), hi = std::max({hi, a, b});
           }
+        if (lo > hi) continue;
         pts = {r.planView.eval(s).offset(lo), r.planView.eval(s).offset(hi)};
       } else {
         const double s0 = sOf(sg.sStart), s1 = sOf(sg.sEnd);

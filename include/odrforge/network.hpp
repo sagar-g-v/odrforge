@@ -105,6 +105,7 @@ struct BuildReport {
   int junctionGrids = 0;        ///< junctions with a reference line and elevation grid (OpenDRIVE 1.8+)
   int junctionBoundaries = 0;   ///< junctions with a boundary (OpenDRIVE 1.8+)
   int boundaryHelperRoads = 0;  ///< roads added only to close a junction boundary (1.8.0 §12.10)
+  int boundariesTraced = 0;     ///< of junctionBoundaries: traced along the outer contour of the junction's lanes
   int boundariesLeftOut = 0;    ///< junctions whose outline would not enclose all their lanes: no boundary written
   int junctionRoadsUnderCover = 0;  ///< connecting roads between tunnel ends given a tunnel record (1.8.0 §13.11)
   int crossPaths = 0;          ///< crossings written as cross paths (OpenDRIVE 1.8+)

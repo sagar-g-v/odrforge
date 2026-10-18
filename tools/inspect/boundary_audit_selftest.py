@@ -10,6 +10,7 @@ finding. Plants (expected checks):
   reversed_order          segments of J in reverse order                     counter_clockwise
   joint_removed           J's first joint deleted                            reaches_all_roads, closed
   segment_cut             a lane segment of J ends half way                  closed
+  segment_emptied         a lane segment of J ends where it starts           empty_segment, closed
   helper_dent             the helper's line dented 3 m into the junction     contains_lanes
   helper_through          the helper's line pushed 80 m across the junction  simple
   helper_folded           the helper offset past its arc's centre            folded
@@ -19,6 +20,9 @@ finding. Plants (expected checks):
   ref_line_moved          J's reference line moved 500 m                     ref_line_crosses, grid_covers
   grid_shrunk             J's grid rows cut to one value each side           grid_covers
   helper_raised           the helper's elevation + 0.5 m (grid_audit.py)     |grid - helper surface| >= 0.49 m
+  joint_lanes_narrowed    a joint across some lanes (jointLaneStart ..        closed
+                          jointLaneEnd, Table 78) of a junction traced along its lanes' contour narrowed to one lane fewer
+                          (that junction is the planted one for this plant)
 Exit status 1 when any plant fails; DIR/selftest.json holds the findings per plant.
 """
 import argparse
@@ -59,6 +63,24 @@ def choose(root):
     raise SystemExit("no junction with a grid, two joints and a corner-curve helper in the base file")
 
 
+def narrow_joint(root):
+    """the first joint across some lanes spanning two or more (a boundary traced along its lanes' contour), narrowed by
+    one lane at its end; its junction's id, or None"""
+    for j in root.findall("junction"):
+        for sg in j.findall("boundary/segment[@type='joint']"):
+            a, b = sg.get("jointLaneStart"), sg.get("jointLaneEnd")
+            if a is None or a == b:
+                continue
+            a, b = int(a), int(b)
+            step = 1 if b > a else -1
+            nb = b - step if b - step != 0 else b - 2 * step  # lane ids skip 0
+            if (nb - a) * step < 0:
+                continue
+            sg.set("jointLaneEnd", str(nb))
+            return j.get("id")
+    return None
+
+
 def plant(name, root, j, sg, h):
     roads = {r.get("id"): r for r in root.findall("road")}
     segs = j.find("boundary")
@@ -79,6 +101,8 @@ def plant(name, root, j, sg, h):
             sg.set("sEnd", half)
         else:
             sg.set("sStart", half)
+    elif name == "segment_emptied":
+        sg.set("sEnd", sg.get("sStart"))
     elif name in ("helper_dent", "helper_through"):
         # t(s) = c s^2 + d s^3, zero at both ends, peak D at s = 2L/3; the inside is left of the outline's course
         D = 3.0 if name == "helper_dent" else 80.0
@@ -123,6 +147,7 @@ def plant(name, root, j, sg, h):
 
 EXPECT = {
     "reversed_order": {"counter_clockwise"}, "joint_removed": {"reaches_all_roads", "closed"}, "segment_cut": {"closed"},
+    "segment_emptied": {"empty_segment", "closed"},
     "helper_dent": {"contains_lanes"}, "helper_through": {"simple"}, "helper_folded": {"folded"},
     "helper_wrong_junction": {"helper_junction_id"}, "helper_link_far": {"helper_linkage"},
     "helper_turned_out": {"helper_points_inside"}, "ref_line_moved": {"ref_line_crosses", "grid_covers"},
@@ -168,6 +193,21 @@ def main():
                              "elsewhere": elsewhere}
         failed += not ok
         print(f"{'PASS' if ok else 'FAIL'} {name}: {results[name]}")
+    # a traced junction's joint across some lanes, narrowed: not closed at that junction, nothing elsewhere
+    tree = copy.deepcopy(tree0)
+    jt = narrow_joint(tree.getroot())
+    if jt is None:
+        results["joint_lanes_narrowed"] = {"pass": False, "reason": "no joint across two or more of some lanes in the base"}
+    else:
+        path = os.path.join(a.out, "joint_lanes_narrowed.xodr")
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+        r = boundary_audit.audit(path, quiet=True)
+        here = set(r["by_junction"].get(jt, {}))
+        elsewhere = {k: dict(v) for k, v in r["by_junction"].items() if k != jt}
+        results["joint_lanes_narrowed"] = {"pass": "closed" in here and not elsewhere, "junction": jt,
+                                           "at_junction": dict(r["by_junction"].get(jt, {})), "elsewhere": elsewhere}
+    failed += not results["joint_lanes_narrowed"]["pass"]
+    print(f"{'PASS' if results['joint_lanes_narrowed']['pass'] else 'FAIL'} joint_lanes_narrowed: {results['joint_lanes_narrowed']}")
     with open(os.path.join(a.out, "selftest.json"), "w", encoding="utf-8") as f:
         json.dump({"base": a.base, "junction": jid, "plants": results}, f, indent=1)
     print(f"{len(results) - failed}/{len(results)} plants detected as expected")
