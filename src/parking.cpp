@@ -38,6 +38,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <map>
 #include <tuple>
 
@@ -219,7 +220,9 @@ void Builder::measureStreetSideParking() {
   //    the area end-on (a side street) fails the strip, width or length limits.
   std::map<std::pair<size_t, bool>, std::vector<RoadMeta::ParkingBay>> bays;
   std::vector<int> drawnOn(areas.size(), 0);
-  std::vector<std::pair<size_t, std::string>> why(areas.size(), {0, "no road alongside"});  // of the most-met side
+  // why an area left out was: the reason from the road it lies nearest (the smallest gap from that road's carriageway
+  // edge to the area's inner edge) - a road farther off may meet it over more samples and fail for its distance
+  std::vector<std::pair<double, std::string>> why(areas.size(), {std::numeric_limits<double>::infinity(), "no road alongside"});
   // the area's stretches beside the road: runs of consecutive samples (an area drawn over the road is met only at
   // its slanted ends, each a run of its own)
   std::vector<std::tuple<size_t, size_t, bool, std::vector<Sample>>> runs;
@@ -282,7 +285,7 @@ void Builder::measureStreetSideParking() {
     else if (b.width < kMinWidth || b.width > kMaxWidth) fails = "would be a parking lane " + std::to_string(b.width) + " m wide";
     else if (b.s1 - b.s0 < kMinBay) fails = "shorter than " + std::to_string(kMinBay) + " m along the road";
     if (!fails.empty()) {
-      if (v.size() > why[ai].first) why[ai] = {v.size(), fails};
+      if (median(strip) < why[ai].first) why[ai] = {median(strip), fails};
       continue;
     }
     if (claimedElsewhere(ai, mi, left, v)) continue;

@@ -5,6 +5,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **A left-out parking area's warning names the reason from the road it lies nearest** (parking.cpp): it took the
+  reason from the run with the most samples, so Munich 449417494 (beside driveway roads 272 / 273 for 2 m) was
+  reported as "lies 13.33 m beyond the carriageway" of a road farther off; now "shorter than 5 m along the road". Of
+  the six street-side parking warnings in the gate areas only that one changes; outputs byte-identical. New unit test,
+  mutation caught. Jev 0.87.
 - **The road floor inside junction boundaries follows the junction's elevation grid** (conform.cpp; agreed with the
   viewer session, which fills boundaries the same way): OpenDRIVE 1.8.0 §12.10 "the <elevationGrid> is applied to all
   points within this boundary". Every cell a bilinear reader uses for a point inside a boundary is capped at the grid

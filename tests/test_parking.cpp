@@ -326,6 +326,35 @@ TEST_CASE("street-side parking area: left out when it is a lot (too deep), too s
   CHECK(over.errors == 0);
 }
 
+TEST_CASE("street-side parking area: left out, its warning gives the reason from the road it lies nearest") {
+  // Munich 449417494: a road farther off meets the area over more samples (and fails for its distance) than the road it
+  // lies beside (a short stretch). Here a street 9 m off along all 60 m of the area, and a service road along the
+  // area's outer edge for its last 2 m before turning away: the warning names the service road's reason
+  OsmB b;
+  const BuildOptions o = opts();
+  const Tags street{{"highway", "residential"}}, service{{"highway", "service"}};
+  b.way({b.node(-150, 0), b.node(150, 0)}, street);
+  double edge = 0.0;
+  for (const auto &l : crossSectionFromTags(street, o.country).right.lanes)
+    if (l.kind == LaneKind::Driving) edge += l.width;
+  double serviceHalf = 0.0;
+  for (const auto &l : crossSectionFromTags(service, o.country).left.lanes)
+    if (l.kind == LaneKind::Driving) serviceHalf += l.width;
+  const double yi = -(edge + 9.0), yo = yi - 2.4, ys = yo - 0.2 - serviceHalf;
+  b.way({b.node(-100, ys), b.node(-38, ys), b.node(-25, ys - 40)}, service);
+  b.area({{-40, yi}, {20, yi}, {20, yo}, {-40, yo}}, {{"amenity", "parking"}, {"parking", "street_side"}});
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(rep.streetSideParking == 0 && rep.streetSideParkingLeftOut == 1);
+  const auto warning = std::find_if(rep.warnings.begin(), rep.warnings.end(),
+                                    [](const std::string &w) { return w.find("street-side parking") != std::string::npos; });
+  CHECK(warning != rep.warnings.end());
+  if (warning != rep.warnings.end()) {
+    std::printf("    %s\n", warning->c_str());
+    CHECK(warning->find("lies 9.0") == std::string::npos);  // not the street's reason (9 m off, met over all 60 m)
+  }
+}
+
 TEST_CASE("street-side parking area: layby counts, a parking area that is not street-side does not") {
   CHECK(buildBay({}, -40.0, 20.0, 0.2, 2.4, "layby").rep.streetSideParking == 1);
   const BayCase surface = buildBay({}, -40.0, 20.0, 0.2, 2.4, "surface");
