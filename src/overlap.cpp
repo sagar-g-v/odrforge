@@ -109,6 +109,41 @@ void Builder::resolveOverlaps() {
       }
     return false;
   };
+  // per road: boxes around its reference line, one per kChunk of it, and the farthest its travelled way reaches from
+  // the line (sampled every metre, with kSlack for what lies between samples) - a road farther from a point than both
+  // roads' reach plus the most a shift can use (maxShift + margin) neither pushes nor limits a road there: it is passed
+  // by without projecting
+  constexpr double kSlack = 0.5, kChunk = 10.0;
+  struct Box {
+    double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+  };
+  struct Reach {
+    std::vector<Box> boxes;
+    double half = 0.0;
+  };
+  std::vector<Reach> reach(metas.size());
+  auto measure = [&](int mi) {  // again whenever the road's laneOffset changes
+    const odr::Road &r = od.roads[metas[mi].roadIndex];
+    const double L = r.length();
+    Reach q;
+    q.boxes.resize(static_cast<size_t>(std::max(1.0, std::ceil(L / kChunk))));
+    for (double s = 0.0;; s = std::min(L, s + 1.0)) {
+      const Pose p = r.planView.eval(s);
+      // a sample on a chunk border belongs to both chunks
+      const size_t k1 = std::min(q.boxes.size() - 1, static_cast<size_t>(s / kChunk));
+      const size_t k0 = (k1 > 0 && s <= kChunk * k1 + 1e-9) ? k1 - 1 : k1;
+      for (size_t k = k0; k <= k1; ++k) {
+        Box &b = q.boxes[k];
+        b.x0 = std::min(b.x0, p.x), b.y0 = std::min(b.y0, p.y), b.x1 = std::max(b.x1, p.x), b.y1 = std::max(b.y1, p.y);
+      }
+      double lo, hi;
+      if (extent(r, s, lo, hi)) q.half = std::max({q.half, std::abs(lo), std::abs(hi)});
+      if (s >= L) break;
+    }
+    for (Box &b : q.boxes) b.x0 -= kSlack, b.y0 -= kSlack, b.x1 += kSlack, b.y1 += kSlack;
+    q.half += kSlack;
+    reach[mi] = std::move(q);
+  };
   for (int pass = 0; pass < 3; ++pass) {
     // index of reference-line samples
     std::map<std::pair<long, long>, std::vector<std::pair<int, double>>> grid;
@@ -119,6 +154,7 @@ void Builder::resolveOverlaps() {
         const Pose p = r.planView.eval(s);
         grid[{static_cast<long>(std::floor(p.x / cell)), static_cast<long>(std::floor(p.y / cell))}].push_back({mi, s});
       }
+      measure(mi);
     }
     int shifted = 0;
     for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
@@ -164,6 +200,16 @@ void Builder::resolveOverlaps() {
               (void)sj;
               if (mj == mi || seen[mj]) continue;
               seen[mj] = true;
+              // b's reference line at least `apart` away: |tb| below is at least apart - 0.5 (the along-b tolerance)
+              const Reach &qb = reach[mj];
+              const double far = 0.5 + reach[mi].half + qb.half + maxShift + margin + kSlack;
+              bool near = false;
+              for (const Box &bx : qb.boxes)
+                if (std::hypot(std::max({bx.x0 - pa.x, 0.0, pa.x - bx.x1}), std::max({bx.y0 - pa.y, 0.0, pa.y - bx.y1})) <= far) {
+                  near = true;
+                  break;
+                }
+              if (!near) continue;
               const RoadMeta &mb = metas[mj];
               const odr::Road &b = od.roads[mb.roadIndex];
               double sb, tb;
@@ -389,6 +435,7 @@ void Builder::resolveOverlaps() {
         lo.push_back(odr::Poly3::hermite(ss[k0], ss[k1] - ss[k0], y[j], slope[j], y[j + 1], slope[j + 1]));
       }
       a.laneOffset = lo;
+      measure(mi);
       ++shifted;
     }
     rep.overlapShifts += shifted;

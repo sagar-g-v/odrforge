@@ -3,6 +3,7 @@
 // pitfall 11 (C1 elevation, matching z at links), plus the visual quality rules in validate().
 #include <algorithm>
 #include <cstdio>
+#include <map>
 
 #include "odrforge/conform.hpp"
 #include "odrforge/network.hpp"
@@ -171,6 +172,45 @@ TEST_CASE("overlap resolution: carriageways drawn too close are pushed apart") {
       CHECK_NEAR(2.0 * p.c + 6.0 * p.d * h, 2.0 * q.c, 1e-7);
     }
   CHECK(joins > 0);
+}
+
+TEST_CASE("overlap resolution: a road a few metres beside a carriageway limits how far it is pushed") {
+  // the dual carriageway drawn 4.6 m apart (3 lanes each, 10.5 m wide: 5.9 m overlap, each pushed the most a shift
+  // can, 3 m) with a one-lane road 9.85 m beside the north one: only 2.65 m of room to it (gap 2.85 m less the
+  // margin), so the north carriageway stops short of it and the road beside stays where it is. The road beside lies
+  // farther than both roads' travelled ways reach (with the overlap search's slack), within that plus the most a shift
+  // can use: the overlap search must not pass it by
+  OsmB b;
+  b.way({b.node(-200, 2.3), b.node(200, 2.3)}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "3"}});
+  b.way({b.node(200, -2.3), b.node(-200, -2.3)}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "3"}});
+  b.way({b.node(-200, 12.15), b.node(200, 12.15)}, {{"highway", "primary"}, {"oneway", "yes"}, {"lanes", "1"}});
+  BuildOptions o = baseOptions();
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(rep.overlapShifts >= 2);
+  // world y range of each road's driving lanes at x = 0, by the y of its reference line there
+  std::map<long, std::pair<double, double>> span;
+  for (const auto &r : od.roads) {
+    if (r.junction != "-1") continue;
+    double s, t;
+    r.planView.project({0, 0}, s, t);
+    const Pose p = r.planView.eval(s);
+    double lo = 1e9, hi = -1e9;
+    const odr::LaneSection &sec = odr::sectionAt(r, s);
+    for (const auto *side : {&sec.left, &sec.right})
+      for (const auto &l : *side) {
+        double u, v;
+        if (l.type != "driving" || !odr::laneBorders(r, s, l.id, u, v)) continue;
+        for (const double w : {u, v}) lo = std::min(lo, p.offset(w).y), hi = std::max(hi, p.offset(w).y);
+      }
+    span[std::lround(p.y)] = {lo, hi};
+  }
+  CHECK(span.count(2) && span.count(-2) && span.count(12));
+  if (!span.count(2) || !span.count(-2) || !span.count(12)) return;
+  CHECK(span[-2].second < -2.3 + 5.25 - 2.5);                      // the south carriageway pushed away (3 m)
+  CHECK_NEAR(0.5 * (span[2].first + span[2].second), 4.95, 0.05);  // the north one by the room it has: 2.65 m
+  CHECK_NEAR(0.5 * (span[12].first + span[12].second), 12.15, 0.01);  // the road beside not pushed
+  CHECK(span[12].first - span[2].second > 0.15);                   // the north one stopping short of it
 }
 
 TEST_CASE("overlap resolution: opposite carriageways meeting one junction are pushed apart, not taken for a gore") {

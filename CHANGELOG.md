@@ -476,6 +476,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   usable without a direction of travel; the unit-test runner prints unbuffered.
 
 ### Changed
+- **Overlap resolution passes by roads too far apart to matter** (overlap.cpp): each road keeps boxes round its
+  reference line (one per 10 m) and the farthest its travelled way reaches from it; a road farther from a sample than
+  both reaches plus the most a shift can use (3 m + 0.2 m margin, with 0.5 m slack) is not projected onto. Outputs
+  byte-identical in all six gate areas, both profiles; the two overlap stages 3.6 -> 1.5 s each on Tokyo, whole
+  conversions 14.2 -> 9.4 s (Tokyo), 33.7 -> 27.0 s (LA), 26.0 -> 19.3 s (Frankfurt). New unit test: a road 9.85 m
+  beside a pushed carriageway limits its shift to the 2.65 m of room - with the shift room left out of the bound the
+  test fails (mutation caught; the six areas do not exercise it). Checked directly: 4.7 million skipped pairs from the
+  six areas, both profiles, measured in full anyway - none within the bound, smallest slack 2.59 m. Jev 0.82.
 - **One junction per intersection** (ASAM Junction Guideline §6, OpenDRIVE 1.9 Annex F
   junctions.no_overlap). Where the arm cuts of two junctions leave less than 3 m of a road no longer
   than 15 m between them (the two halves of a dual-carriageway crossing, a station square of short
