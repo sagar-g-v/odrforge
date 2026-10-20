@@ -205,6 +205,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **CARLA follows every lane into a junction** (carla profile; found in the first end-to-end run in CARLA 0.10):
+  LibCarla (MapBuilder::GetLaneNext) reads a road link's elementId as a road whenever a road of that id exists,
+  whatever its elementType. Junctions were numbered from 1 like the roads, so in LA CARLA found no lane beyond 2,984
+  road ends and its Traffic Manager removed every vehicle routed there. The carla profile now numbers junctions from
+  the next power of ten above the largest road id (LA: 10001); road links, road@junction and junction groups follow.
+  The standard profile keeps its numbering (OpenDRIVE asks ids to be unique per element type only). Six areas,
+  carla: outputs identical apart from the junction ids; CARLA's dead ends 6,429 -> 783; Traffic Manager distance
+  over 150 s, Munich 2.1 -> 23.8 km. New unit test, mutation caught. Jev 0.80.
 - **Trees and street lamps stand on the ground** (src/conform.cpp seatObjects, osm2xodr): written with zOffset 0 they
   stood at the reference line's height (XSD 1.8.1 @zOffset: relative to the road reference line's elevation) - on
   slopes, beside cuttings and above tunnel roads (Munich: 141 of 679 more than 0.3 m off the ground, worst 8.2 m). On

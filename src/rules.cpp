@@ -81,6 +81,7 @@ TargetProfile carlaProfile() {
   t.speedSignKmhBuckets = true;
   t.trafficLightZeroOffset = true;
   t.maxIdLength = 32;
+  t.junctionIdsApartFromRoads = true;
   return t;
 }
 

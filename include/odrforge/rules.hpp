@@ -65,6 +65,10 @@ struct TargetProfile {
   /// meshing: ProfilesParser does not apply it). Junction surfaces are then level, so overlapping
   /// connecting lanes still agree exactly.
   bool superelevation = true;
+  /// CARLA: junction ids in a range no road id uses. LibCarla (MapBuilder::GetLaneNext) reads a road link's elementId
+  /// as a road whenever a road of that id exists, whatever its elementType, so a junction sharing a road's id cuts
+  /// every lane into it off; OpenDRIVE itself only asks ids to be unique per element type
+  bool junctionIdsApartFromRoads = false;
   SpecRevision spec() const { return {revMinor}; }
   /// "standard" or "carla". Earlier names stay accepted: asam, asam18 and esmini mean standard.
   static TargetProfile byName(const std::string &name);
