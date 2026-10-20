@@ -3,6 +3,7 @@
   python make_terrain.py --origin LAT,LON --bounds MINLAT,MINLON,MAXLAT,MAXLON \
       --dem dem.tif [--dem more.tif] [--lidar points.laz | --lidar points.npz --lidar-crs EPSG:3857] \
       --ground ground.odrz [--structures decks.odrz] [--cell 0.5] [--datum NAVD88]
+      [--dsm surface.tif --deck-osm area.osm]   # bridge decks from a surface model where no lidar is at hand
 
 Sources (any country): national lidar (USGS 3DEP, UK EA, NL AHN, FR IGN LiDAR HD, ...) and DEMs
 (3DEP 1 m, Copernicus GLO-30 / FABDEM as global fallback).
@@ -10,9 +11,22 @@ Sources (any country): national lidar (USGS 3DEP, UK EA, NL AHN, FR IGN LiDAR HD
 * Grids are in the same local transverse Mercator frame OdrForge uses (origin LAT,LON), so pass the
   same --origin to osm2xodr.
 * ground: lidar ground (ASPRS class 2) and road surface (11) where available, else the DEM.
-* structures: lidar bridge deck (class 17) - used by osm2xodr for bridge=yes roads.
+* structures: lidar bridge deck (class 17) - used by osm2xodr for bridge=yes roads. Without lidar, a digital
+  surface model (DSM: first-return heights, e.g. Hesse DOM1, UK EA DSM) gives the top deck: its cells more than
+  2.5 m above the bare earth within 10 m of an OSM road bridge (highway + bridge=yes/viaduct, --deck-osm), and its
+  smooth cells (std < 0.3 m) within 3 m of any other road nothing is mapped over (not tunnel / covered, layer >= 0): a
+  street on a structure OSM does not call a bridge (London's Adelphi terrace, a bridge approach over an embankment
+  road), which the bare-earth model removed. Trees and buildings elsewhere are left out; a deck under another deck is
+  not seen (osm2xodr: the lower road gives way).
 * Lidar heights are aligned to the DEM's vertical datum by the median offset of ground points
   (e.g. ellipsoidal lidar vs NAVD88 DEM).
+* Several --dem, finest first: a later DEM fills only the cells the earlier ones leave empty (a regional model
+  ending at its border, e.g. South Tyrol's 2.5 m DTM at the Lombardy border, completed by GLO-30). The fill is
+  shifted onto the earlier DEMs by the difference at the nearest cell where both have data, so the border has no
+  step, fading over --seam metres to a global shift: their median difference where it is a consistent offset
+  (|median| > interquartile range: another vertical datum), else 0 - the fill keeps its own heights (Stelvio: median
+  +1.26 m, IQR 2.34 m, the 30 m surface model vs the 2.5 m terrain model; at a mapped saddle 7 km into Lombardy the
+  shift by the median put GLO-30 1.2 m further from the surveyed height).
 Requires numpy, pyproj, rasterio (DEM), laspy[lazrs] for .las/.laz.
 """
 import argparse
@@ -85,6 +99,50 @@ def load_lidar(paths, crs):
     return np.concatenate(xs), np.concatenate(ys), np.concatenate(zs), np.concatenate(cs), crs
 
 
+def shifted_fill(dem, fill, seam_cells):
+    """`fill` moved onto `dem` for the cells `dem` leaves empty: the difference dem - fill at the nearest cell where
+    both have data, fading over seam_cells to a global shift - their median difference when that is a consistent
+    offset (|median| > interquartile range: another vertical datum), else 0; `fill` as it is where they never
+    overlap. Returns (the moved fill, whether it was moved onto the other datum)"""
+    both = ~np.isnan(dem) & ~np.isnan(fill)
+    if not both.any():
+        return fill, False
+    from scipy.ndimage import distance_transform_edt
+    diff = np.where(both, dem - fill, 0.0)
+    q25, median, q75 = (float(v) for v in np.percentile(diff[both], [25, 50, 75]))
+    offset = median if abs(median) > q75 - q25 else 0.0
+    d, (ii, jj) = distance_transform_edt(~both, return_indices=True)
+    w = np.clip(1.0 - d / max(seam_cells, 1e-9), 0.0, 1.0)
+    print(f"DEM fill: {np.isnan(dem).mean() * 100:.1f} % of the grid; difference median {median:+.2f} m, IQR "
+          f"{q75 - q25:.2f} m -> shifted {offset:+.2f} m beyond the border, nearest-cell differences faded over "
+          f"{seam_cells:.0f} cells")
+    return fill + w * diff[ii, jj] + (1.0 - w) * offset, offset != 0.0
+
+
+def on_top(tags):
+    """an OSM way nothing is mapped over: not a tunnel or covered way, not below ground level (layer < 0)"""
+    try:
+        layer = int(tags.get("layer", "0"))
+    except ValueError:
+        layer = 0
+    return tags.get("tunnel", "no") == "no" and tags.get("covered", "no") == "no" and layer >= 0
+
+
+def smooth(dsm, cell, rough=0.3):
+    """cells where the surface model is smooth: standard deviation under `rough` m over 2.5 m. A deck or terrace
+    surface is smooth; tree crowns, vehicles and the edge of a building or structure are not"""
+    from scipy.ndimage import uniform_filter
+    k = max(3, int(round(2.5 / cell)) | 1)
+    d0 = np.nan_to_num(dsm)
+    sd = np.sqrt(np.maximum(uniform_filter(d0 * d0, k) - uniform_filter(d0, k) ** 2, 0.0))
+    return sd < rough
+
+
+def raised_smooth(dsm, ground, cell, above=2.5, rough=0.3):
+    """cells where the surface model stands more than `above` m over the bare earth and is smooth: a deck or terrace"""
+    return (dsm - ground > above) & smooth(dsm, cell, rough)
+
+
 def bin_mean(ix, iy, z, nx, ny):
     ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
     idx = iy[ok] * nx + ix[ok]
@@ -123,8 +181,16 @@ def main():
     ap.add_argument("--structures")
     ap.add_argument("--cell", type=float, default=0.5)
     ap.add_argument("--margin", type=float, default=60.0)
+    ap.add_argument("--seam", type=float, default=100.0, help="m over which a filling DEM fades onto the earlier ones")
     ap.add_argument("--datum", default="")
+    ap.add_argument("--dem-datum", action="append", default=[],
+                    help="vertical datum of each --dem, in order; the grid's datum is then the datums its heights are in "
+                         "(a fill keeping its own heights adds its datum: Genova1942+EGM2008)")
+    ap.add_argument("--dsm", action="append", default=[], help="surface model raster(s): bridge decks (with --deck-osm)")
+    ap.add_argument("--deck-osm", help="OSM file whose road bridges select the DSM deck cells")
     a = ap.parse_args()
+    if a.dsm and not a.deck_osm:
+        sys.exit("--dsm needs --deck-osm (the DSM also holds trees and buildings)")
     lat0, lon0 = map(float, a.origin.split(","))
     b = list(map(float, a.bounds.split(",")))
     local = f"+proj=tmerc +lat_0={lat0} +lon_0={lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
@@ -142,16 +208,23 @@ def main():
         from rasterio.transform import from_origin
         from rasterio.warp import Resampling, reproject
         dst_tr = from_origin(x0 - a.cell / 2, y1 + a.cell / 2, a.cell, a.cell)
-        for path in a.dem:
+        datums = list(a.dem_datum) + [a.datum] * (len(a.dem) - len(a.dem_datum))
+        label = []  # the vertical datums the grid's heights are in, finest source first
+        for path, datum in zip(a.dem, datums):
             with rasterio.open(path) as src:
                 tmp = np.full((ny, nx), np.nan, dtype=np.float32)
                 reproject(rasterio.band(src, 1), tmp, dst_transform=dst_tr, dst_crs=local,
                           src_nodata=src.nodata, dst_nodata=np.nan, resampling=Resampling.bilinear)
                 tmp = tmp[::-1]  # north-up raster -> row 0 = south
-                dem = np.where(np.isnan(dem), tmp, dem)
-                if not a.datum and src.crs is not None:
-                    pass
-        print(f"DEM coverage {np.mean(~np.isnan(dem)) * 100:.1f} %")
+                fills = np.isnan(dem) & ~np.isnan(tmp)
+                moved, onto = shifted_fill(dem, tmp, a.seam / a.cell)
+                dem = np.where(np.isnan(dem), moved, dem)
+                # a fill moved onto the finer source's datum adds none; one keeping its own heights adds its own
+                if fills.any() and datum and not onto and datum not in label:
+                    label.append(datum)
+        if a.dem_datum:
+            a.datum = "+".join(label)
+        print(f"DEM coverage {np.mean(~np.isnan(dem)) * 100:.1f} %, vertical datum {a.datum or '(not given)'}")
 
     ground, decks = dem.copy(), None
     # ---- lidar
@@ -197,6 +270,66 @@ def main():
                 for l in range(decks.shape[0]):
                     decks[l] = fill_small_holes(decks[l], passes=2)
                 print(f"bridge decks: {decks.shape[0]} stacked level(s)")
+    # ---- bridge decks from a surface model, near OSM road bridges only
+    if a.dsm:
+        import xml.etree.ElementTree as ET
+        import rasterio
+        from rasterio.transform import from_origin
+        from rasterio.warp import Resampling, reproject
+        dst_tr = from_origin(x0 - a.cell / 2, y1 + a.cell / 2, a.cell, a.cell)
+        dsm = np.full((ny, nx), np.nan)
+        for path in a.dsm:
+            with rasterio.open(path) as src:
+                tmp = np.full((ny, nx), np.nan, dtype=np.float32)
+                reproject(rasterio.band(src, 1), tmp, dst_transform=dst_tr, dst_crs=local,
+                          src_nodata=src.nodata, dst_nodata=np.nan, resampling=Resampling.bilinear)
+                dsm = np.where(np.isnan(dsm), tmp[::-1], dsm)
+        nodes, bridges, streets = {}, [], []
+        for _, el in ET.iterparse(a.deck_osm):
+            if el.tag == "node":
+                nodes[el.get("id")] = (float(el.get("lon")), float(el.get("lat")))
+            elif el.tag == "way":
+                t = {g.get("k"): g.get("v") for g in el.findall("tag")}
+                refs = [n.get("ref") for n in el.findall("nd")]
+                if "highway" in t and t.get("bridge") in ("yes", "viaduct"):
+                    bridges.append(refs)
+                elif "highway" in t and on_top(t):
+                    streets.append(refs)
+                el.clear()
+
+        def near_ways(ways, buf):
+            near = np.zeros((ny, nx), dtype=bool)
+            for refs in ways:
+                ll = [nodes[r] for r in refs if r in nodes]
+                if len(ll) < 2:
+                    continue
+                px, py = to_local.transform([p[0] for p in ll], [p[1] for p in ll])
+                for (ax, ay), (bx, by) in zip(zip(px[:-1], py[:-1]), zip(px[1:], py[1:])):
+                    i0 = max(0, int((min(ax, bx) - buf - x0) / a.cell)); i1 = min(nx - 1, int((max(ax, bx) + buf - x0) / a.cell) + 1)
+                    j0 = max(0, int((min(ay, by) - buf - y0) / a.cell)); j1 = min(ny - 1, int((max(ay, by) + buf - y0) / a.cell) + 1)
+                    if i0 > i1 or j0 > j1:
+                        continue
+                    gx = x0 + np.arange(i0, i1 + 1) * a.cell
+                    gy = y0 + np.arange(j0, j1 + 1) * a.cell
+                    X, Y = np.meshgrid(gx, gy)
+                    dx, dy = bx - ax, by - ay
+                    u = np.clip(((X - ax) * dx + (Y - ay) * dy) / max(dx * dx + dy * dy, 1e-9), 0.0, 1.0)
+                    near[j0:j1 + 1, i0:i1 + 1] |= np.hypot(X - ax - u * dx, Y - ay - u * dy) <= buf
+            return near
+
+        # a street on a structure OSM does not call a bridge (a terrace over vaults, a bridge approach over an
+        # embankment road): the bare-earth model removed the structure and runs under the street; the street's
+        # surface is the smooth DSM along its centre line. The elevation solver (elevation.cpp 2.) takes such a
+        # deck only where it continues the road better than the ground (vehicles, roofs over the road: jumps)
+        street_deck = near_ways(streets, 3.0) & raised_smooth(dsm, ground, a.cell)
+        # near an OSM bridge the deck must be smooth too: the 10 m buffer also reaches buildings and structure edges
+        # beside the bridge (Frankfurt, junction 64 at the airport station: a "deck" falling 3.4 m within 1.3 m put
+        # bridges 96 / 183 on a building edge and made the 2 m stubs between their junctions climb 5-6 m)
+        bridge_deck = near_ways(bridges, 10.0) & raised_smooth(dsm, ground, a.cell)
+        deck = np.where(bridge_deck | street_deck, dsm, np.nan)
+        decks = deck[None] if decks is None else np.concatenate([decks, deck[None]])
+        print(f"surface model: {len(bridges)} OSM road bridges, {np.mean(~np.isnan(deck)) * 100:.2f} % deck cells "
+              f"({np.mean(street_deck) * 100:.2f} % on streets not mapped as bridges)")
     ground = fill_small_holes(ground, passes=3)
     print(f"ground coverage {np.mean(~np.isnan(ground)) * 100:.1f} %")
     write_odrz(a.ground, x0, y0, a.cell, ground.astype(np.float32), a.datum)

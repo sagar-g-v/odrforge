@@ -3,9 +3,12 @@
 #include <cstdlib>
 #include <cmath>
 #include <ctime>
+#include <chrono>
+#include <execution>
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <tuple>
 
 #include "network_internal.hpp"
 
@@ -35,6 +38,19 @@ std::string odrRoadType(const std::string &hw) {
   if (hw == "living_street" || hw == "service") return "lowSpeed";
   if (hw == "pedestrian") return "pedestrian";
   return "town";
+}
+
+/// OSM layer of a segment: the layer tag, else implied - a bridge above the ground, a tunnel below
+/// it; a building passage runs through a building at ground level
+int segLayer(const Seg &sg) {
+  int layer = sg.bridge ? 1 : sg.tunnel && !tagIs(*sg.tags, "tunnel", "building_passage") ? -1 : 0;
+  if (auto lv = tag(*sg.tags, "layer")) {
+    try {
+      layer = std::stoi(*lv);
+    } catch (...) {
+    }
+  }
+  return layer;
 }
 
 double minRadiusFor(const std::string &hw) {
@@ -69,7 +85,10 @@ std::vector<int> Builder::endLanes(const odr::Road &r, bool atEnd, bool incoming
   std::vector<int> out;
   auto take = [&](const std::vector<odr::Lane> &side) {
     for (const auto &l : side) {
-      if (l.type != "driving") continue;
+      // driving, and the motorway lane types of OpenDRIVE 1.8.0 §11.7.1 (direct junctions type them)
+      if (l.type != "driving" && l.type != "entry" && l.type != "exit" && l.type != "onRamp" && l.type != "offRamp" &&
+          l.type != "connectingRamp")
+        continue;
       const bool plus = (l.id < 0) != lht(opt);
       if (plus == wantPlus) out.push_back(l.id);
     }
@@ -123,6 +142,7 @@ void Builder::collectSegments() {
     cur.bridge = tagYes(w->tags, "bridge") || tagIs(w->tags, "bridge", "viaduct");
     cur.tunnel = tagYes(w->tags, "tunnel") || tagIs(w->tags, "tunnel", "building_passage");
     cur.covered = tagYes(w->tags, "covered");
+    cur.passage = tagIs(w->tags, "tunnel", "building_passage");
     for (size_t i = 0; i < w->nodes.size(); ++i) {
       cur.nodes.push_back(w->nodes[i]);
       const bool split = i > 0 && i + 1 < w->nodes.size() && usage[w->nodes[i]] >= 2;
@@ -209,6 +229,10 @@ void Builder::buildChains() {
   }
 }
 
+namespace {
+constexpr double kMaxAbsorbedRoad = 15.0;  // m: a wide median; longer roads between junction nodes stay roads
+}  // namespace
+
 void Builder::clusterJunctions() {
   // union-find over junction nodes
   std::unordered_map<OsmId, OsmId> parent;
@@ -264,17 +288,8 @@ void Builder::clusterJunctions() {
   // layer of the ways meeting at a node (bridge without layer = 1, tunnel = -1)
   auto nodeLayer = [&](OsmId n) {
     int layer = 0;
-    for (const auto &[si, atStart] : nodeSegs[n]) {
-      const Seg &sg = segs[si];
-      int l = sg.bridge ? 1 : sg.tunnel ? -1 : 0;
-      if (auto lv = tag(*sg.tags, "layer")) {
-        try {
-          l = std::stoi(*lv);
-        } catch (...) {
-        }
-      }
-      if (std::abs(l) > std::abs(layer)) layer = l;
-    }
+    for (const auto &[si, atStart] : nodeSegs[n])
+      if (const int l = segLayer(segs[si]); std::abs(l) > std::abs(layer)) layer = l;
     return layer;
   };
   std::vector<OsmId> jn(junctionNodes.begin(), junctionNodes.end());
@@ -283,6 +298,10 @@ void Builder::clusterJunctions() {
     for (size_t j = i + 1; j < jn.size(); ++j)
       if ((pos(jn[i]) - pos(jn[j])).norm() < 2.0 && nodeLayer(jn[i]) == nodeLayer(jn[j]) && sameLevel(jn[i], jn[j], 2.0))
         unite(jn[i], jn[j]);
+
+  // junctions that squeezed the road between them out (joinSqueezedJunctions), on one level only
+  for (const auto &[a, b] : forcedJoins)
+    if (nodeLayer(a) == nodeLayer(b) && sameLevel(a, b, (pos(a) - pos(b)).norm())) unite(a, b);
 
   std::map<OsmId, int> rootIdx;
   for (OsmId n : jn) {
@@ -309,8 +328,10 @@ void Builder::clusterJunctions() {
   for (Chain &c : chains) {
     if (auto it = clusterOf.find(c.n0); it != clusterOf.end()) c.c0 = it->second;
     if (auto it = clusterOf.find(c.n1); it != clusterOf.end()) c.c1 = it->second;
-    // a short chain with both ends in the same cluster lies inside the junction
-    if (c.c0 >= 0 && c.c0 == c.c1 && c.n0 != c.n1) c.internal = true;
+    // a short chain with both ends in the same cluster lies inside the junction; a longer one (a
+    // loop street between two nodes of one junction) stays a road starting and ending there
+    const bool shortEnough = c.approxLength <= std::max(kMaxAbsorbedRoad, radius[c.n0] + radius[c.n1] + opt.junctionJoinSlack);
+    if (c.c0 >= 0 && c.c0 == c.c1 && c.n0 != c.n1 && shortEnough) c.internal = true;
   }
 }
 
@@ -370,16 +391,14 @@ void Builder::buildRoadGeometry() {
           m.sections.back().xs.right.speed != xs.right.speed || m.sections.back().xs.left.speed != xs.left.speed)
         m.sections.push_back({s0, xs});
       if (sg.bridge) m.bridges.push_back({s0, s1});
-      int layer = sg.bridge ? 1 : sg.tunnel ? -1 : 0;
-      if (auto lv = tag(*sg.tags, "layer")) {
-        try {
-          layer = std::stoi(*lv);
-        } catch (...) {
-        }
-      }
-      m.layers.push_back({s0, s1, layer});
+      const int layer = segLayer(sg);
+      double maxHeight = 0.0;
+      if (auto mh = tag(*sg.tags, "maxheight"))
+        if (auto v = lengthTag(*mh)) maxHeight = *v;
+      m.layers.push_back({s0, s1, layer, maxHeight});
       if (sg.tunnel) m.tunnels.push_back({s0, s1});
       if (sg.covered) m.covered.push_back({s0, s1});
+      if (sg.passage) m.passages.push_back({s0, s1});
     }
     metas.push_back(m);
   }
@@ -389,14 +408,46 @@ void Builder::trimRoads() {
   // how far a road end may be pulled back: freeway ramps leave at shallow angles and overlap their
   // carriageway for much longer than street corners
   auto trimCap = [](const RoadMeta &m) { return m.rank >= 8 || m.highway.find("_link") != std::string::npos ? 160.0 : 80.0; };
+  const bool crosswalksInJunctions = opt.crosswalksAtSignals && opt.target.spec().hasCrossPaths();
+  // will road end e of cluster c get a corner sidewalk on both sides? As buildCornerSidewalks decides: arms
+  // in the order of their outward headings; the corner between an arm and its anticlockwise neighbour joins
+  // the arm's sidewalk right of traffic arriving along it to the neighbour's right of traffic leaving along
+  // it, unless the turn is sharper than 120 degrees (a nose)
+  auto cornersOnBothSides = [&](const Cluster &c, const RoadEnd &e) {
+    auto end = [&](const RoadEnd &x) { return x.atEnd ? metas[x.road].sections.back().xs : metas[x.road].sections.front().xs; };
+    auto outward = [&](const RoadEnd &x) {
+      const ReferenceLine &l = metas[x.road].full;
+      return x.atEnd ? normalizeAngle(l.eval(l.length()).hdg + kPi) : l.eval(0.0).hdg;
+    };
+    auto walk = [](const SideSpec &sd) { return !sd.lanes.empty() && sd.lanes.back().kind == LaneKind::Sidewalk; };
+    // the sidewalk right of traffic arriving along x (leaving: the other side)
+    auto walkRight = [&](const RoadEnd &x, bool arriving) {
+      const CrossSection &xs = end(x);
+      return walk((x.atEnd == arriving) ? xs.right : xs.left);
+    };
+    std::vector<const RoadEnd *> arms;
+    for (const RoadEnd &x : c.ends) arms.push_back(&x);
+    std::sort(arms.begin(), arms.end(), [&](const RoadEnd *a, const RoadEnd *b) { return outward(*a) < outward(*b); });
+    const size_t n = arms.size();
+    size_t i = 0;
+    while (i < n && !(arms[i]->road == e.road && arms[i]->atEnd == e.atEnd)) ++i;
+    if (i == n) return false;
+    auto corner = [&](const RoadEnd &p, const RoadEnd &q) {  // arriving along p, leaving along q
+      const double turn = normalizeAngle(outward(q) - normalizeAngle(outward(p) + kPi));
+      return walkRight(p, true) && walkRight(q, false) && turn >= -2.0 * kPi / 3.0;
+    };
+    return corner(*arms[i], *arms[(i + 1) % n]) && corner(*arms[(i + n - 1) % n], *arms[i]);
+  };
   // register road ends at clusters
   for (int i = 0; i < static_cast<int>(metas.size()); ++i) {
     const Chain &ch = chains[metas[i].chain];
     if (ch.c0 >= 0) clusters[ch.c0].ends.push_back({i, false});
     if (ch.c1 >= 0) clusters[ch.c1].ends.push_back({i, true});
   }
-  for (Cluster &c : clusters) {
-    if (c.ends.size() < 2) continue;
+  // every road end belongs to one cluster and the rest is read only: clusters are trimmed in
+  // parallel, with the same result as one after the other
+  std::for_each(std::execution::par, clusters.begin(), clusters.end(), [&](Cluster &c) {
+    if (c.ends.size() < 2) return;
     // the part of every road within reach of the junction (projection targets)
     std::vector<ReferenceLine> nearPart(c.ends.size());
     std::vector<double> nearStart(c.ends.size());
@@ -448,10 +499,28 @@ void Builder::trimRoads() {
       const double R = opt.cornerRadius * (m.rank >= 7 ? 1.5 : 1.0);
       const double corner = c.ends.size() >= 3 ? 0.7 * R : 0.0;
       double trim = lastOverlap < 0 ? 0.5 : lastOverlap + opt.stopLineSetback + corner;
+      // standard profile: the crosswalk of a signalised / crossing junction lies inside the junction (Junction
+      // Guideline 1.0.0 §6.3.3 "Add roads for the pedestrian crossings inside of the junction area", §6.4.3
+      // "Choose the road reference lines to stop before any cross path in the junction"): the approach ends
+      // before it - where a corner sidewalk on each side will give the cross path walking lanes to link
+      // (as buildCornerSidewalks makes them; cross_paths.cpp)
+      // ... and where the approach keeps its lanes over the extra length (ending it past a change of the lane
+      // count would leave the junction feeding only some of them)
+      auto sameLanes = [&](double extra) {
+        const double L0 = m.full.length(), d0 = std::min(trim, L0), d1 = std::min(trim + extra, L0);
+        const CrossSection &a = sectionAtFull(m, e.atEnd ? L0 - d0 : d0), &b = sectionAtFull(m, e.atEnd ? L0 - d1 : d1);
+        return a.left.drivingCount() == b.left.drivingCount() && a.right.drivingCount() == b.right.drivingCount();
+      };
+      if (crosswalksInJunctions && (c.signalised || c.crossing) && c.ends.size() >= 3 && cornersOnBothSides(c, e) &&
+          sameLanes(kCrosswalkJunctionDepth)) {
+        trim += kCrosswalkJunctionDepth;
+        (e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart) = true;
+      }
       if (const auto &fixed = e.atEnd ? m.fixedTrimEnd : m.fixedTrimStart) trim = *fixed;
       (e.atEnd ? metas[e.road].trimEnd : metas[e.road].trimStart) = trim;
     }
-  }
+    makeRoomForCurbReturns(c, trimCap);
+  });
   for (RoadMeta &m : metas) {
     const double L = m.full.length();
     const double keep = std::min(2.0, 0.5 * L);
@@ -461,6 +530,161 @@ void Builder::trimRoads() {
       m.trimEnd *= k;
       rep.warnings.push_back("road on way " + std::to_string(m.wayStart) + " shortened to " +
                              std::to_string(keep) + " m by its junctions");
+    }
+  }
+}
+
+// ASAM Junction Guideline §6 (one junction per intersection, as small as possible but as big as
+// necessary) and OpenDRIVE 1.9 Annex F junctions.no_overlap: when the arm cuts of two junctions
+// leave less than a short road between them, and that road is no longer than a median crossing
+// (the two halves of a dual-carriageway intersection), the two are one intersection.
+bool Builder::joinSqueezedJunctions() {
+  constexpr double kMinRoadBetweenJunctions = 3.0;  // m
+  bool joined = false;
+  for (const RoadMeta &m : metas) {
+    const Chain &ch = chains[m.chain];
+    if (ch.c0 < 0 || ch.c1 < 0 || ch.c0 == ch.c1) continue;
+    if (m.full.length() - m.trimStart - m.trimEnd >= kMinRoadBetweenJunctions) continue;
+    if (m.full.length() > kMaxAbsorbedRoad) continue;
+    forcedJoins.push_back({ch.n0, ch.n1});
+    joined = true;
+  }
+  return joined;
+}
+
+// Undo clustering, reference lines, gores and trims so the junction stages can run again.
+void Builder::forgetJunctionLayout(const std::vector<Chain> &chainsBefore) {
+  chains = chainsBefore;
+  clusterOf.clear();
+  clusters.clear();
+  metas.clear();
+  fitDev.clear();
+}
+
+namespace {
+
+// Distance from the reference line (the OSM way) to the curb-side edge of a sidewalk that is the
+// outermost lane on one side, or nullopt when that side does not end in a sidewalk.
+std::optional<double> sidewalkCurbOffset(const CrossSection &x, bool leftSide) {
+  const SideSpec &side = leftSide ? x.left : x.right;
+  if (side.lanes.empty() || side.lanes.back().kind != LaneKind::Sidewalk) return std::nullopt;
+  double t = x.laneOffset;
+  for (size_t k = 0; k + 1 < side.lanes.size(); ++k) t += (leftSide ? 1.0 : -1.0) * side.lanes[k].width;
+  return std::abs(t);
+}
+
+bool sameSide(const SideSpec &a, const SideSpec &b) {
+  if (a.lanes.size() != b.lanes.size() || a.speed != b.speed || a.forward != b.forward) return false;
+  for (size_t i = 0; i < a.lanes.size(); ++i)
+    if (a.lanes[i].kind != b.lanes[i].kind || a.lanes[i].width != b.lanes[i].width || a.lanes[i].turns != b.lanes[i].turns)
+      return false;
+  return true;
+}
+
+// Re-placing the sections on the trimmed road (end sections stretched, tiny ones dropped) can leave
+// two neighbouring sections equal by the rule that merges OSM segments into one section (one lane
+// layout, laneOffset within 5 cm, the same speeds) and with the same widths. OpenDRIVE 1.8 §11.3
+// needs a new lane section only where lanes change; such a boundary is removable (NAT-2) and the
+// second section is dropped, the first continuing.
+// A lane opening (or closing) over a taper splits off one neighbour of its kind: a lane added at the
+// outer side from the lane inside it, a turn pocket at the inner side from the lane outside it. The
+// line between the two (on the inner lane's outer edge, OpenDRIVE 1.9 §11.9 marks on the outer edge)
+// is the index of the lane carrying it, or npos when the lane has no such neighbour.
+size_t taperLineLane(const std::vector<odr::Lane> &side, size_t i) {
+  if (side[i].type != "driving") return std::string::npos;
+  if (i + 1 < side.size() && side[i + 1].type == "driving") return i;  // pocket: its own outer edge
+  if (i > 0 && side[i - 1].type == "driving") return i - 1;            // added outside: the inner lane's edge
+  return std::string::npos;
+}
+
+// OpenDRIVE 1.9 §11.9 road marks change along a lane with sOffset records (1.4: same). Over the given
+// spans (sorted, within the section) the lane's single mark gives way to no mark: the line between a
+// lane and the one opening beside it is drawn where the lane is open, not along the taper, where it
+// would lie on the edge or center line it splits from.
+void quietMarkOver(odr::Lane &l, std::vector<std::pair<double, double>> spans, double sectionLength) {
+  if (l.roadMarks.size() != 1 || l.roadMarks.front().type == "none" || spans.empty()) return;
+  const odr::RoadMark full = l.roadMarks.front();
+  auto record = [&](odr::RoadMark m, double s) {
+    m.sOffset = s;
+    l.roadMarks.push_back(m);
+  };
+  std::sort(spans.begin(), spans.end());
+  l.roadMarks.clear();
+  double markedFrom = 0.0;  // start of the stretch still to be written with the full mark
+  for (const auto &[a, b] : spans) {
+    if (a > markedFrom + 1e-6) record(full, markedFrom);
+    if (l.roadMarks.empty() || l.roadMarks.back().type != "none") record(odr::RoadMark{}, std::max(a, markedFrom));
+    markedFrom = std::max(markedFrom, b);
+  }
+  if (markedFrom < sectionLength - 1e-6) record(full, markedFrom);
+}
+
+void mergeEqualSections(std::vector<SectionInfo> &secs) {
+  auto equal = [](const CrossSection &a, const CrossSection &b) {
+    return a.oneway == b.oneway && std::abs(a.laneOffset - b.laneOffset) <= 0.05 && a.roundabout == b.roundabout &&
+           a.holdOffset == b.holdOffset && sameSide(a.left, b.left) && sameSide(a.right, b.right);
+  };
+  for (size_t k = 1; k < secs.size();)
+    if (equal(secs[k - 1].xs, secs[k].xs)) secs.erase(secs.begin() + k);
+    else ++k;
+}
+
+}  // namespace
+
+// ASAM Junction Guideline §6: each arm is cut where its curb return starts. At a corner whose facing
+// sides both end in a sidewalk the two curb lines meet at a corner point C; a curb return of radius
+// R (the street's corner radius, and at least kSidewalkTurn sidewalk widths so the sidewalk turns
+// round it without folding) starts R tan(phi / 2) before C on each curb, phi being the turn between
+// them. The arm cut is moved back that far where it lies closer to the junction (never beyond the
+// arm's trim cap).
+void Builder::makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap) {
+  constexpr double kSidewalkTurn = 2.5;
+  struct Arm {
+    const RoadEnd *end;
+    Pose out;           ///< at the junction node, heading away from it
+    CrossSection xs;    ///< cross section at the junction end
+  };
+  std::vector<Arm> arms;
+  for (const RoadEnd &e : c.ends) {
+    const RoadMeta &m = metas[e.road];
+    const double L = m.full.length();
+    Pose p = m.full.eval(e.atEnd ? L : 0.0);
+    if (e.atEnd) p.hdg += kPi;
+    arms.push_back({&e, p, sectionAtFull(m, e.atEnd ? L : 0.0)});
+  }
+  if (arms.size() < 2) return;
+  std::sort(arms.begin(), arms.end(),
+            [](const Arm &a, const Arm &b) { return normalizeAngle(a.out.hdg) < normalizeAngle(b.out.hdg); });
+  for (size_t i = 0; i < arms.size(); ++i) {
+    // the corner between arm P and its anticlockwise neighbour Q: left of P, right of Q (outward)
+    const Arm &P = arms[i], &Q = arms[(i + 1) % arms.size()];
+    if (P.end == Q.end) continue;
+    const bool pLeftIsRoadLeft = !P.end->atEnd;  // outward along +s at the start of the road
+    const bool qRightIsRoadLeft = Q.end->atEnd;
+    const auto aP = sidewalkCurbOffset(P.xs, pLeftIsRoadLeft), aQ = sidewalkCurbOffset(Q.xs, qRightIsRoadLeft);
+    if (!aP || !aQ) continue;
+    const double turn = normalizeAngle(Q.out.hdg - (P.out.hdg + kPi));  // arriving along P, leaving along Q
+    if (turn >= -1e-3) continue;  // the curb turns away from the sidewalk side: nothing to fold
+    if (turn < -2.0 * kPi / 3.0) continue;  // an acute corner (a fork) ends in a nose, no curb return
+    const Vec2 uP = P.out.dir(), uQ = Q.out.dir();
+    const Vec2 curbP = P.out.offset(*aP), curbQ = Q.out.offset(-*aQ);
+    const double den = uP.cross(uQ);
+    if (std::abs(den) < 1e-6) continue;
+    const Vec2 d = curbQ - curbP;
+    const double sP = d.cross(uQ) / den, sQ = d.cross(uP) / den;  // corner point C along each curb
+    const RoadMeta &mp = metas[P.end->road], &mq = metas[Q.end->road];
+    const double wP = (pLeftIsRoadLeft ? P.xs.left : P.xs.right).lanes.back().width;
+    const double wQ = (qRightIsRoadLeft ? Q.xs.left : Q.xs.right).lanes.back().width;
+    const double rankFactor = std::max(mp.rank, mq.rank) >= 7 ? 1.5 : 1.0;
+    const double R = std::max(opt.cornerRadius * rankFactor, kSidewalkTurn * std::max(wP, wQ));
+    const double tangent = R * std::tan(0.5 * std::abs(turn));
+    for (const auto &[arm, along] : {std::pair<const Arm *, double>{&P, sP}, {&Q, sQ}}) {
+      RoadMeta &m = metas[arm->end->road];
+      if ((arm->end->atEnd ? m.fixedTrimEnd : m.fixedTrimStart) || along < -1.0) continue;
+      double &trim = arm->end->atEnd ? m.trimEnd : m.trimStart;
+      // a curb return never eats the road it belongs to: at most 40 % of it per end
+      const double cap = std::min(0.4 * m.full.length(), trimCap(m));
+      trim = std::max(trim, std::min(cap, along + tangent));
     }
   }
 }
@@ -522,6 +746,13 @@ void Builder::buildRoads() {
         if (secs[k].s - secs[k - 1].s < 1.0) secs.erase(secs.begin() + k);
         else ++k;
     }
+    mergeEqualSections(secs);
+    remeasureSidewalks(m, r.planView, secs);
+    keepTagParkingClearOfJunctions(m, len, secs);  // tagged parking: no stopping within the legal distance of junctions
+    applyParkingBays(m, s0, len, secs);            // mapped street-side areas win where they lie
+    for (size_t k = 0; k < secs.size(); ++k)
+      keepVergeFoldSafe(secs[k].xs, r.planView, secs[k].s, k + 1 < secs.size() ? secs[k + 1].s : len);
+    kerbShoulders(m, r.planView, len, secs);  // where the kerb lies beyond the widest lane (kerbs.cpp)
     // lane sections, tapers and links
     for (size_t k = 0; k < secs.size(); ++k) r.lanes.push_back(makeLaneSection(secs[k].xs, secs[k].s, C));
     std::map<std::vector<odr::Lane> *, std::map<size_t, bool>> added, dropped;
@@ -530,16 +761,26 @@ void Builder::buildRoads() {
       auto linkSide = [&](std::vector<odr::Lane> &a, std::vector<odr::Lane> &b, const SideSpec &sa,
                           const SideSpec &sb) {
         // match lanes by kind; driving lanes added / dropped at the inner side when the new inner
-        // lane is a turn pocket toward the divider, else at the outer side
+        // lane is a turn pocket toward the divider or the inner lane of a oneway ends merging away
+        // from it (turn:lanes merge_to_right, LHT merge_to_left), else at the outer side
         const int na = sa.drivingCount(), nb = sb.drivingCount();
         const bool lhtSide = C.leftHandTraffic;
-        auto innerTurnPocket = [&](const SideSpec &s) {
+        auto innerTurn = [&](const SideSpec &s, std::initializer_list<const char *> turns) {
           if (s.lanes.empty()) return false;
           for (const auto &t : s.lanes.front().turns)
-            if (t == (lhtSide ? "right" : "left") || t == (lhtSide ? "slight_right" : "slight_left")) return true;
+            for (const char *u : turns)
+              if (t == u) return true;
           return false;
         };
-        const int shift = (nb > na && innerTurnPocket(sb)) ? nb - na : (na > nb && innerTurnPocket(sa)) ? -(na - nb) : 0;
+        auto innerTurnPocket = [&](const SideSpec &s) {
+          return lhtSide ? innerTurn(s, {"right", "slight_right"}) : innerTurn(s, {"left", "slight_left"});
+        };
+        auto innerMerge = [&](const SideSpec &s) {
+          return secs[k - 1].xs.oneway && secs[k].xs.oneway && innerTurn(s, {lhtSide ? "merge_to_left" : "merge_to_right"});
+        };
+        const int shift = (nb > na && innerTurnPocket(sb))                   ? nb - na
+                          : (na > nb && (innerTurnPocket(sa) || innerMerge(sa))) ? -(na - nb)
+                                                                                 : 0;
         std::map<LaneKind, std::vector<size_t>> ia, ib;
         for (size_t i = 0; i < sa.lanes.size(); ++i) ia[sa.lanes[i].kind == LaneKind::Bus ? LaneKind::Driving : sa.lanes[i].kind].push_back(i);
         for (size_t i = 0; i < sb.lanes.size(); ++i) ib[sb.lanes[i].kind == LaneKind::Bus ? LaneKind::Driving : sb.lanes[i].kind].push_back(i);
@@ -564,39 +805,112 @@ void Builder::buildRoads() {
       linkSide(prev.right, cur.right, secs[k - 1].xs.right, secs[k].xs.right);
     }
     // width profiles: grow from / drop to zero over a taper; a lane that does both within one
-    // section rises over the first half and falls over the second
+    // section rises over the first half and falls over the second. A lane that continues from the
+    // previous section with another width (the ways carry different width / lanes tags) blends to its
+    // new width across the boundary, up to half a taper on either side (C1; the lane offset follows
+    // the same window below): a step is a sideways jump of the lane border, and a blend after the
+    // boundary would keep the old width a whole taper into the next way
+    std::vector<double> blendB(r.lanes.size(), 0.0), blendA(r.lanes.size(), 0.0);  // window before / after boundary k
+    // the taper of lanes ending before boundary k / starting after it: the lane offset moves in the
+    // same window, so the lanes that flow on stay continuous
+    std::vector<double> dropTaper(r.lanes.size() + 1, 0.0), addTaper(r.lanes.size() + 1, 0.0);
+    for (size_t k = 1; k < r.lanes.size(); ++k) {
+      blendB[k] = std::min(0.5 * opt.taperLength, 0.4 * (r.lanes[k].s - r.lanes[k - 1].s));
+      blendA[k] = std::min(0.5 * opt.taperLength, 0.4 * ((k + 1 < r.lanes.size() ? r.lanes[k + 1].s : len) - r.lanes[k].s));
+    }
+    // value and slope at the boundary of a C1 blend from v0 to v1 over tb before and ta after it
+    auto blendMid = [](double v0, double v1, double tb, double ta) {
+      return std::pair<double, double>{v0 + (v1 - v0) * tb / (tb + ta), 1.5 * (v1 - v0) / (tb + ta)};
+    };
+    // per lane carrying a line beside a taper: its section's length and the taper spans
+    std::map<std::pair<std::vector<odr::Lane> *, size_t>, std::pair<double, std::vector<std::pair<double, double>>>> quietSpans;
     for (size_t k = 0; k < r.lanes.size(); ++k) {
       const double secLen = (k + 1 < r.lanes.size() ? r.lanes[k + 1].s : len) - r.lanes[k].s;
       for (auto *side : {&r.lanes[k].left, &r.lanes[k].right})
         for (size_t i = 0; i < side->size(); ++i) {
           const bool g = added[side][i], d = dropped[side][i];
-          if (!g && !d) continue;
           odr::Lane &l = (*side)[i];
           const double w = l.widths.front().a;
-          const double T = std::min(opt.taperLength, (g && d ? 0.5 : 0.8) * secLen);
+          double ta = 0.0, wm = w, mm = 0.0;  // blend after the boundary; width and slope at the boundary
+          odr::Lane *p = nullptr;
+          if (!g && k > 0 && l.link.predecessor)
+            for (auto *ps : {&r.lanes[k - 1].left, &r.lanes[k - 1].right})
+              for (auto &q : *ps)
+                if (q.id == *l.link.predecessor && !q.widths.empty()) p = &q;
+          if (p) {
+            const double prevLen = r.lanes[k].s - r.lanes[k - 1].s;
+            const odr::Poly3 last = p->widths.back();
+            const double w0 = last.eval(prevLen - last.s);
+            if (std::abs(w0 - w) > 1e-3) {
+              // the previous lane takes the first half where it ends at a constant width
+              const bool held = last.b == 0.0 && last.c == 0.0 && last.d == 0.0;
+              const double tb = held ? std::min(blendB[k], prevLen - last.s) : 0.0;
+              ta = blendA[k];
+              std::tie(wm, mm) = blendMid(w0, w, tb, ta);
+              if (tb > 1e-6) {
+                if (prevLen - tb <= last.s + 1e-6) p->widths.pop_back();
+                p->widths.push_back(odr::Poly3::hermite(prevLen - tb, tb, w0, 0.0, wm, mm));
+              }
+            }
+          }
+          // a lane of width 0 (the shoulder a kerb may widen, kerbs.cpp) neither grows nor falls: no taper, and the
+          // lane offset does not move for it
+          if (w <= 0.0 && ta <= 0.0) {
+            l.widths = {odr::Poly3{0.0, 0.0, 0.0, 0.0, 0.0}};
+            continue;
+          }
+          if (!g && ta <= 0.0 && !d) continue;
+          const double cap = (d ? (g ? 0.5 : ta > 0.0 ? 0.6 : 0.8) : 0.8) * secLen;
+          // growth / fall: the taper length, or the length measured for the lane (street-side parking bays)
+          const LaneSpec &spec = (side == &r.lanes[k].left ? secs[k].xs.left : secs[k].xs.right).lanes[i];
+          const double Tg = std::min(spec.taperIn > 0.0 ? spec.taperIn : opt.taperLength, cap);
+          const double Td = std::min(spec.taperOut > 0.0 ? spec.taperOut : opt.taperLength, cap);
           l.widths.clear();
-          if (g) l.widths.push_back(odr::Poly3::hermite(0.0, T, 0.0, 0.0, w, 0.0));
-          const double hold = secLen - (g ? T : 0.0) - (d ? T : 0.0);  // full-width stretch
-          if (hold > 1e-6) l.widths.push_back({g ? T : 0.0, w, 0, 0, 0});
-          if (d) l.widths.push_back(odr::Poly3::hermite(secLen - T, T, w, 0.0, 0.0, 0.0));
+          double s0 = 0.0;  // start of the full-width stretch
+          if (g) l.widths.push_back(odr::Poly3::hermite(0.0, Tg, 0.0, 0.0, w, 0.0)), s0 = Tg, addTaper[k] = std::max(addTaper[k], Tg);
+          if (d) dropTaper[k + 1] = std::max(dropTaper[k + 1], Td);
+          // a lane that blends to a new width at its start and ends at its section's end does both
+          // (Td leaves room for the blend): the blend keeps its borders continuous across the boundary
+          if (!g && ta > 0.0) l.widths.push_back(odr::Poly3::hermite(0.0, ta, wm, mm, w, 0.0)), s0 = ta;
+          const double hold = secLen - s0 - (d ? Td : 0.0);
+          if (hold > 1e-6) l.widths.push_back({s0, w, 0, 0, 0});
+          if (d) l.widths.push_back(odr::Poly3::hermite(secLen - Td, Td, w, 0.0, 0.0, 0.0));
+          if (const size_t line = taperLineLane(*side, i); line != std::string::npos) {
+            auto &[sectionLength, spans] = quietSpans[{side, line}];
+            sectionLength = secLen;
+            if (g) spans.push_back({0.0, Tg});
+            if (d) spans.push_back({secLen - Td, secLen});
+          }
         }
     }
-    // lane offset: lanes added / dropped on one side widen the road outward and the existing lanes
-    // keep running straight (mappers do not move the way for a turn pocket). The offset is only
-    // re-centred when the carriageway really changes (oneway <-> two-way, both sides change), over the
-    // full taper length.
+    for (auto &[at, q] : quietSpans) quietMarkOver((*at.first)[at.second], q.second, q.first);
+    // lane offset: every section carries its own cross-section's offset, which places the OSM way where
+    // OSM says it is (the middle of the carriageway, or the placement=* lane). It moves in the window of
+    // the lanes that cause the change, so the lanes flowing on stay continuous: before the boundary
+    // over the taper of a lane ending there, after it over the taper of a lane starting there, and in
+    // the window of the width blend when only the widths change.
     std::vector<double> offs(secs.size());
+    std::vector<bool> widthOnly(secs.size(), false), follow(secs.size(), false);
     offs[0] = secs[0].xs.laneOffset;
     for (size_t k = 1; k < secs.size(); ++k) {
       const CrossSection &a = secs[k - 1].xs, &b = secs[k].xs;
       const bool leftChanged = a.left.drivingCount() != b.left.drivingCount();
       const bool rightChanged = a.right.drivingCount() != b.right.drivingCount();
-      const double room = (k + 1 < secs.size() ? secs[k + 1].s : len) - secs[k].s;
-      const bool recentre = a.holdOffset || b.holdOffset ||
-                            (room >= 10.0 && (a.oneway != b.oneway || (leftChanged && rightChanged) || (!leftChanged && !rightChanged)));
-      offs[k] = recentre ? b.laneOffset : offs[k - 1];
+      offs[k] = b.laneOffset;
+      // lanes only end here: the offset follows their taper before the boundary
+      follow[k] = !a.holdOffset && !b.holdOffset && dropTaper[k] > 1e-6 && addTaper[k] <= 1e-6;
+      // only the widths change
+      widthOnly[k] = !a.holdOffset && !b.holdOffset && a.oneway == b.oneway && !leftChanged && !rightChanged &&
+                     dropTaper[k] <= 1e-6 && addTaper[k] <= 1e-6;
     }
     r.laneOffset.push_back({0.0, offs[0], 0, 0, 0});
+    // a transition from a level offset is a C2 shift (no curvature step on the lanes at its ends); one
+    // that starts inside a running transition continues it with a Hermite blend from its slope
+    auto shiftTo = [&](double s0, double L, double v, double m, double target) {
+      if (std::abs(m) < 1e-9)
+        for (const odr::Poly3 &p : odr::Poly3::shiftC2(s0, L, v, target)) r.laneOffset.push_back(p);
+      else r.laneOffset.push_back(odr::Poly3::hermite(s0, L, v, m, target, 0.0));
+    };
     for (size_t k = 1; k < secs.size(); ++k) {
       const double sb = secs[k].s, target = offs[k];
       // leaving a gore stretch (merge: main + branch lanes -> the trunk's own lanes): the lanes move
@@ -608,7 +922,32 @@ void Builder::buildRoads() {
         const double v = cur.eval(s0 - cur.s), m = cur.deriv(s0 - cur.s);
         if (std::abs(v - target) < 1e-3) continue;
         if (cur.s >= s0 - 1e-6) r.laneOffset.pop_back();
-        r.laneOffset.push_back(odr::Poly3::hermite(s0, sb - s0, v, m, target, 0.0));
+        shiftTo(s0, sb - s0, v, m, target);
+        if (sb < len - 1e-6) r.laneOffset.push_back({sb, target, 0, 0, 0});
+        continue;
+      }
+      // only the widths change and the offset has settled: the width blend's window across the boundary
+      if (const odr::Poly3 last = r.laneOffset.back();
+          widthOnly[k] && last.s <= sb + 1e-6 && last.b == 0.0 && last.c == 0.0 && last.d == 0.0) {
+        if (std::abs(last.a - target) < 1e-3) continue;
+        const double tb = std::min(blendB[k], sb - last.s), ta = blendA[k];
+        const auto [vm, mm] = blendMid(last.a, target, tb, ta);
+        if (tb > 1e-6) {
+          if (sb - tb <= last.s + 1e-6) r.laneOffset.pop_back();
+          r.laneOffset.push_back(odr::Poly3::hermite(sb - tb, tb, last.a, 0.0, vm, mm));
+        }
+        r.laneOffset.push_back(odr::Poly3::hermite(sb, ta, vm, mm, target, 0.0));
+        if (sb + ta < len - 1e-6) r.laneOffset.push_back({sb + ta, target, 0, 0, 0});
+        continue;
+      }
+      // a lane ending at the inner side: lane 0 follows its taper before the boundary
+      if (follow[k]) {
+        const double s0 = sb - dropTaper[k];
+        while (r.laneOffset.size() > 1 && r.laneOffset.back().s > s0 + 1e-6) r.laneOffset.pop_back();
+        const odr::Poly3 cur = r.laneOffset.back();
+        const double v = cur.eval(s0 - cur.s), m = cur.deriv(s0 - cur.s);
+        if (cur.s >= s0 - 1e-6) r.laneOffset.pop_back();
+        shiftTo(s0, sb - s0, v, m, target);
         if (sb < len - 1e-6) r.laneOffset.push_back({sb, target, 0, 0, 0});
         continue;
       }
@@ -621,8 +960,9 @@ void Builder::buildRoads() {
       // entering a gore stretch (diverge): over the whole stretch up to the gore
       const double room = (k + 1 < secs.size() ? secs[k + 1].s : len) - sb;
       const double T = secs[k].xs.holdOffset && room > 10.0 ? std::max(1.0, room - 1.0)
+                       : addTaper[k] > 1e-6                 ? addTaper[k]
                                                             : std::min(opt.taperLength, std::max(1.0, len - sb - 1.0));
-      r.laneOffset.push_back(odr::Poly3::hermite(sb, T, v, m, target, 0.0));
+      shiftTo(sb, T, v, m, target);
       if (sb + T < len - 1e-6) r.laneOffset.push_back({sb + T, target, 0, 0, 0});
     }
     // road type + speed
@@ -732,6 +1072,93 @@ OsmData clipOsm(const OsmData &in, const Projection &proj, const std::array<doub
   }
   return out;
 }
+
+/// OSM wiki Key:lanes: "The actual number of lanes should always be tagged" - an untagged count is a guess. An untagged
+/// *_link piece that continues a tagged piece of the same class one to one (the node joins exactly these two highway
+/// ways, one ending and the other starting there) takes that piece's lanes. Measured in the six test areas: 166 of 199
+/// such pairs with both pieces tagged (83 %) have the same lane count, while the best single default is right for at most
+/// 44 % of tagged one-way motorway_links (117 x 1, 111 x 2, 39 x 3 of 268). Repeated along chains; a piece between two
+/// tagged pieces that disagree keeps the default. LA review flags 2 and 3: a ramp's untagged pieces got the motorway's 2
+/// lanes beside its piece tagged lanes=1.
+int inheritLinkLanes(OsmData &osm) {
+  auto isLink = [](const OsmWay &w) {
+    const auto hw = tag(w.tags, "highway");
+    return hw && hw->size() > 5 && hw->compare(hw->size() - 5, 5, "_link") == 0;
+  };
+  std::unordered_map<OsmId, std::vector<std::pair<OsmId, bool>>> at;  // node -> (way, the way starts there)
+  for (const auto &[id, w] : osm.ways)
+    if (tag(w.tags, "highway") && w.nodes.size() >= 2) {
+      at[w.nodes.front()].push_back({id, true});
+      at[w.nodes.back()].push_back({id, false});
+    }
+  std::vector<OsmId> ids;  // way id order: the same result whatever the hash order
+  for (const auto &[id, w] : osm.ways)
+    if (isLink(w)) ids.push_back(id);
+  std::sort(ids.begin(), ids.end());
+  int inherited = 0;
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (OsmId id : ids) {
+      OsmWay &w = osm.ways.at(id);
+      if (tag(w.tags, "lanes")) continue;
+      std::optional<std::string> found;
+      bool conflict = false;
+      for (const bool atStart : {true, false}) {
+        const auto it = at.find(atStart ? w.nodes.front() : w.nodes.back());
+        if (it == at.end() || it->second.size() != 2) continue;  // a split or merge: no one-to-one continuation
+        for (const auto &[oid, starts] : it->second) {
+          // at w's first node the other piece must end there, at w's last node start there
+          if (oid == id || starts == atStart) continue;
+          const OsmWay &o = osm.ways.at(oid);
+          if (tag(o.tags, "highway") != tag(w.tags, "highway")) continue;
+          if (const auto lanes = tag(o.tags, "lanes")) {
+            conflict |= found && *found != *lanes;
+            found = lanes;
+          }
+        }
+      }
+      // an untagged branch of a split: the trunk's lanes whose turn:lanes bear toward the branch's side lead into it
+      // (OSM wiki Key:turn:lanes, lanes listed left to right; LA review flag 1: a ramp tagged lanes=2,
+      // turn:lanes=none|slight_right splits, the right-hand branch untagged - it takes the one right lane)
+      if (!found && !conflict)
+        if (const auto it = at.find(w.nodes.front()); it != at.end() && it->second.size() == 3) {
+          const OsmWay *trunk = nullptr, *sibling = nullptr;
+          for (const auto &[oid, starts] : it->second) {
+            const OsmWay &o = osm.ways.at(oid);
+            if (oid == id || tag(o.tags, "highway") != tag(w.tags, "highway")) continue;
+            if (!starts) trunk = &o;
+            else sibling = &o;
+          }
+          const auto turns = trunk ? tag(trunk->tags, "turn:lanes") : std::nullopt;
+          if (trunk && sibling && turns && sibling->nodes.size() >= 2 && trunk->nodes.size() >= 2) {
+            const OsmNode *n0 = osm.node(w.nodes.front()), *nw = osm.node(w.nodes[1]), *ns = osm.node(sibling->nodes[1]),
+                          *nt = osm.node(trunk->nodes[trunk->nodes.size() - 2]);
+            if (n0 && nw && ns && nt) {
+              // side of this branch relative to its sibling, seen along the trunk (local east / north degrees)
+              const double c = std::cos(n0->lat * kPi / 180.0);
+              const Vec2 d{(n0->lon - nt->lon) * c, n0->lat - nt->lat}, vw{(nw->lon - n0->lon) * c, nw->lat - n0->lat},
+                  vs{(ns->lon - n0->lon) * c, ns->lat - n0->lat};
+              const bool right = d.cross(vw) < d.cross(vs);
+              const std::vector<std::string> per = splitLanes(*turns);
+              int count = 0;
+              for (size_t k = 0; k < per.size(); ++k) {
+                const std::string &lane = per[right ? per.size() - 1 - k : k];
+                if (lane.find(right ? "right" : "left") == std::string::npos) break;
+                ++count;
+              }
+              if (count > 0) found = std::to_string(count);
+            }
+          }
+        }
+      if (found && !conflict) {
+        w.tags["lanes"] = *found;
+        ++inherited;
+        changed = true;
+      }
+    }
+  }
+  return inherited;
+}
 }  // namespace
 
 odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, const BuildOptions &opt,
@@ -743,32 +1170,62 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   if (o.connectParkingLots)
     for (OsmId w : detail::throughParkingAisles(src, o)) o.includeWays.insert(w);
   int snapped = 0, crossings = 0;
-  const OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped, &crossings);
+  OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped, &crossings);
+  const int inheritedLanes = inheritLinkLanes(osm);
   detail::Builder b(osm, proj, o);
+  b.rep.inheritedLinkLanes = inheritedLanes;
   b.rep.snappedEnds = snapped;
   b.rep.joinedCrossings = crossings;
   b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());
   const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
+  // ODRFORGE_VERBOSE: each stage with its run time (where a conversion spends its time)
   auto stage = [&](const char *name, void (detail::Builder::*fn)()) {
-    if (verbose) std::fprintf(stderr, "[odrforge] %s...\n", name);
+    const auto start = std::chrono::steady_clock::now();
     (b.*fn)();
+    if (verbose)
+      std::fprintf(stderr, "[odrforge] %-28s %8.0f ms\n", name,
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
   };
   stage("collect segments", &detail::Builder::collectSegments);
+  if (o.separateSidewalks) stage("separate sidewalks", &detail::Builder::attachSeparateSidewalks);
+  stage("kerb lines", &detail::Builder::collectKerbs);
   stage("junction nodes", &detail::Builder::findJunctionNodes);
   stage("chains", &detail::Builder::buildChains);
-  stage("cluster junctions", &detail::Builder::clusterJunctions);
-  stage("reference lines", &detail::Builder::buildRoadGeometry);
-  stage("lane-level gores", &detail::Builder::buildGores);
-  stage("trim roads", &detail::Builder::trimRoads);
+  // junction layout; a second pass joins junctions that squeezed the road between them out
+  const std::vector<detail::Chain> chainsBefore = b.chains;
+  const BuildReport repBefore = b.rep;
+  for (int pass = 0; pass < 2; ++pass) {
+    if (pass > 0) {
+      b.forgetJunctionLayout(chainsBefore);
+      b.rep = repBefore;
+    }
+    stage("cluster junctions", &detail::Builder::clusterJunctions);
+    stage("reference lines", &detail::Builder::buildRoadGeometry);
+    stage("lane-level gores", &detail::Builder::buildGores);
+    stage("signal control", &detail::Builder::markSignalControl);  // before the trims: crosswalks in junctions
+    stage("trim roads", &detail::Builder::trimRoads);
+    if (pass > 0 || !b.joinSqueezedJunctions()) break;
+  }
+  stage("street-side parking", &detail::Builder::measureStreetSideParking);  // on the fitted, trimmed lines
   stage("roads", &detail::Builder::buildRoads);
   stage("resolve overlaps", &detail::Builder::resolveOverlaps);
+  stage("kerb edges", &detail::Builder::kerbEdges);  // after the drawing offsets are corrected: the kerbs win
   stage("elevation samples", &detail::Builder::sampleElevation);
   stage("junction surfaces", &detail::Builder::junctionSurfaces);
   stage("elevation profiles", &detail::Builder::fitRoadElevation);
   stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
+  stage("covered underpasses", &detail::Builder::coveredUnderpasses);  // on the final heights
   stage("junctions", &detail::Builder::buildJunctions);
+  stage("direct junctions", &detail::Builder::directJunctions);
+  stage("objects", &detail::Builder::buildObjects);  // crosswalks before the stop lines placed behind them
   stage("signals", &detail::Builder::buildSignals);
-  stage("objects", &detail::Builder::buildObjects);
+  stage("curb lanes", &detail::Builder::curbLanes);
+  stage("cross paths", &detail::Builder::crossPaths);  // before the lowered curbs: it adds lowered spans
+  stage("lowered curbs", &detail::Builder::lowerCurbsAtCrosswalks);
+  stage("junction boundaries", &detail::Builder::junctionBoundaries);  // helper roads first: the grid covers them
+  stage("junction grids", &detail::Builder::junctionGrids);
+  stage("junctions under cover", &detail::Builder::junctionsUnderCover);  // every junction road exists now
+  stage("barriers", &detail::Builder::roadBarriers);  // on the final lanes (curbs, lowered curbs)
   stage("finish", &detail::Builder::finish);
   if (verbose)
     std::fprintf(stderr, "[odrforge] segs %zu chains %zu clusters %zu roads %zu\n", b.segs.size(), b.chains.size(),

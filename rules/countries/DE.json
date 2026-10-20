@@ -69,6 +69,8 @@
   "trunk": 2.0,
   "default": 0.0
  },
+ "parkingClearOfJunction": 5.0,
+ "parkingClearOfJunctionSource": "StVO §12(3) Nr. 1: no parking within 5 m before and after intersections, from the crossing point of the carriageway edges",
  "sidewalkWidth": 2.0,
  "bikeLaneWidth": 1.5,
  "curbHeight": 0.15

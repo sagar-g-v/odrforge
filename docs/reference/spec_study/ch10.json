@@ -1,0 +1,845 @@
+{
+ "meta": {
+  "sources": [
+   "ASAM OpenDRIVE 1.7.0 chapter 10 'Junctions' (docs/reference/ASAM_OpenDRIVE_BS_V1-7-0.html, char offsets 14030710-15036268; figures 77-87, tables 42-54; enumerations from Annex tables 98-105, 121)",
+   "ASAM OpenDRIVE 1.9.0 chapter 12 'Junctions' (publications.pages.asam.net ... v1.9.0/specification/12_junctions/12_01..12_14; figures 84-110, tables 54-82), Annex A enumerations, Annex G.1/G.2 revision history"
+  ],
+  "figures_dir": "C:/mywork/osm2carla/build/tmp/specfig/ch10/ (img01..img11 = 1.7.0 figures 77..87 in order)",
+  "note": "Restated in own words. Rule ids are the 1.9.0 checker ids (asam.net:xodr:<since>:<id>); the version in the id is when the rule was introduced. 1.7.0 printed the same rules without ids. 1.9.0 figures were read through captions and surrounding text only (the 1.9 site is fetched via a summariser); 1.7.0 figures were viewed directly. Section ids are given as '10.x / 12.x' (1.7 numbering / 1.9 numbering). Complements docs/reference/opendrive_junction_rules.md.",
+  "enumerations": {
+   "e_junction_type": "default | direct (1.7) | virtual | crossing (1.8)",
+   "e_junctionGroup_type": "roundabout | unknown | complexJunction (1.8) | highwayInterchange (1.8)",
+   "e_junction_segment_type": "lane | joint (both 1.8)",
+   "e_connection_type": "default | virtual (virtual deprecated 1.8)",
+   "e_contactPoint": "start | end",
+   "e_elementDir": "+ | -",
+   "e_orientation": "+ | - | none",
+   "e_layerType": "permanent | temporary (1.8+, laneLink fromLayer/toLayer)",
+   "e_junction_surface_CRG_mode (1.7 only)": "global (the only value in 1.7)",
+   "e_road_surface_CRG_mode (used by junction CRG in 1.8+)": "attached | attached0 | genuine | global",
+   "e_road_surface_CRG_purpose": "elevation | friction"
+  }
+ },
+ "chapters": [
+  {
+   "id": "10",
+   "title": "Junctions",
+   "sections": [
+    {
+     "id": "10 / 12.1",
+     "title": "Introduction: junction types and when to use each",
+     "summary": "A junction is the device for linking more than two road ends. 1.7 knows three types (common/default, direct, virtual); 1.8 adds crossing. The chapter gives a decision table mapping real-world situations to types, plus three global rules: junctions never overlap, direct junctions never carry @connectingRoad, default/virtual junctions never carry @linkedRoad.",
+     "concepts": [
+      "Common junction (type='default'): drivable lanes of different paths may overlap; traffic can cross; paths are explicit connecting roads.",
+      "Direct junction (type='direct', 1.7+): traffic can change road (split/merge) but never crosses; roads are linked directly via @linkedRoad, no connecting roads.",
+      "Virtual junction (type='virtual'): the main road is not cut; side branches attach at an s-range of the main road.",
+      "Crossing (type='crossing', 1.8+): two or more roads cross on the same level but traffic cannot change between them (rail level crossing, ped/bike crossing).",
+      "1.9 decision criteria: do lanes overlap? does traffic cross? can traffic change road?",
+      "Junction = graph node; connecting roads = graph edges inside the node; incoming roads = edges ending at the node."
+     ],
+     "elements": [
+      {"name": "<junction>", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique id in the database; roads reference it via road@junction and link elementId."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Free name."},
+       {"name": "type", "type": "e_junction_type", "unit": null, "required": false, "meaning": "default (if omitted) | direct | virtual | crossing. Mandatory for every type except default."},
+       {"name": "mainRoad", "type": "string", "unit": null, "required": false, "meaning": "Virtual only (mandatory there): road from which branches leave."},
+       {"name": "orientation", "type": "e_orientation", "unit": null, "required": false, "meaning": "Virtual only (mandatory there): driving direction for which the virtual junction is relevant; none = both."},
+       {"name": "sStart", "type": "t_grEqZero", "unit": "m", "required": false, "meaning": "Virtual only (mandatory there): start s on mainRoad."},
+       {"name": "sEnd", "type": "t_grEqZero", "unit": "m", "required": false, "meaning": "Virtual only (mandatory there): end s on mainRoad."}
+      ]},
+      {"name": "junction children (1.7)", "parent": "<junction>", "attributes": [
+       {"name": "<connection>", "type": "t_junction_connection", "unit": null, "required": true, "meaning": "1..* in 1.7 UML."},
+       {"name": "<priority>", "type": "t_junction_priority", "unit": null, "required": false, "meaning": "0..*"},
+       {"name": "<controller>", "type": "t_junction_controller", "unit": null, "required": false, "meaning": "0..*"},
+       {"name": "<surface>", "type": "t_junction_surface", "unit": null, "required": false, "meaning": "0..1, holds 0..* <CRG>"}
+      ]},
+      {"name": "junction children added 1.8", "parent": "<junction>", "attributes": [
+       {"name": "<crossPath>", "type": "t_junction_crossPath", "unit": null, "required": false, "meaning": "0..*, common or virtual junction."},
+       {"name": "<roadSection>", "type": "t_junction_roadSection", "unit": null, "required": false, "meaning": "1..* in crossing junctions (the only allowed child there)."},
+       {"name": "<planView>", "type": "t_road_planView", "unit": null, "required": false, "meaning": "Junction reference line (one line geometry)."},
+       {"name": "<boundary>", "type": "t_junction_boundary", "unit": null, "required": false, "meaning": "0..1, common junctions only."},
+       {"name": "<elevationGrid>", "type": "t_junction_elevationGrid", "unit": null, "required": false, "meaning": "0..1, common junctions only."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.4.0:junctions.no_overlap", "level": "shall", "text": "Junctions of any type must not overlap one another (areas are disjoint).", "since": "1.4"},
+      {"id": "asam.net:xodr:1.7.0:junctions.type_direct_no_conn_road", "level": "shall", "text": "In a direct junction, <connection> must not have @connectingRoad.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.type_default_no_linked_road", "level": "shall", "text": "In a default or virtual junction, <connection> must not have @linkedRoad.", "since": "1.7"}
+     ],
+     "use_cases": [
+      {"case": "ordinary intersection / any overlapping lanes", "how": "common (default) junction - the only type allowed when paths overlap."},
+      {"case": "4-way signalised crossroads", "how": "common junction; traffic lights require it (direct/virtual have no controllers)."},
+      {"case": "motorway entry or exit (non-overlapping)", "how": "direct junction recommended; common allowed but 'not recommended' in 1.7 table 42 / 1.9 table 54."},
+      {"case": "entry/exit where lanes overlap", "how": "1.7: common only. 1.8+: direct with a single overlapZone pair if exactly one lane pair overlaps and it is flat; otherwise common."},
+      {"case": "driveway to parking lot / residential estate / farm road", "how": "virtual junction if elevation is constant (1.9), else common. 1.7 table allows common or virtual."},
+      {"case": "slip lane (free right turn)", "how": "1.7: common only. 1.9: one common junction (the main crossing) plus direct junctions where the slip lane splits off / merges in; or several common junctions if elevation not constant."},
+      {"case": "railway level crossing", "how": "1.8+: crossing junction (alternative: common)."},
+      {"case": "pedestrian or bicycle crossing", "how": "1.8+: crossing junction, or crossPath in a common/virtual junction."}
+     ],
+     "right": [
+      "Pick the type from the decision table: overlap/crossing -> default; split/merge without crossing -> direct; branch without cutting main road and flat -> virtual; same-level crossing without turning -> crossing.",
+      "Give every junction a unique id; omitted type means default."
+     ],
+     "wrong": [
+      "Two junction areas overlapping (e.g. a slip lane junction that reaches into the main intersection junction).",
+      "@connectingRoad in a direct junction, @linkedRoad in a default/virtual junction.",
+      "Traffic lights on a direct or virtual junction."
+     ],
+     "changes_1_8_1_9": [
+      "1.8: type 'crossing' added; usage table restructured around overlap / crossing traffic / road change; slip lanes now 'one common + many direct'; railway crossing row added; driveways: virtual only if elevation constant.",
+      "1.8: <junction> UML split into t_junction_common / t_junction_direct / t_junction_virtual / t_junction_crossing.",
+      "1.9: no junction changes in revision history G.2 apart from a few new rule ids (not_only_two, smooth_fit, no_connecting_road_direct, virtual.*)."
+     ],
+     "figures": [
+      "1.7 Figure 78 / 1.9 Figure 84: UML of t_junction - connection 1..*, priority 0..*, controller 0..*, surface 0..1 (CRG 0..*); connection has optional predecessor/successor (virtual) and laneLink 0..*."
+     ]
+    },
+    {
+     "id": "10.1 / 12.2",
+     "title": "Common junctions",
+     "summary": "The default junction type: an area where the incoming roads end and explicit connecting roads (road@junction=junction id) represent every path through it; their lanes may overlap. Outgoing roads are never declared; they are implied by connecting roads ending on them, so a two-way road is both incoming and outgoing. Junctions have no predecessor/successor themselves and are only used where a direct road link would be ambiguous.",
+     "concepts": [
+      "Incoming road: has at least one lane leading into the junction; referenced by connection@incomingRoad.",
+      "Connecting road: a normal <road> with @junction=<junction id>; one per path (or per group of parallel lanes).",
+      "Outgoing road: implicit; a one-way road that only leaves the junction is NOT an incoming road (Figure 77).",
+      "Junction area: dashed polygon; incoming roads end on its edge, connecting roads live inside.",
+      "Ambiguity criterion: a junction is needed exactly when a road end has 2+ candidate predecessors/successors."
+     ],
+     "elements": [
+      {"name": "<junction type='default'>", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Junction id (-1 in road@junction means 'not in a junction')."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Free name."},
+       {"name": "type", "type": "e_junction_type", "unit": null, "required": false, "meaning": "'default' or omitted."}
+      ]},
+      {"name": "<connection>", "parent": "<junction>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique within the junction."},
+       {"name": "incomingRoad", "type": "string", "unit": null, "required": true, "meaning": "Incoming road id (required for all but virtual)."},
+       {"name": "connectingRoad", "type": "string", "unit": null, "required": true, "meaning": "Connecting road id (default/virtual only)."},
+       {"name": "contactPoint", "type": "e_contactPoint", "unit": null, "required": true, "meaning": "Which end of the connecting road touches the incoming road (start/end)."},
+       {"name": "type", "type": "e_connection_type", "unit": null, "required": false, "meaning": "default; 'virtual' only for (deprecated) virtual connections."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.4.0:junctions.common.when_to_use", "level": "shall", "text": "Use a junction only where roads cannot be linked directly, i.e. where a road end would have two or more possible predecessors or successors.", "since": "1.4"},
+      {"id": "asam.net:xodr:1.4.0:junctions.common.junctions_no_pred_succ", "level": "shall", "text": "A junction has no predecessor or successor of its own.", "since": "1.4"},
+      {"id": null, "level": "may", "text": "A junction may carry its own name.", "since": "1.4"},
+      {"id": "asam.net:xodr:1.9.0:junctions.common.not_only_two", "level": "should", "text": "Do not create a junction where only two roads meet; link them directly (already a 'should' sentence in 1.7 text, id added 1.9).", "since": "1.7"},
+      {"id": "asam.net:xodr:1.5.0:junctions.common.virtual_junction_attributes", "level": "shall", "text": "@mainRoad, @orientation, @sStart, @sEnd appear only on virtual junctions.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.8.0:junctions.common.direct_junction_attributes", "level": "shall", "text": "laneLink@overlapZone appears only in direct junctions.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "T-junction (3 arms)", "how": "One common junction; 3 incoming roads ending on the junction area; connecting roads for each permitted movement (up to 6 for two-way arms)."},
+      {"case": "4-way signalised crossroads", "how": "One common junction; 4 incoming roads; one connecting road per lane movement (left/straight/right per turn arrows); controllers listed in junction; signals on incoming roads."},
+      {"case": "5-arm junction with a one-way street leaving (Figure 77)", "how": "One-way exit road is not an incoming road - no <connection> has it as incomingRoad; connecting roads just end on it. One-way entry road is incoming only."},
+      {"case": "two roads meeting (curve, lane count change, name change in OSM)", "how": "No junction - direct road link (predecessor/successor) and lane sections."},
+      {"case": "dual carriageway crossing a dual carriageway", "how": "Either one large common junction or several common junctions grouped as junctionGroup type complexJunction (1.8)."}
+     ],
+     "right": [
+      "Every incoming road ends at the junction edge with link elementType='junction' elementId=<id> (no contactPoint).",
+      "Connecting roads carry road@junction=<id>; their predecessor/successor are elementType='road' with contactPoint.",
+      "Treat a one-way road leaving the junction as outgoing only (connecting roads lead into it, it never appears as incomingRoad)."
+     ],
+     "wrong": [
+      "A junction joining just two roads.",
+      "Linking an incoming road directly to another incoming road through the junction (bypassing connecting roads).",
+      "Giving the junction itself a predecessor/successor.",
+      "Listing a pure exit one-way road as incomingRoad."
+     ],
+     "changes_1_8_1_9": [
+      "1.8: UML class t_junction_connection_common; 1.8 makes junction children 0..* connections.",
+      "1.9: rule id junctions.common.not_only_two introduced (the should-sentence existed in 1.7)."
+     ],
+     "figures": [
+      "1.7 Figure 77 / 1.9 Figure 85 (img01): 'Types of roads in a junction (RHT)': 5-arm junction with dashed junction area polygon; incoming roads (two-way and a one-way entering) end on the polygon edge; red connecting roads fan between lane ends; a one-way street leaving is explicitly labelled NOT an incoming road. Lesson: incoming-ness is per lane direction, outgoing roads are implicit, connecting roads connect lane-end to lane-start at the polygon edge."
+     ]
+    },
+    {
+     "id": "10.2 / 12.3",
+     "title": "Incoming roads",
+     "summary": "An incoming road owns lanes that lead into the junction and is declared only by being named in connection@incomingRoad. Because outgoing roads are not modelled separately, the same road serves both roles. A connecting road may never also be an incoming road.",
+     "concepts": [
+      "Incoming lane direction depends on which end of the road touches the junction: road ending (successor=junction) -> right lanes (RHT) drive in; road starting (predecessor=junction) -> left lanes drive in.",
+      "laneLink@from always references a lane of the incoming road."
+     ],
+     "elements": [
+      {"name": "<connection>", "parent": "<junction>", "attributes": [
+       {"name": "incomingRoad", "type": "string", "unit": null, "required": true, "meaning": "Id of the incoming road (required except virtual; -1 if none in a virtual junction)."}
+      ]},
+      {"name": "<laneLink>", "parent": "<connection>", "attributes": [
+       {"name": "from", "type": "integer", "unit": null, "required": true, "meaning": "Lane id on the incoming road."},
+       {"name": "to", "type": "integer", "unit": null, "required": true, "meaning": "Lane id on the connecting road (or linked road in direct junctions)."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.4.0:junctions.connection.connect_road_no_incoming_road", "level": "shall", "text": "A connecting road must not be used as an incoming road (no chaining of connecting roads through connections).", "since": "1.4"}
+     ],
+     "use_cases": [
+      {"case": "two-way arm", "how": "Incoming for its inbound lanes (laneLink from=those ids) and implicitly outgoing for its outbound lanes."},
+      {"case": "one-way arm leaving the junction", "how": "Not incoming; only target of connecting-road successors."},
+      {"case": "one-way arm entering", "how": "Incoming only; no connecting road ends on it."}
+     ],
+     "right": [
+      "Example: connection id=0 incomingRoad=1 connectingRoad=2 contactPoint=start with laneLink from=-2 to=-1."
+     ],
+     "wrong": [
+      "Chaining two connecting roads inside one junction (connecting road used as incomingRoad). Split long paths into one connecting road with several geometries instead."
+     ],
+     "changes_1_8_1_9": [
+      "1.8 marks incomingRoad as optional in the table but required for every non-virtual type in the description."
+     ],
+     "figures": ["Refers back to Figure 77/85."]
+    },
+    {
+     "id": "10.3 / 12.4",
+     "title": "Connecting roads and lane links",
+     "summary": "Connecting roads are ordinary roads (planView, lanes, elevation) whose lanes describe drivable paths across the junction from incoming lanes to outgoing lanes; lanes not linked have no path. Each connecting road has exactly one <connection>, whose <laneLink>s map incoming lanes to connecting-road lanes. Parallel movements may be modelled as one road per lane pair (no lane change in junction) or one multi-lane road (lane change possible). Linked lanes must join smoothly.",
+     "concepts": [
+      "Path = lane of a connecting road; topology = connection.laneLink (incoming->connecting) + connecting road lane predecessor/successor (connecting->incoming/outgoing).",
+      "No laneLink for a lane = no traversable path from it.",
+      "Multiple connecting roads x single laneLink: no lane change within junction (Figure 79 roads 28, 64).",
+      "One connecting road x several laneLinks: lane change allowed (Figure 79 road 61 with two lanes).",
+      "A connecting road may have left and right lanes (e.g. two-way path, sidewalks in 1.8 cross path example).",
+      "Connecting road lanes DO carry predecessor/successor lane links to incoming/outgoing roads (Table 48), while incoming-road lanes carry no lane link toward the junction.",
+      "Left-hand traffic: driving lanes in reference direction are positive ids; Figure 79 connecting roads use lanes 1, 2."
+     ],
+     "elements": [
+      {"name": "<connection>", "parent": "<junction>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique in junction."},
+       {"name": "incomingRoad", "type": "string", "unit": null, "required": true, "meaning": "Incoming road id."},
+       {"name": "connectingRoad", "type": "string", "unit": null, "required": true, "meaning": "Connecting road id (not in direct junctions)."},
+       {"name": "contactPoint", "type": "e_contactPoint", "unit": null, "required": true, "meaning": "End of the connecting road that touches the incoming road."},
+       {"name": "linkedRoad", "type": "string", "unit": null, "required": false, "meaning": "Direct junctions only."},
+       {"name": "type", "type": "e_connection_type", "unit": null, "required": false, "meaning": "default / virtual (deprecated)."}
+      ]},
+      {"name": "<laneLink>", "parent": "<connection>", "attributes": [
+       {"name": "from", "type": "integer", "unit": null, "required": true, "meaning": "Incoming-road lane id."},
+       {"name": "to", "type": "integer", "unit": null, "required": true, "meaning": "Connecting-road lane id."},
+       {"name": "fromLayer", "type": "e_layerType", "unit": null, "required": false, "meaning": "1.8+: permanent (default) or temporary lane layer of 'from'."},
+       {"name": "toLayer", "type": "e_layerType", "unit": null, "required": false, "meaning": "1.8+: permanent (default) or temporary lane layer of 'to'."},
+       {"name": "overlapZone", "type": "t_grZero", "unit": "m", "required": false, "meaning": "1.8+, direct junctions only, default 100: s-length from junction position where traffic of two overlapping lanes shares space."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": null, "level": "shall", "text": "1.7: each connecting road is represented by exactly one <connection>; it may have as many lanes as needed.", "since": "1.4"},
+      {"id": "asam.net:xodr:1.8.0:junctions.connection.one_link_to_incoming", "level": "shall", "text": "One <connection> per (incomingRoad, connectingRoad) pair, and its laneLinks only cover lanes that lead into the junction.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.7.0:junctions.connection.no_lane_change_for_mult_con_roads", "level": "may", "text": "Option A: several connecting roads with one laneLink each -> no lane change inside the junction.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.connection.lane_change_one_con_road", "level": "may", "text": "Option B: one connecting road with several laneLinks -> lane change inside the junction possible.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.9.0:junctions.connection.smooth_fit", "level": "shall", "text": "Linked lanes join smoothly as for road linkage (position, heading, width, elevation continuity; see road linkage chapter / Annex D).", "since": "1.7"},
+      {"id": "asam.net:xodr:1.9.0:junctions.connection.no_connecting_road_direct", "level": "shall", "text": "@connectingRoad not used in direct junctions.", "since": "1.7"},
+      {"id": null, "level": "should", "text": "Provide <laneLink>; omitting it is deprecated (strongly recommended).", "since": "1.6"},
+      {"id": null, "level": "should", "text": "Connecting road reference lines should run in driving direction when the direction is unique.", "since": "1.4"}
+     ],
+     "use_cases": [
+      {"case": "4-way signalised crossroads, 3-lane approaches with turn arrows (Figure 79, LHT)", "how": "Road 4 approach: left-turn lane -3 -> connecting road 28 (to road 2); two straight lanes -2,-3 -> ONE two-lane connecting road 61 (laneLinks -2->1, -3->2) to road 3; right-turn lane -1 -> connecting road 64 to road 1. Each connecting road has its own connection; all contactPoint=start."},
+      {"case": "multi-lane straight-through", "how": "Prefer one multi-lane connecting road if lane changes in the box are legal; one road per lane if not (painted guide lines)."},
+      {"case": "turn lane that also allows straight (shared arrow)", "how": "One lane gets two laneLinks in two connections (one per connecting road), creating a fork."},
+      {"case": "lane split / lane added at approach", "how": "Not a junction: handled as a new lane section on the incoming road before the junction; only at the junction edge do lanes map via laneLinks."}
+     ],
+     "right": [
+      "Connecting road start/end coincide exactly (position, heading, width) with the incoming lane end and outgoing lane start.",
+      "Table 47/48 pattern: incoming roads 1-4 have junction=-1 and predecessor/successor=junction 1; connecting roads 28/61/64 have junction=1, predecessor=road 4 contact start, successor=road 2 start / road 3 end / road 1 start; their lanes have pred/succ lane ids on those roads.",
+      "Outer incoming lanes with no movement (e.g. Figure 79 road 1 lane 1, road 2 lane 3 when only approach 4 is considered) simply get no laneLink.",
+      "Only inbound lanes appear as laneLink@from (1.8 one_link_to_incoming)."
+     ],
+     "wrong": [
+      "Two <connection> elements for the same incoming/connecting pair.",
+      "laneLinks for outbound lanes of the incoming road.",
+      "Kinks or width jumps where connecting road meets incoming/outgoing road.",
+      "Omitting laneLinks (deprecated; consumers like CARLA then guess)."
+     ],
+     "changes_1_8_1_9": [
+      "1.8: one_link_to_incoming rule; laneLink gains fromLayer/toLayer (temporary lane layers) and overlapZone (direct).",
+      "1.9: rule ids smooth_fit and no_connecting_road_direct; smoothness reference moves to section 10.3 road linkage / Annex D.",
+      "1.9 worked example Table 58-60 identical in content to 1.7 Tables 46-48."
+     ],
+     "figures": [
+      "1.7 Figure 79 / 1.9 Figure 86 (img03): 'Connecting roads of junction with id 1 (LHT)': 4-arm junction, 3 lanes each way, turn arrows and traffic lights; from road 4: orange road 28 (left lane -3 turning to road 2), road 61 (two straight lanes to road 3), road 64 (lane -1 to road 1); other approaches drawn faded. Lesson: connecting roads per movement follow turn-arrow lanes, straight lanes may share a multi-lane connecting road, turning roads end in the nearest lane of the target road."
+     ]
+    },
+    {
+     "id": "10.3.1 / 12.4.1",
+     "title": "Priorities of connecting roads",
+     "summary": "<priority high low> states that one connecting road has right of way over another. It is only needed when priority cannot be derived from signs/signals on or before the junction.",
+     "concepts": ["Priority pairs are between connecting roads (1.9 says 'roads'; crossings use it between crossing roads)."],
+     "elements": [
+      {"name": "<priority>", "parent": "<junction>", "attributes": [
+       {"name": "high", "type": "string", "unit": null, "required": true, "meaning": "Id of the prioritised (connecting) road. Optional in 1.7, required 1.8+."},
+       {"name": "low", "type": "string", "unit": null, "required": true, "meaning": "Id of the lower-priority (connecting) road."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.7.0:junctions.priority.no_signals", "level": "should", "text": "Use <priority> only if no signals are defined.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.8.0:junctions.priority.high_and_low_attr", "level": "shall", "text": "Each <priority> has exactly one @high and one @low.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "unsignalised priority road crossing (OSM highway=primary through residential, no stop/give_way nodes)", "how": "Emit <priority high=<through connecting road> low=<side-road connecting road>> pairs for conflicting movements, or better emit give-way/stop signs on the side-road incoming roads."},
+      {"case": "virtual junction", "how": "Main road always has priority implicitly (1.9: unless specified otherwise)."},
+      {"case": "railway crossing", "how": "<priority high=rail road low=street>."}
+     ],
+     "right": ["Prefer signs/signals; add priority elements only when there are none."],
+     "wrong": ["Priority elements contradicting the traffic lights/signs present.", "1.8+: priority with missing high or low."],
+     "changes_1_8_1_9": ["1.8: high/low become required (high_and_low_attr)."],
+     "figures": []
+    },
+    {
+     "id": "10.3.2 / 12.4.2",
+     "title": "Direction of connecting roads",
+     "summary": "A connecting road may run along or against the travel direction; @contactPoint says which. 'start' means the connecting road's s runs in the direction of the laneLink (from incoming into the junction); 'end' means it runs opposite. Reference lines should follow the driving direction when unique.",
+     "concepts": [
+      "contactPoint=start: connecting road begins at the incoming road; laneLink 'to' lanes are then typically right lanes (RHT) / left lanes (LHT).",
+      "contactPoint=end: connecting road ends at the incoming road (drawn backwards); traffic uses its opposite-side lanes.",
+      "Two-way connecting road (lanes on both sides) appears in two connections, one from each incoming road, with contactPoint start for one and end for the other."
+     ],
+     "elements": [
+      {"name": "<connection>", "parent": "<junction>", "attributes": [
+       {"name": "contactPoint", "type": "e_contactPoint", "unit": null, "required": true, "meaning": "start | end of the connecting road at the incoming road."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.7.0:junctions.connection.start_along_linkage", "level": "shall", "text": "'start' when the connecting road runs along the laneLink direction.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.connection.end_opposite_linkage", "level": "shall", "text": "'end' when it runs against the laneLink direction.", "since": "1.7"},
+      {"id": null, "level": "should", "text": "Place connecting-road reference lines in driving direction if driving direction is unique.", "since": "1.4"}
+     ],
+     "use_cases": [
+      {"case": "generated turn paths", "how": "Always build connecting roads from incoming lane end to outgoing lane start -> contactPoint=start everywhere, driving lanes on the traffic-side (negative ids RHT)."}
+     ],
+     "right": ["Generator-built connecting roads in driving direction with contactPoint='start'."],
+     "wrong": ["contactPoint not matching which end of the connecting road actually touches the incoming road (consumers will route through wrong lane sign)."],
+     "changes_1_8_1_9": ["None besides rule ids."],
+     "figures": []
+    },
+    {
+     "id": "- / 12.5",
+     "title": "Cross paths (1.8+)",
+     "summary": "A <crossPath> describes a pedestrian/bike path that crosses lanes inside a junction and links a walking/biking lane of one road to a walking/biking lane of another (or the same) road. The path itself is a separate road (crossingRoad) belonging to the junction; its elevation is ignored. Start/end lane links give lane ids and s positions on roadAtStart/roadAtEnd.",
+     "concepts": [
+      "Crossing road: ordinary road with @junction=<id>, usually one walking lane, no links.",
+      "roadAtStart / roadAtEnd may be connecting roads (sidewalk lanes on connecting roads, Figure 87) or the main road of a virtual junction.",
+      "Lane links carry s on the linked road because the crossing attaches mid-road, not at a road end."
+     ],
+     "elements": [
+      {"name": "<crossPath>", "parent": "<junction>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique within junction."},
+       {"name": "crossingRoad", "type": "string", "unit": null, "required": true, "meaning": "Road that geometrically defines the crossing."},
+       {"name": "roadAtStart", "type": "string", "unit": null, "required": true, "meaning": "Road at the start of the cross path."},
+       {"name": "roadAtEnd", "type": "string", "unit": null, "required": true, "meaning": "Road at the end of the cross path."}
+      ]},
+      {"name": "<startLaneLink> / <endLaneLink>", "parent": "<crossPath>", "attributes": [
+       {"name": "s", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "s on roadAtStart / roadAtEnd where the crossing attaches."},
+       {"name": "from", "type": "integer", "unit": null, "required": true, "meaning": "Lane id on roadAtStart / roadAtEnd."},
+       {"name": "to", "type": "integer", "unit": null, "required": true, "meaning": "Lane id on crossingRoad."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.within_junction_area", "level": "shall", "text": "A cross path lies inside a common or virtual junction.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.disregard_cross_road_evelation", "level": "shall", "text": "Elevation of the crossingRoad is ignored (it follows the surface it crosses).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.lane_linkage", "level": "shall", "text": "Start and end of the crossing road reach the lanes named in startLaneLink / endLaneLink.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.start_end_contained", "level": "shall", "text": "Start/end points of the crossing road and its lanes lie fully inside the linked lanes.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.only_connect_correct_type", "level": "shall", "text": "Only lanes of type walking or biking may be connected.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.correct_junction_id", "level": "shall", "text": "crossingRoad@junction equals the owning junction id.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "zebra crossing across an arm of a signalised crossroads", "how": "Sidewalk lanes on connecting roads 46 (lane 3) and 45 (lane -3); crossing road 75 with walking lane 1; crossPath id=6 crossingRoad=75 roadAtStart=46 roadAtEnd=45 with startLaneLink s=0.5 from=3 to=1, endLaneLink s=0.248 from=-3 to=1."},
+      {"case": "OSM highway=footway + footway=crossing node on a road", "how": "Mid-block: virtual junction with crossPath (12.7.1). At an intersection: crossPath in the common junction. Alternative: crossing junction (12.8)."}
+     ],
+     "right": ["Crossing road endpoints inside the sidewalk lanes; lane types walking/biking; crossing road elevation left flat/ignored."],
+     "wrong": ["Cross path linking driving lanes.", "Crossing road ending in the curb or outside the linked lane.", "Cross path outside any junction."],
+     "changes_1_8_1_9": ["New in 1.8 (crossPath, startLaneLink, endLaneLink)."],
+     "figures": ["1.9 Figure 87: cross path with pedestrian crossing in a common junction - road 75 connects sidewalks of connecting roads 45 and 46; roadAtStart/roadAtEnd decide which road each lane link refers to."]
+    },
+    {
+     "id": "10.4 / 12.6",
+     "title": "Direct junctions",
+     "summary": "Direct junctions link one road on one side directly to several roads on the other side (split or merge) without connecting roads, using connection@linkedRoad. They model motorway entries/exits with fewer roads and are only allowed where no traffic crosses; in 1.7 lanes may not overlap at all, in 1.8+ exactly one overlapping lane pair can be described with overlapZone. The junction sits where the headings of main road and ramp coincide.",
+     "concepts": [
+      "Incoming road ends at junction (successor elementType=junction), linked roads start there (predecessor elementType=junction); all roads have junction=-1 (they are not inside the junction).",
+      "laneLink from = incoming lane, to = lane on linked road; lanes of road 1 split between road 2 (-1..-3, plus left lane 1) and road 3 (-4 -> -1).",
+      "Overlap (1.8): one lane may continue to two roads (repeated from -> exit) or two lanes may feed one lane (repeated to -> entry); overlapZone gives shared-space length.",
+      "Direct junction = graph split/merge node without geometry of its own."
+     ],
+     "elements": [
+      {"name": "<junction type='direct'>", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Junction id."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Free name."},
+       {"name": "type", "type": "e_junction_type", "unit": null, "required": true, "meaning": "'direct'."}
+      ]},
+      {"name": "<connection>", "parent": "<junction type='direct'>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique."},
+       {"name": "incomingRoad", "type": "string", "unit": null, "required": true, "meaning": "Incoming road."},
+       {"name": "linkedRoad", "type": "string", "unit": null, "required": true, "meaning": "Directly linked road (direct only)."},
+       {"name": "contactPoint", "type": "e_contactPoint", "unit": null, "required": true, "meaning": "Contact point on the linked road."}
+      ]},
+      {"name": "<laneLink>", "parent": "<connection>", "attributes": [
+       {"name": "from", "type": "integer", "unit": null, "required": true, "meaning": "Incoming lane."},
+       {"name": "to", "type": "integer", "unit": null, "required": true, "meaning": "Linked-road lane."},
+       {"name": "overlapZone", "type": "t_grZero", "unit": "m", "required": false, "meaning": "1.8+: length (s from junction position) of shared space of the overlapping lane pair; default 100."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.8.0:junctions.direct.road_connectivity", "level": "shall", "text": "Exactly one road on one side is linked to several roads on the other side.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.direct.split_or_merge", "level": "shall", "text": "Only for splits or merges; no crossing traffic.", "since": "1.8"},
+      {"id": null, "level": "shall", "text": "1.7: only for non-overlapping roads; if entry/exit lanes overlap other lanes use a common junction.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.direct.correct_type_linked_road_usage", "level": "shall", "text": "@linkedRoad only in direct junctions.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.direct.connecting_road_attribute_usage", "level": "shall", "text": "@connectingRoad never in direct junctions.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.direct.linked_lane_smoothness", "level": "shall", "text": "Linked lanes fit smoothly as for road linkage.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.7.0:junctions.direct.road_ramp_heading", "level": "shall", "text": "Place the junction where road and ramp/slip lane have identical heading.", "since": "1.7"},
+      {"id": "asam.net:xodr:1.8.0:junctions.direct.overlap_zone_exclusivity", "level": "shall", "text": "Only one pair of laneLinks carries overlapZone (i.e. only one overlapping lane pair per direct junction).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.direct.overlap_zone_coverage", "level": "shall", "text": "overlapZone covers at least the overlapping area (may be longer).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.direct.flat_exits_entries", "level": "shall", "text": "Only flat entries/exits can currently be modelled with overlapping direct junctions.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "motorway exit with dedicated deceleration lane (Figure 80/88)", "how": "Road 1 (4 right lanes) ends; road 2 continues with lanes 1,-1..-3, road 3 (ramp) starts with lane -1. Direct junction 111: connection incomingRoad=1 linkedRoad=3 laneLink -4->-1; connection incomingRoad=1 linkedRoad=2 laneLinks 1->1, -1->-1, -2->-2, -3->-3. Placed where ramp heading equals main road heading (ramp diverges after the cut)."},
+      {"case": "motorway entry (merge)", "how": "Mirror: two roads (mainline + on-ramp) end at the junction, one road continues; ramp lane maps onto the new acceleration lane. In 1.8, if ramp lane and a mainline lane both feed one lane, mark that pair with overlapZone (repeated 'to')."},
+      {"case": "exit lane that is both 'continue' and 'exit' (Figure 89)", "how": "1.8: lane -3 links to road 2 lane -3 (overlapZone=40) and road 3 lane -1 (overlapZone=41); lane -4 -> road 3 lane -2. One overlapping pair only."},
+      {"case": "lane split (one carriageway forking into two, e.g. OSM way splitting into two oneways at a dual-carriageway start)", "how": "Direct junction: incoming road with all lanes, two linked roads taking disjoint lane subsets; place cut where headings still equal."},
+      {"case": "slip lane leaving/joining an intersection (1.9)", "how": "Direct junction where the slip lane diverges from the approach, common junction for the main box, direct junction where it merges into the exit road."},
+      {"case": "two overlapping lane pairs, three-way fork, or crossing (Figures 90-92)", "how": "Use a common junction instead."}
+     ],
+     "right": [
+      "Disjoint lane subsets of the incoming road go to different linked roads (Figure 80).",
+      "Cut at equal heading so geometry is continuous for every linked road.",
+      "All participating roads keep road@junction=-1 and use elementType='junction' links."
+     ],
+     "wrong": [
+      "Figure 81 (1.7): ramp starting from lane -3 so that road 3 lane -1 overlaps road 2 lane -3 - not allowed in 1.7 direct junction (red X); use common junction (1.8: allowed only via a single overlapZone pair, flat).",
+      "Figure 90: road 3 lane -1 overlapping lanes -3 and -4 of road 2 and lane -2 overlapping -4 -> multiple overlaps -> common junction.",
+      "Figure 91: one road to three roads with two overlaps -> common junction.",
+      "Figure 92: two roads to two roads with crossing traffic -> common junction.",
+      "Cutting where the ramp has already turned away (heading mismatch).",
+      "Using connecting roads or connectingRoad inside a direct junction."
+     ],
+     "changes_1_8_1_9": [
+      "1.8: overlapZone + rules overlap_zone_exclusivity/coverage/flat_exits_entries; road_connectivity and split_or_merge rules; three extra 'cannot be modelled' figures (90-92); type is required; t_junction_direct / t_junction_connection_direct UML classes (connection 1..*).",
+      "1.9: unchanged."
+     ],
+     "figures": [
+      "1.7 Figure 80 / 1.9 Figure 88 (img04): road 1 (lanes 1,-1..-4) cut by a vertical line; road 2 continues straight with 1,-1..-3, road 3 starts at lane -4 position and curves away. RIGHT pattern: non-overlapping split at equal heading.",
+      "1.7 Figure 81 (img05): same, but road 3 starts inside lane -3 so its lane -1 overlaps road 2 lane -3 (brown area, red X). WRONG for direct junction in 1.7 -> common junction.",
+      "1.9 Figure 89: direct junction with overlapping lanes: lane -3 may continue or switch to road 3 lane -1; lane -4 to road 3 lane -2 - allowed with overlapZone.",
+      "1.9 Figures 90, 91, 92: multiple overlapping lanes on two roads / on multiple roads / crossing traffic - direct junction not usable."
+     ]
+    },
+    {
+     "id": "10.5 / 12.7",
+     "title": "Virtual junctions",
+     "summary": "A virtual junction attaches side branches to a main road between sStart and sEnd without cutting the main road's geometry. Connecting roads (road@junction=id) start or end on the main road at sStart/sEnd using road links with elementS/elementDir. It is the recommended model for driveways, parking entries and farm roads; it has no controllers, the main road has priority, and (1.8+) only flat virtual junctions are possible.",
+     "concepts": [
+      "Main road is the incoming road for branches leaving it; the side road (road 99) is incoming for branches entering the main road.",
+      "Connecting roads reference the main road mid-way: <predecessor elementType='road' elementId='1' elementS='50' elementDir='+'/> (road-link attributes elementS/elementDir).",
+      "orientation '+'/'-'/'none' says for which main-road driving direction the junction matters.",
+      "incomingRoad=-1 when no incoming road exists.",
+      "The side road ends at the junction like any incoming road (successor elementType=junction)."
+     ],
+     "elements": [
+      {"name": "<junction type='virtual'>", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Junction id."},
+       {"name": "type", "type": "e_junction_type", "unit": null, "required": true, "meaning": "'virtual'."},
+       {"name": "mainRoad", "type": "string", "unit": null, "required": true, "meaning": "Road from which branches leave."},
+       {"name": "sStart", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "Start s on main road."},
+       {"name": "sEnd", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "End s on main road."},
+       {"name": "orientation", "type": "e_orientation", "unit": null, "required": true, "meaning": "+ / - / none (both directions)."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Free name."}
+      ]},
+      {"name": "<connection> (in virtual junction)", "parent": "<junction>", "attributes": [
+       {"name": "incomingRoad", "type": "string", "unit": null, "required": false, "meaning": "Incoming road, -1 if none."},
+       {"name": "connectingRoad", "type": "string", "unit": null, "required": true, "meaning": "Connecting road."},
+       {"name": "contactPoint", "type": "e_contactPoint", "unit": null, "required": false, "meaning": "Contact point on connecting road."},
+       {"name": "type", "type": "e_connection_type", "unit": null, "required": false, "meaning": "default; virtual (deprecated 1.8)."}
+      ]},
+      {"name": "<predecessor>/<successor> (road link on connecting road)", "parent": "<road><link>", "attributes": [
+       {"name": "elementS", "type": "t_grEqZero", "unit": "m", "required": false, "meaning": "s on the main road where the connecting road attaches."},
+       {"name": "elementDir", "type": "e_elementDir", "unit": null, "required": false, "meaning": "Direction relative to main road s."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": null, "level": "may", "text": "The main incoming road need not end before the junction area.", "since": "1.5"},
+      {"id": null, "level": "shall", "text": "Virtual junctions do not replace common junctions or crossings connecting several roads.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.main_road_only", "level": "shall", "text": "Only for branches off the main road; main road has priority (1.9: unless stated otherwise).", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.no_controllers", "level": "shall", "text": "No controllers, hence no traffic lights.", "since": "1.5"},
+      {"id": null, "level": "shall", "text": "@incomingRoad = -1 if there is no incoming road.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.connecting_roads_start_end", "level": "shall", "text": "Every connecting road starts or ends at sStart or sEnd.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.only_one_start_end", "level": "shall", "text": "Exactly one sStart and one sEnd per virtual junction.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.heading_equal_mainroad", "level": "shall", "text": "Connecting roads have the main road's heading at sStart/sEnd.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.linked_lanes_smooth_fit", "level": "shall", "text": "Linked lanes fit smoothly.", "since": "1.5"},
+      {"id": null, "level": "shall", "text": "@mainRoad/@sStart/@sEnd/@orientation valid only for virtual junctions.", "since": "1.5"},
+      {"id": null, "level": "shall", "text": "1.8+: only flat virtual junctions can currently be modelled.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "driveway / parking lot entry and exit (Figure 82/93)", "how": "Main road 1 not cut. Junction 555 mainRoad=1 sStart=50 sEnd=70 orientation=+. Road 2 (exit into lot) starts on road 1 lane -2 at s=50 (predecessor elementS=50 elementDir=+), ends at road 99. Roads 4,5 start at road 99 lane -1 and end on road 1 at s=70 (lanes -1 and -2). Connections: (1->2, -2->-1), (99->4, -1->-1), (99->5, -1->-1)."},
+      {"case": "farm road / residential driveway (OSM highway=service, service=driveway, access=private)", "how": "Virtual junction if terrain flat; branches only from main-road lanes on one side, no lights."},
+      {"case": "mid-block pedestrian crossing (12.7.1)", "how": "Virtual junction mainRoad=1 sStart=52 sEnd=58 with crossPath crossingRoad=2 roadAtStart=roadAtEnd=1 linking sidewalk lanes -2 and 3 of road 1 to walking lane -1 of road 2; optional <priority> between crossing and main road."},
+      {"case": "minor side street with its own traffic signals", "how": "NOT virtual (no controllers) -> common junction."}
+     ],
+     "right": [
+      "Connecting roads tangent to the main road at sStart/sEnd and lying on its lanes (Figure 82).",
+      "All branch endpoints at exactly sStart or sEnd."
+     ],
+     "wrong": [
+      "Using a virtual junction for a real multi-road intersection or a signalised one.",
+      "Branches attaching at several different s positions within one virtual junction (only one sStart/one sEnd).",
+      "Branches leaving the main road at an angle (heading mismatch).",
+      "Non-flat virtual junctions in 1.8+."
+     ],
+     "changes_1_8_1_9": [
+      "1.8: virtual connections and <connection><predecessor/successor> deprecated; cross paths with virtual junctions (12.7.1) added with rule junctions.virtual.crossPath.cross_road_check_s_t; flatness limitation stated.",
+      "1.9: rule ids junctions.virtual.* added; main road priority softened by 'unless specified otherwise'."
+     ],
+     "figures": [
+      "1.7 Figure 82 / 1.9 Figure 93 (img06): main road 1 (lanes 2,1 | -1,-2,-3) between dashed s=50 and s=70; road 2 leaves from lane -2 at s=50 curving down to road 99 lane 1; roads 4 and 5 rise from road 99 lane -1 and join road 1 lanes -1 and -2 at s=70. Lesson: branches attach tangentially at exactly the two s values; main road geometry untouched.",
+      "1.9 Figure 94: virtual junction with cross path - road 2 walks across road 1 linking its lanes -2 and 3."
+     ]
+    },
+    {
+     "id": "10.5.1 / 12.7.1-12.7.2",
+     "title": "Virtual connections (deprecated 1.8) and cross paths in virtual junctions",
+     "summary": "Virtual connections (connection type='virtual') state purely topological lane-to-lane connectivity between roads in a virtual junction, with no geometry, using <predecessor>/<successor> children with elementS/elementDir. They were deprecated in 1.8. 1.8 adds cross paths inside virtual junctions for mid-block crossings, where the crossing road must stay within the main road's s and t extent.",
+     "concepts": [
+      "Virtual connection = topology only, reference lines unchanged, need not be geometrically correct (e.g. left turn from road 99 into road 1's opposite lanes at s=60 with elementDir='-').",
+      "Cross path in virtual junction: crossingRoad bounded by main road extents."
+     ],
+     "elements": [
+      {"name": "<connection type='virtual'>", "parent": "<junction type='virtual'>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique."},
+       {"name": "type", "type": "e_connection_type", "unit": null, "required": true, "meaning": "'virtual' (mandatory for virtual connections)."}
+      ]},
+      {"name": "<predecessor>/<successor> (t_junction_predecessorSuccessor, deprecated 1.8)", "parent": "<connection>", "attributes": [
+       {"name": "elementType", "type": "string", "unit": null, "required": true, "meaning": "Only 'road'."},
+       {"name": "elementId", "type": "string", "unit": null, "required": true, "meaning": "Linked road."},
+       {"name": "elementS", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "s where connection meets the road."},
+       {"name": "elementDir", "type": "e_elementDir", "unit": null, "required": true, "meaning": "Direction relative to that road's s."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": null, "level": "shall", "text": "Virtual connections do not replace geometric road/lane linkage.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.connections.only_virtual_junctions", "level": "shall", "text": "Virtual connections only inside virtual junctions.", "since": "1.5"},
+      {"id": "asam.net:xodr:1.8.0:junctions.virtual.crossPath.cross_road_check_s_t", "level": "shall", "text": "Crossing road must not exceed the s/t extents of the main road (roadAtStart/roadAtEnd).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.lane_linkage", "level": "shall", "text": "Crossing road reaches the lanes given by startLaneLink/endLaneLink.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.cross_path.only_connect_correct_type", "level": "shall", "text": "Only walking/biking lanes.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "left turns into/out of a driveway across oncoming lanes (Figure 83)", "how": "1.7: virtual connections 99->road1 lanes 1,2 at s=60 (dir '-') and road1 lane 1 at s=70 -> 99 lane 1. 1.8+: avoid (deprecated); model real connecting roads or use a common junction."},
+      {"case": "mid-block zebra crossing", "how": "Virtual junction + crossPath (Figure 94)."}
+     ],
+     "right": ["Do not emit virtual connections in new files (deprecated); emit geometric connecting roads."],
+     "wrong": ["Virtual connections used in default/direct junctions.", "Using virtual connections instead of real connecting roads where geometry is known.", "Note: 1.7 XML example has a typo (missing '/' on a successor tag) - do not copy it."],
+     "changes_1_8_1_9": ["1.8: connection type='virtual' and junction <predecessor>/<successor> deprecated; cross paths in virtual junctions added."],
+     "figures": ["1.7 Figure 83 / 1.9 Figure 95 (img07): same parking entry, plus blue dashed virtual connections from road 99 to road 1 lanes 1/2 at s=60 and from road 1 lane 1 at s=70 to road 99 - topology-only arcs crossing the opposite lanes."]
+    },
+    {
+     "id": "- / 12.8",
+     "title": "Crossings (1.8+)",
+     "summary": "A crossing junction marks where two or more roads cross on the same level but traffic cannot transfer between them. It contains only <roadSection> elements giving, per road, the s-range where crossing traffic can appear, plus a priority telling which road wins. Currently only flat crossings.",
+     "concepts": [
+      "No connections, no connecting roads: the crossing roads are normal roads (junction=-1) that pass through.",
+      "Behaves like a virtual junction from the driving perspective.",
+      "Exactly one road has high priority (e.g. the railway).",
+      "Elevation may be given by CRG surface or elevation grid but only flat crossings are currently modellable."
+     ],
+     "elements": [
+      {"name": "<junction type='crossing'>", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Junction id."},
+       {"name": "type", "type": "e_junction_type", "unit": null, "required": true, "meaning": "'crossing'."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Free name."}
+      ]},
+      {"name": "<roadSection>", "parent": "<junction type='crossing'>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique in junction."},
+       {"name": "roadId", "type": "string", "unit": null, "required": true, "meaning": "Crossing road."},
+       {"name": "sStart", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "Start s of the crossing area on that road."},
+       {"name": "sEnd", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "End s of the crossing area on that road."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.8.0:junctions.crossing.only_road_sections", "level": "shall", "text": "Crossing junctions contain only <roadSection> elements (plus priority per the example).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.crossing.only_one_high_prio", "level": "shall", "text": "Only one of the referenced roads has high priority.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.crossing.s_start_end_coverage", "level": "shall", "text": "sStart..sEnd cover at least the overlap area of the roads.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "railway level crossing (OSM railway=level_crossing node)", "how": "Road 1 (driving) and road 2 (lane type rail) both junction=-1; junction type=crossing with <priority high=2 low=1>, roadSection road 1 s 50..60, roadSection road 2 s 150..160."},
+      {"case": "pedestrian / bicycle crossing as separate road (OSM footway=crossing way)", "how": "Crossing junction between the street and the footway road, or crossPath (12.5/12.7.1)."},
+      {"case": "tram track crossing a street without turning", "how": "Crossing junction (rail has priority)."},
+      {"case": "grade-separated crossing (bridge/tunnel, OSM layer/bridge)", "how": "No junction at all - roads simply pass at different z; crossing type is same-level only."}
+     ],
+     "right": ["roadSection ranges cover the full overlap of both roads' widths.", "Exactly one high-priority road."],
+     "wrong": ["Connections or connecting roads in a crossing junction.", "Using a crossing junction for roads at different levels.", "Two roads both high priority."],
+     "changes_1_8_1_9": ["New in 1.8 (type crossing, <roadSection>)."],
+     "figures": ["1.9 Figure 96: crossing of road 1 (driving) with road 2 (railroad); each roadSection marks the s-range of the crossing; road 2 has priority."]
+    },
+    {
+     "id": "- / 12.9",
+     "title": "Junction reference line (1.8+)",
+     "summary": "A junction may own a <planView> holding a single straight line that acts as its reference line (no lanes, no elevation). It anchors the elevation grid and junction-related objects (islands, potholes with CRG). It must be placed so every junction point is reachable by a perpendicular from it and must cross or touch the boundary.",
+     "concepts": [
+      "Gives the junction its own s/t coordinate frame for elevationGrid rows and objects.",
+      "Objects (e.g. roadSurface/pothole) can be placed relative to the junction."
+     ],
+     "elements": [
+      {"name": "<planView>", "parent": "<junction>", "attributes": [
+       {"name": "<geometry>", "type": "t_road_planView_geometry", "unit": null, "required": true, "meaning": "Exactly one, containing exactly one <line/>."}
+      ]},
+      {"name": "<geometry>", "parent": "<planView>", "attributes": [
+       {"name": "s", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "Start s (0)."},
+       {"name": "x", "type": "double", "unit": "m", "required": true, "meaning": "Inertial start x."},
+       {"name": "y", "type": "double", "unit": "m", "required": true, "meaning": "Inertial start y."},
+       {"name": "hdg", "type": "double", "unit": "rad", "required": true, "meaning": "Inertial heading."},
+       {"name": "length", "type": "t_grZero", "unit": "m", "required": true, "meaning": "Line length."}
+      ]}
+     ],
+     "formulas": [
+      {"name": "point on junction reference line", "expr": "x(s)=x0+(s-s0)cos(hdg)+t*(-sin(hdg)); y(s)=y0+(s-s0)sin(hdg)+t*cos(hdg)", "vars": "x0,y0,hdg,s0 from <geometry>; t lateral offset (left positive)", "notes": "Standard line geometry + reference-line frame; not printed in the junction section but implied."}
+     ],
+     "rules": [
+      {"id": "asam.net:xodr:1.8.0:junctions.geometry.only_one_line_element", "level": "shall", "text": "One <geometry> containing only one <line>.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.geometry.ref_line_definition", "level": "shall", "text": "Every junction point must be reachable by a perpendicular from the line (line must span the junction).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.geometry.correct_junction_boundry", "level": "shall", "text": "If a boundary exists, the line crosses it or touches it tangentially in at least one point.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "non-flat junction with elevation grid", "how": "Choose line through junction centroid along the main axis (e.g. PCA of the boundary polygon), long enough to cover the projection of the whole boundary."},
+      {"case": "traffic island / pothole inside junction", "how": "Place object relative to the junction reference line."}
+     ],
+     "right": ["Line spanning the whole junction extent so perpendiculars reach all points."],
+     "wrong": ["Arcs/spirals or multiple geometries.", "Short line not covering the junction projection."],
+     "changes_1_8_1_9": ["New in 1.8."],
+     "figures": ["1.9 Figure 97: junction with its reference line (red arrow) crossing the junction area."]
+    },
+    {
+     "id": "- / 12.10",
+     "title": "Junction boundary (1.8+)",
+     "summary": "<boundary> describes the closed outline of the whole junction area (including sidewalks) as a counter-clockwise sequence of segments: 'lane' segments follow the outer edge of a lane of a (connecting or helper) road over an s-range, 'joint' segments cut perpendicularly across the end of a road. It defines where the elevation grid applies and, via transitionLength, where heights blend from road to grid. Common junctions only.",
+     "concepts": [
+      "Lane segment: outer edge (seen from junction centre) of boundaryLane on roadId from sStart to sEnd ('begin'/'end' keywords allowed; reversed order = traversed backwards).",
+      "Joint segment: perpendicular line across road end (contactPoint), optionally only lanes jointLaneStart..jointLaneEnd.",
+      "Gaps not coverable by existing roads are closed by helper roads with junction=<id>, no lanes required, no connections, oriented from the incoming/outgoing road into the junction.",
+      "A single road can supply multiple lane segments (road 32 split at s=42 between lanes -2 and -1)."
+     ],
+     "elements": [
+      {"name": "<boundary>", "parent": "<junction>", "attributes": []},
+      {"name": "<segment type='lane'>", "parent": "<boundary>", "attributes": [
+       {"name": "type", "type": "e_junction_segment_type", "unit": null, "required": true, "meaning": "'lane'."},
+       {"name": "roadId", "type": "string", "unit": null, "required": true, "meaning": "Road providing the edge."},
+       {"name": "boundaryLane", "type": "int", "unit": null, "required": true, "meaning": "Lane whose outer edge is the boundary."},
+       {"name": "sStart", "type": "t_grEqZeroOrContactPoint", "unit": "m", "required": true, "meaning": "s or 'begin'/'end'."},
+       {"name": "sEnd", "type": "t_grEqZeroOrContactPoint", "unit": "m", "required": true, "meaning": "s or 'begin'/'end'."}
+      ]},
+      {"name": "<segment type='joint'>", "parent": "<boundary>", "attributes": [
+       {"name": "type", "type": "e_junction_segment_type", "unit": null, "required": true, "meaning": "'joint'."},
+       {"name": "roadId", "type": "string", "unit": null, "required": true, "meaning": "Road whose end is crossed."},
+       {"name": "contactPoint", "type": "e_contactPoint", "unit": null, "required": true, "meaning": "start | end of that road."},
+       {"name": "jointLaneStart", "type": "int", "unit": null, "required": false, "meaning": "First lane crossed (default all)."},
+       {"name": "jointLaneEnd", "type": "int", "unit": null, "required": false, "meaning": "Last lane crossed (default all)."},
+       {"name": "transitionLength", "type": "t_grEqZero", "unit": "m", "required": false, "meaning": "Blend length road->grid (default 0)."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.8.0:junctions.boundary.only_for_common_junctions", "level": "shall", "text": "Boundaries only for common junctions (currently).", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.boundary.segments_counter_clockwise_order", "level": "shall", "text": "Segments listed counter-clockwise.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.boundary.segments_for_each_conn_road", "level": "shall", "text": "Segments reach the start/end of every road connected to the junction.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.boundary.segments_close_boundry", "level": "shall", "text": "Segments form a closed outline.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.boundary.close_gap_with_new_roads", "level": "shall", "text": "If existing roads cannot close it, add helper roads (junction=<id>, no lanes/connections needed) for the missing parts.", "since": "1.8"},
+      {"id": null, "level": "should", "text": "Boundary encloses all sidewalks and similar lanes.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "4-way junction with sidewalks", "how": "Alternate: joint across arm A end, lane segment along outer sidewalk lane of the right-turn connecting road A->B, joint across arm B, ... counter-clockwise."},
+      {"case": "arm without a right-turn connecting road (e.g. one-way, Figure 99 gap between roads 60 and 3)", "how": "Add helper road (road 100) with junction id to provide the lane segment (boundaryLane 0 = its reference line)."}
+     ],
+     "right": ["Counter-clockwise closed loop alternating joint/lane segments, each arm crossed by a joint segment."],
+     "wrong": ["Clockwise order, open outline, an arm without a joint segment, boundary on direct/virtual junctions."],
+     "changes_1_8_1_9": ["New in 1.8."],
+     "figures": ["1.9 Figure 98: UML JunctionBoundary.", "1.9 Figure 99: boundary built from lane and joint segments; helper road 100 exists only to supply a lane segment closing the gap between road 60 and road 3."]
+    },
+    {
+     "id": "- / 12.11",
+     "title": "Junction elevation grid (1.8+)",
+     "summary": "<elevationGrid> gives a coarse square grid of z values laid out along the junction reference line (rows perpendicular to it, spaced gridSpacing, starting at sStart). Inside the boundary it overrides all road-derived elevation; lane heights are added on top; heights are bicubically interpolated, and a cubic blend over transitionLength joins incoming roads smoothly. Common junctions only; not a replacement for OpenCRG.",
+     "concepts": [
+      "Row k is at s = sStart + k*gridSpacing on the junction reference line; centre value at t=0, left values at t = +gridSpacing, +2*gridSpacing ... (inside->outside), right values at t = -gridSpacing ...",
+      "Grid must extend by complete squares beyond the boundary in all directions; minimum is 4 points forming a bounding square (constant z = flat plane).",
+      "Roads crossing the grid outside the boundary keep their own elevation; inside, grid wins (connecting roads are inside so grid always applies to them).",
+      "Lane height (sidewalk kerb) is superimposed on grid z."
+     ],
+     "elements": [
+      {"name": "<elevationGrid>", "parent": "<junction>", "attributes": [
+       {"name": "gridSpacing", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "Spacing between grid points (both directions)."},
+       {"name": "sStart", "type": "t_grEqZero", "unit": "m", "required": true, "meaning": "s of first row on the junction reference line."}
+      ]},
+      {"name": "<elevation>", "parent": "<elevationGrid>", "attributes": [
+       {"name": "center", "type": "t_junction_grid_position_list", "unit": "m", "required": true, "meaning": "z on the reference line for this row."},
+       {"name": "left", "type": "t_junction_grid_position_list", "unit": "m", "required": false, "meaning": "z values to the left, inside to outside."},
+       {"name": "right", "type": "t_junction_grid_position_list", "unit": "m", "required": false, "meaning": "z values to the right, inside to outside."}
+      ]}
+     ],
+     "formulas": [
+      {"name": "grid point position", "expr": "P(k,j) = refline(s = sStart + k*g) + t*n, t = j*g (j>0 left, j<0 right)", "vars": "g = gridSpacing; n = left normal of reference line; k = row index (<elevation> order)", "notes": "Inferred from rules (rows perpendicular to the reference line, spacing g); the spec does not print this formula."},
+      {"name": "edge cubic", "expr": "f(x) = d x^3 + c x^2 + b x + a", "vars": "fitted along grid lines through neighbouring points", "notes": "Used to obtain tangents; c=d=0 if not enough support points (rule polynome_coefficient_values)."},
+      {"name": "bicubic patch", "expr": "alpha = A * [[Z, Tt],[Ts, Tst]] * A^T ; z(s,t) = [1 s s^2 s^3] * alpha * [1 t t^2 t^3]^T", "vars": "Z = 2x2 corner z values; Ts, Tt, Tst = 2x2 partial derivatives in s, t, st at corners; A = constant 4x4 bicubic Hermite matrix; s,t normalised to [0,1] within the square", "notes": "Standard bicubic interpolation (12.11.1). A = [[1,0,0,0],[0,0,1,0],[-3,3,-2,-1],[2,-2,1,1]] in standard form."},
+      {"name": "transition polygon parameterisation", "expr": "A = P0 + k (P1 - P0); B = P3 + k (P2 - P3); P = A + l (B - A); solve fx(k,l)=0, fy(k,l)=0", "vars": "P0..P3 corners of the transition quad from the joint segment and adjacent lane segments (transitionLength)", "notes": "12.11.2."},
+      {"name": "road-to-grid blend", "expr": "z_P(l) = a + b l + c l^2 + d l^3; a = zA; b = mA; c = -3 zA + 3 zB - 2 mA - mB; d = 2 zA - 2 zB + mA + mB", "vars": "zA, mA: road elevation and slope at the road end (A side); zB, mB: grid z and slope along AB at B; slopes scaled by |AB|; l in [0,1]", "notes": "Cubic Hermite. Spec text labels the grid slope mA in one place - typo for mB."}
+     ],
+     "rules": [
+      {"id": null, "level": "shall", "text": "Elevation grids currently only for common junctions.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.elevation_grid.only_one_elev_grid", "level": "shall", "text": "At most one elevation grid per junction.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.elevation_grid.valid_for_entire_boundry", "level": "shall", "text": "If a boundary exists, the grid covers the entire enclosed area.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.elevation_grid.perpendicular_vectors", "level": "shall", "text": "Grid vectors perpendicular to the junction reference line.", "since": "1.8"},
+      {"id": null, "level": "shall", "text": "Grid valid from boundary entry until exit onto outgoing road; overrides elevation of roads that are part of the junction/boundary.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.elevation_grid.entry_exit_smoothness", "level": "should", "text": "Ensure smooth transition at entries/exits.", "since": "1.8"},
+      {"id": "asam.net:xodr:1.8.0:junctions.elevation_grid.polynome_coefficient_values", "level": "shall", "text": "Polynomial c and d are 0 when too few support points.", "since": "1.8"}
+     ],
+     "use_cases": [
+      {"case": "sloped junction on a hill (OSM incline / DEM)", "how": "Reference line + boundary + elevationGrid sampled from DEM; transitionLength on joint segments for blending into incoming road elevation."},
+      {"case": "flat junction with differing incoming road z (DEM noise)", "how": "Minimal 4-point grid at a common z, or keep connecting road elevations consistent."}
+     ],
+     "right": ["Grid squares fully cover boundary plus one cell margin; row order along reference line."],
+     "wrong": ["Grid not covering boundary; two grids; grid on direct/virtual junction; expecting it to model high-frequency detail (use CRG)."],
+     "changes_1_8_1_9": ["New in 1.8."],
+     "figures": [
+      "1.9 Figure 100: minimal grid - C0,0 and C1,0 on reference line, R0,0 and R1,0 to the right.",
+      "1.9 Figure 101: grid with more left/right points.",
+      "1.9 Figure 102: UML ElevationGrid.",
+      "1.9 Figures 103-105: point P, surrounding grid points, tangents and cubic splines used for bicubic interpolation.",
+      "1.9 Figures 106-107: three boundary segments with transition polygon corners P0..P3 and lines AB/CD through P."
+     ]
+    },
+    {
+     "id": "10.6 / 12.12",
+     "title": "Road surface in junctions (CRG)",
+     "summary": "Junction elevation can be described with OpenCRG data in <surface><CRG>, which then supersedes all elevation data of the connecting roads and can model complex/overlapping surfaces. In 1.7 the only mode was 'global'; from 1.8 the junction CRG attaches to the junction reference line with the road CRG modes and attributes. For non-flat junctions without need for fine detail the elevation grid is recommended instead.",
+     "concepts": [
+      "CRG supersedes connecting-road elevation inside the junction.",
+      "1.8+: attaches to junction <planView>; modes attached/attached0/genuine/global as for roads."
+     ],
+     "elements": [
+      {"name": "<surface>", "parent": "<junction>", "attributes": []},
+      {"name": "<CRG>", "parent": "<surface>", "attributes": [
+       {"name": "file", "type": "string", "unit": null, "required": true, "meaning": "CRG file name."},
+       {"name": "mode", "type": "e_junction_surface_CRG_mode (1.7: global) / e_road_surface_CRG_mode (1.8+)", "unit": null, "required": true, "meaning": "Attachment mode."},
+       {"name": "purpose", "type": "e_road_surface_CRG_purpose", "unit": null, "required": false, "meaning": "elevation (default) | friction."},
+       {"name": "zOffset", "type": "double", "unit": "m", "required": false, "meaning": "z offset (default 0)."},
+       {"name": "zScale", "type": "double", "unit": null, "required": false, "meaning": "z scale (default 1)."},
+       {"name": "orientation, sStart, sEnd, sOffset, tOffset, hOffset", "type": "e_direction / t_grEqZero / double", "unit": "m / rad", "required": false, "meaning": "1.8+ road-CRG attributes, relative to the junction reference line."},
+       {"name": "xOffset, yOffset", "type": "double", "unit": "m", "required": false, "meaning": "1.9: translation for mode global."}
+      ]}
+     ],
+     "formulas": [
+      {"name": "attached mode height", "expr": "z = z_OpenDRIVE + z_CRG", "vars": "", "notes": "attached0/genuine/global: z = z_CRG only (table 81)."}
+     ],
+     "rules": [
+      {"id": null, "level": "shall", "text": "Junction CRG surfaces use the junction reference line (1.8+).", "since": "1.8"},
+      {"id": null, "level": "shall", "text": "A <surface> in a junction supersedes all elevation of its connecting roads.", "since": "1.4"}
+     ],
+     "use_cases": [{"case": "scanned/high-detail junction surface", "how": "CRG file; otherwise prefer elevationGrid."}],
+     "right": ["Use elevationGrid for coarse slopes, CRG only for measured detail."],
+     "wrong": ["Expecting connecting-road elevation to still apply when a junction CRG surface exists."],
+     "changes_1_8_1_9": ["1.8: switch from e_junction_surface_CRG_mode (global only) to road CRG modes on the junction reference line.", "1.9: xOffset/yOffset (global mode)."],
+     "figures": []
+    },
+    {
+     "id": "10.7 / 12.13",
+     "title": "Junction groups (roundabouts, interchanges)",
+     "summary": "<junctionGroup> aggregates several junctions that are perceived as one node for routing, e.g. the arm junctions of a roundabout. Each member is listed with <junctionReference junction=...>. 1.8 adds group types complexJunction and highwayInterchange.",
+     "concepts": [
+      "Roundabout model (Figure 84): one common junction per arm where the arm meets the ring; ring segments between junctions are ordinary roads; the junctions are grouped.",
+      "Group is semantic/routing only; geometry and linkage still live in member junctions and roads."
+     ],
+     "elements": [
+      {"name": "<junctionGroup>", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Unique id."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Free name."},
+       {"name": "type", "type": "e_junctionGroup_type", "unit": null, "required": true, "meaning": "roundabout | unknown | complexJunction (1.8) | highwayInterchange (1.8)."}
+      ]},
+      {"name": "<junctionReference>", "parent": "<junctionGroup>", "attributes": [
+       {"name": "junction", "type": "string", "unit": null, "required": true, "meaning": "Id of an existing junction (1..* references)."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": null, "level": "may", "text": "Two or more junctions may be grouped to show they belong together (roundabout etc.).", "since": "1.4"}
+     ],
+     "use_cases": [
+      {"case": "roundabout (OSM junction=roundabout ring)", "how": "Split ring at each arm; one common junction per arm containing: ring-in -> ring-out (through), ring-in -> arm-out (exit), arm-in -> ring-out (entry); ring arcs between arms are plain roads (junction=-1); junctionGroup type=roundabout referencing all arm junctions. See UC_2Lane-Roundabout-3Arms.xodr."},
+      {"case": "motorway interchange (cloverleaf/stack)", "how": "Direct junctions at each diverge/merge, grouped as highwayInterchange (1.8)."},
+      {"case": "dual-carriageway crossroads split into 2-4 junctions (OSM: four intersection nodes)", "how": "Common junctions grouped as complexJunction (1.8)."}
+     ],
+     "right": ["Each roundabout arm junction small and non-overlapping; ring segments as normal roads; group lists all."],
+     "wrong": ["One giant junction for a whole large roundabout with ring segments as connecting roads (allowed but loses ring structure; junction areas must not overlap if split)."],
+     "changes_1_8_1_9": ["1.8: group types complexJunction, highwayInterchange; type required."],
+     "figures": ["1.7 Figure 84 / 1.9 Figure 108 (img08): roundabout with three arms; junctions 1, 2, 3 (red dashed boxes) where arms meet the ring with connecting roads curving in/out; blue ring arcs between them are roads; all within junction group A.", "1.7 Figure 85 / 1.9 Figure 109 (img09): UML t_junctionGroup (id, name, type) with junctionReference 1..*."]
+    },
+    {
+     "id": "10.7.1 / 12.14",
+     "title": "Controllers for junctions / signal synchronization groups",
+     "summary": "A junction lists the signal controllers that manage it via <controller id type sequence>; sequence ranks controllers within the junction. In 1.8+ this list is reinterpreted as a signal synchronization group: controllers in one junction whose cycles are synchronised, so setting one group (e.g. via OpenSCENARIO TrafficSignalControllerAction) moves the others to the matching phase.",
+     "concepts": [
+      "Global <controller> (child of <OpenDRIVE>) groups signals via <control signalId type>; junction <controller> references those controllers.",
+      "Figure 86: 4 lights, 2 controllers - opposite approaches share a controller (same phase).",
+      "Figure 110 (1.9): 20 lights mapped to six signal groups/controllers 42-47; if controller 46 goes green, 44 must go red.",
+      "type is application-defined free text."
+     ],
+     "elements": [
+      {"name": "<controller> (junction)", "parent": "<junction>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Id of a global controller."},
+       {"name": "type", "type": "string", "unit": null, "required": false, "meaning": "Free text, application-specific."},
+       {"name": "sequence", "type": "nonNegativeInteger", "unit": null, "required": false, "meaning": "Priority/order among controllers of this junction."}
+      ]},
+      {"name": "<controller> (global)", "parent": "<OpenDRIVE>", "attributes": [
+       {"name": "id", "type": "string", "unit": null, "required": true, "meaning": "Controller id."},
+       {"name": "name", "type": "string", "unit": null, "required": false, "meaning": "Name."},
+       {"name": "sequence", "type": "nonNegativeInteger", "unit": null, "required": false, "meaning": "Sequence."},
+       {"name": "<control signalId type>", "type": "t_controller_control", "unit": null, "required": true, "meaning": "1..* signals driven by the controller."}
+      ]}
+     ],
+     "formulas": [],
+     "rules": [
+      {"id": "asam.net:xodr:1.9.0:junctions.virtual.no_controllers", "level": "shall", "text": "Virtual junctions have no controllers (direct junctions also cannot host lights per the usage table).", "since": "1.5"}
+     ],
+     "use_cases": [
+      {"case": "4-way signalised crossroads (OSM highway=traffic_signals)", "how": "Signals on each incoming road near the stop line; one global controller per phase (N+S, E+W) with <control signalId>; junction lists both controllers with sequence 0/1. See UC_Simple-X-Junction-TrafficLights.xodr."},
+      {"case": "protected left-turn phases", "how": "Separate controller per turn phase; all listed in the junction (one synchronization group)."}
+     ],
+     "right": ["Group signals sharing a phase in one controller; reference all controllers from the junction."],
+     "wrong": ["Controllers in virtual junctions; one controller for conflicting approaches."],
+     "changes_1_8_1_9": ["1.8/1.9: section renamed 'Signal synchronization groups'; same <controller> element with sync semantics; future extension to junction groups mentioned."],
+     "figures": ["1.7 Figure 86 (img10): X-junction with four lights and two controllers - controller 1 drives the two green opposite lights, controller 2 the two red ones.", "1.7 Figure 87 (img11): UML t_controller (id, name, sequence) with control 1..* (signalId, type).", "1.9 Figure 110: 20 lights mapped into six signal groups 42-47."]
+    },
+    {
+     "id": "synthesis",
+     "title": "OSM -> OpenDRIVE junction modelling guide (derived)",
+     "summary": "Derived mapping from OSM situations to the junction types above, collected from all sections for OdrForge. Not spec text.",
+     "concepts": [
+      "OSM node shared by 3+ highway ways (or 2 ways where one continues and one branches) -> candidate junction; node shared by exactly 2 ways -> direct road link, no junction.",
+      "Cluster nearby intersection nodes (dual carriageways, turn lanes) into one junction area or a junctionGroup; never let areas overlap."
+     ],
+     "elements": [],
+     "formulas": [],
+     "rules": [],
+     "use_cases": [
+      {"case": "4-way signalised crossroads", "how": "Common junction; trim incoming ways back to junction edge; connecting road per permitted lane movement from turn:lanes; laneLinks for inbound lanes only; controllers per phase; signals on incoming roads."},
+      {"case": "motorway exit", "how": "highway=motorway_link diverging: direct junction at the point where the link's heading still equals the motorway (start of deceleration lane), ramp gets the outermost lane(s); exit lane type 'exit', ramp offRamp."},
+      {"case": "motorway entry", "how": "Direct junction merge; onRamp lane mapped to new 'entry' lane; overlapZone only if one lane pair truly overlaps (1.8+)."},
+      {"case": "roundabout", "how": "Common junction per arm + ring roads + junctionGroup type=roundabout."},
+      {"case": "driveway / parking aisle / farm track", "how": "Virtual junction on the main road (flat), no lights; or skip entirely if service roads are excluded."},
+      {"case": "lane split (lanes count change on same way)", "how": "Lane section on one road, no junction; a way splitting into two carriageways -> direct junction."},
+      {"case": "slip lane / free right turn (OSM separate link way with turn island)", "how": "Common junction for the box + direct junctions at diverge and merge (1.9 recommendation)."},
+      {"case": "railway level crossing / footway crossing", "how": "Crossing junction with roadSections and priority (1.8+), or crossPath."},
+      {"case": "bridge over road", "how": "No junction."},
+      {"case": "T-junction / dead-end stub", "how": "T: common junction; stub (single way end) needs nothing."}
+     ],
+     "right": [],
+     "wrong": [],
+     "changes_1_8_1_9": [],
+     "figures": []
+    }
+   ]
+  }
+ ]
+}

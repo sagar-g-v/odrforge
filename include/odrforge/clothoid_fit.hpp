@@ -23,6 +23,11 @@ struct PolylineFitOptions {
   std::optional<double> startHeading, endHeading;  ///< fixed end tangents (e.g. continuation roads)
   double straightTolerance = 2e-5;  ///< |curvature| below this (1/m) becomes a line
   double maxCurvature = 0.0;        ///< > 0: refit with more smoothing until |curvature| stays below
+  /// the spline stays within this distance (m) of the middle half of every polyline leg of at least
+  /// minBoundLeg (corner fillets near the vertices keep their own maxCornerDeviation); the point it
+  /// strays from most becomes an extra vertex and the spline is refitted (0: unbounded)
+  double maxLegDeviation = 0.5;
+  double minBoundLeg = 20.0;
 };
 
 /// Clothoid spline through a polyline: every segment between kept vertices becomes one spiral

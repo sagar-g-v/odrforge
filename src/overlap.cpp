@@ -4,7 +4,8 @@
 // parallel service roads are often drawn closer together than their lanes are wide. With real lane
 // widths the carriageways would overlap (a visible defect in any mesh). For near-parallel roads on
 // the same layer, each road is pushed half of the overlap away from the other through an extra,
-// smooth laneOffset profile (spec 4.1: laneOffset shifts lane 0 relative to the reference line).
+// smooth laneOffset profile (OpenDRIVE 1.8.0 §11.4 [1.9 §11.5]: laneOffset shifts lane 0 relative to the
+// reference line).
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -15,6 +16,35 @@ namespace odrforge {
 namespace detail {
 
 namespace {
+
+/// the traffic directions a road's vehicle lanes carry (along / against s). OpenDRIVE 1.8.0 §11 lanes: in right-hand
+/// traffic lanes right of the centre lane (id < 0) travel along s and left lanes against it, in left-hand traffic the
+/// reverse (@rule); @direction reversed flips a lane, both (1.8, bidirectional) carries either way
+void travelDirections(const odr::Road &r, bool &along, bool &against) {
+  along = against = false;
+  const bool lht = r.rule == "LHT";
+  for (const odr::LaneSection &sec : r.lanes)
+    for (const auto *side : {&sec.left, &sec.right})
+      for (const odr::Lane &l : *side) {
+        if (l.type != "driving" && l.type != "bus" && l.type != "bidirectional" && l.type != "onRamp" &&
+            l.type != "offRamp" && l.type != "connectingRamp" && l.type != "entry" && l.type != "exit")
+          continue;
+        if (l.direction == "both" || l.type == "bidirectional") {
+          along = against = true;
+          continue;
+        }
+        const bool withS = (l.id < 0) != lht;
+        ((l.direction == "reversed") != withS ? along : against) = true;
+      }
+}
+
+/// d laneOffset / ds at s (OpenDRIVE 1.8.0 §11.4 [1.9 §11.5] laneOffset: a cubic per record, s absolute)
+double laneOffsetSlope(const odr::Road &r, double s) {
+  const odr::Poly3 *rec = nullptr;
+  for (const odr::Poly3 &p : r.laneOffset)
+    if (p.s <= s + 1e-9) rec = &p;
+  return rec ? rec->deriv(s - rec->s) : 0.0;
+}
 
 /// lateral extent of the travelled way at s: driving, bus, bike and bidirectional lanes. Shoulders,
 /// parking and borders of adjacent carriageways may touch (they do on real roads); moving a whole
@@ -33,14 +63,14 @@ bool extent(const odr::Road &r, double s, double &lo, double &hi) {
   return lo < hi;
 }
 
+}  // namespace
+
 int layerAt(const RoadMeta &m, double s) {
   int layer = 0;
   for (const auto &lr : m.layers)
     if (s + m.trimStart >= lr.s0 - 1e-6 && s + m.trimStart <= lr.s1 + 1e-6) layer = lr.layer;
   return layer;
 }
-
-}  // namespace
 
 void Builder::resolveLevelOverlaps() {
   overlapLevelPass = true;
@@ -56,17 +86,63 @@ void Builder::resolveOverlaps() {
   const double step = 2.0, cell = 25.0, margin = 0.2, maxShift = 3.0, maxDepth = 6.0, goreLength = 40.0;
   std::map<int, std::vector<odr::Poly3>> original;  // laneOffset before any shift
   std::map<int, std::vector<double>> total;         // accumulated shift per sample
-  // the two roads end in the same junction within goreLength of these positions
-  auto nearSharedEnd = [&](int mi, double sa, int mj, double sb) {
+  // the two roads leave (enter) the same junction together within goreLength of these positions,
+  // heading the same way from it (`c`: cosine of the angle between their headings there) - not a
+  // road that loops back alongside the other - and their traffic merges there: both carry traffic into
+  // the junction, or both out of it. Opposite carriageways of one street (one arriving, one leaving) only
+  // run side by side and are pushed apart like any other pair (Tokyo, roads 734 / 977)
+  auto nearSharedEnd = [&](int mi, double sa, int mj, double sb, double c) {
     const Chain &ca = chains[metas[mi].chain], &cb = chains[metas[mj].chain];
-    const double La = od.roads[metas[mi].roadIndex].length(), Lb = od.roads[metas[mj].roadIndex].length();
+    const odr::Road &ra = od.roads[metas[mi].roadIndex], &rb = od.roads[metas[mj].roadIndex];
+    const double La = ra.length(), Lb = rb.length();
+    bool alongA, againstA, alongB, againstB;
+    travelDirections(ra, alongA, againstA);
+    travelDirections(rb, alongB, againstB);
     for (int ea : {0, 1})
       for (int eb : {0, 1}) {
         const int ka = ea ? ca.c1 : ca.c0, kb = eb ? cb.c1 : cb.c0;
-        if (ka < 0 || ka != kb) continue;
-        if ((ea ? La - sa : sa) < goreLength && (eb ? Lb - sb : sb) < goreLength) return true;
+        if (ka < 0 || ka != kb || (ea == eb) != (c > 0)) continue;
+        if ((ea ? La - sa : sa) >= goreLength || (eb ? Lb - sb : sb) >= goreLength) continue;
+        const bool intoA = ea ? alongA : againstA, outA = ea ? againstA : alongA;
+        const bool intoB = eb ? alongB : againstB, outB = eb ? againstB : alongB;
+        if ((intoA && intoB) || (outA && outB)) return true;
       }
     return false;
+  };
+  // per road: boxes around its reference line, one per kChunk of it, and the farthest its travelled way reaches from
+  // the line (sampled every metre, with kSlack for what lies between samples) - a road farther from a point than both
+  // roads' reach plus the most a shift can use (maxShift + margin) neither pushes nor limits a road there: it is passed
+  // by without projecting
+  constexpr double kSlack = 0.5, kChunk = 10.0;
+  struct Box {
+    double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+  };
+  struct Reach {
+    std::vector<Box> boxes;
+    double half = 0.0;
+  };
+  std::vector<Reach> reach(metas.size());
+  auto measure = [&](int mi) {  // again whenever the road's laneOffset changes
+    const odr::Road &r = od.roads[metas[mi].roadIndex];
+    const double L = r.length();
+    Reach q;
+    q.boxes.resize(static_cast<size_t>(std::max(1.0, std::ceil(L / kChunk))));
+    for (double s = 0.0;; s = std::min(L, s + 1.0)) {
+      const Pose p = r.planView.eval(s);
+      // a sample on a chunk border belongs to both chunks
+      const size_t k1 = std::min(q.boxes.size() - 1, static_cast<size_t>(s / kChunk));
+      const size_t k0 = (k1 > 0 && s <= kChunk * k1 + 1e-9) ? k1 - 1 : k1;
+      for (size_t k = k0; k <= k1; ++k) {
+        Box &b = q.boxes[k];
+        b.x0 = std::min(b.x0, p.x), b.y0 = std::min(b.y0, p.y), b.x1 = std::max(b.x1, p.x), b.y1 = std::max(b.y1, p.y);
+      }
+      double lo, hi;
+      if (extent(r, s, lo, hi)) q.half = std::max({q.half, std::abs(lo), std::abs(hi)});
+      if (s >= L) break;
+    }
+    for (Box &b : q.boxes) b.x0 -= kSlack, b.y0 -= kSlack, b.x1 += kSlack, b.y1 += kSlack;
+    q.half += kSlack;
+    reach[mi] = std::move(q);
   };
   for (int pass = 0; pass < 3; ++pass) {
     // index of reference-line samples
@@ -78,6 +154,7 @@ void Builder::resolveOverlaps() {
         const Pose p = r.planView.eval(s);
         grid[{static_cast<long>(std::floor(p.x / cell)), static_cast<long>(std::floor(p.y / cell))}].push_back({mi, s});
       }
+      measure(mi);
     }
     int shifted = 0;
     for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
@@ -123,6 +200,16 @@ void Builder::resolveOverlaps() {
               (void)sj;
               if (mj == mi || seen[mj]) continue;
               seen[mj] = true;
+              // b's reference line at least `apart` away: |tb| below is at least apart - 0.5 (the along-b tolerance)
+              const Reach &qb = reach[mj];
+              const double far = 0.5 + reach[mi].half + qb.half + maxShift + margin + kSlack;
+              bool near = false;
+              for (const Box &bx : qb.boxes)
+                if (std::hypot(std::max({bx.x0 - pa.x, 0.0, pa.x - bx.x1}), std::max({bx.y0 - pa.y, 0.0, pa.y - bx.y1})) <= far) {
+                  near = true;
+                  break;
+                }
+              if (!near) continue;
               const RoadMeta &mb = metas[mj];
               const odr::Road &b = od.roads[mb.roadIndex];
               double sb, tb;
@@ -146,7 +233,7 @@ void Builder::resolveOverlaps() {
               // the side of a that faces away from b (in a's frame, +1 = left)
               const double away = ((0.5 * (lo + hi) >= 0.5 * (blo + bhi)) ? 1.0 : -1.0) * (c > 0 ? 1.0 : -1.0);
               std::vector<double> &room = away > 0 ? roomR : roomL;  // b lies on the other side
-              const bool gore = nearSharedEnd(mi, s, mj, sb);        // merges in the junction: never pushed from
+              const bool gore = nearSharedEnd(mi, s, mj, sb, c);     // merges in the junction: never pushed from
               if (gore || overlap <= 0 || overlap > maxDepth) {
                 room[i] = std::min(room[i], std::max(0.0, -overlap - margin));
                 continue;
@@ -182,16 +269,46 @@ void Builder::resolveOverlaps() {
       }
       // smooth envelope: keep the required shift, spread it with C1 ramps of at least 60 m and a
       // taper of at most ~2 % (smoothstep peak slope 1.5 push / ramp length): a realignment, not a
-      // wiggle; never more than the free room on that side
+      // wiggle; never more than the free room on that side. Where lanes are added or dropped the
+      // lanes kept run straight: a ramp that would run into such a taper ends before it, as short as
+      // a shifting taper at the posted speed (MUTCD 6C: mean rate 2/S, below 45 mph 120/S^2)
+      std::vector<std::pair<int, int>> tapers;  // sample ranges of lane additions / drops
+      {
+        auto driving = [](const odr::LaneSection &sec) {
+          int c = 0;
+          for (const auto *side : {&sec.left, &sec.right})
+            for (const auto &l : *side) c += l.type == "driving";
+          return c;
+        };
+        for (size_t k = 1; k < a.lanes.size(); ++k) {
+          if (driving(a.lanes[k]) == driving(a.lanes[k - 1])) continue;
+          // a lane drops over a taper before the boundary, a new one grows after it
+          const bool drop = driving(a.lanes[k]) < driving(a.lanes[k - 1]);
+          const double sb = a.lanes[k].s, next = k + 1 < a.lanes.size() ? a.lanes[k + 1].s : L;
+          const double s0 = sb - (drop ? std::min(opt.taperLength, 0.8 * (sb - a.lanes[k - 1].s)) : 0.0) - 5.0;
+          const double s1 = sb + (drop ? 0.0 : std::min(opt.taperLength, 0.8 * (next - sb))) + 5.0;
+          tapers.push_back({static_cast<int>(std::floor(s0 / L * (n - 1))), static_cast<int>(std::ceil(s1 / L * (n - 1)))});
+        }
+      }
       std::vector<double> sm(n, 0.0);
       for (int i = 0; i < n; ++i) {
         if (std::abs(push[i]) < 1e-6) continue;
         push[i] = std::clamp(push[i], -maxShift, maxShift);
         const int ramp = std::max(1, static_cast<int>(std::max(60.0, 75.0 * std::abs(push[i])) / step));
-        for (int k = -ramp; k <= ramp; ++k) {
+        double mph = 25.0;
+        for (const auto &t : a.types)
+          if (t.s <= L * i / (n - 1) + 1e-6 && t.speedMax) mph = t.speedUnit == "mph" ? *t.speedMax : *t.speedMax / 1.609344;
+        const double S = std::max(20.0, mph), rate = S >= 45.0 ? 2.0 / S : 120.0 / (S * S);
+        const int shortest = static_cast<int>(std::ceil(1.5 * std::abs(push[i]) / rate / step)) + 1;  // (with room to spare)
+        int rampBack = ramp, rampOn = ramp;
+        for (const auto &[t0, t1] : tapers) {
+          if (t1 < i && i - t1 >= shortest) rampBack = std::min(rampBack, i - t1);
+          if (t0 > i && t0 - i >= shortest) rampOn = std::min(rampOn, t0 - i);
+        }
+        for (int k = -rampBack; k <= rampOn; ++k) {
           const int j = i + k;
           if (j < 0 || j >= n) continue;
-          const double u = 1.0 - std::abs(k) / static_cast<double>(ramp + 1);
+          const double u = 1.0 - std::abs(k) / static_cast<double>((k < 0 ? rampBack : rampOn) + 1);
           const double v = push[i] * (u * u * (3 - 2 * u));
           if (std::abs(v) > std::abs(sm[j])) sm[j] = v;
         }
@@ -220,14 +337,105 @@ void Builder::resolveOverlaps() {
         const int p = std::max(0, i - 1), q = std::min(n - 1, i + 1);
         d[i] = (off[q] - off[p]) / std::max(1e-9, ss[q] - ss[p]);
       }
+      // OpenDRIVE 1.9 Annex D.1.3 no kinks where lanes meet: the shift is level at the road's ends, so
+      // the offset keeps its own slope there (a sloped offset on a curve turns each lane edge by a
+      // different angle, which the connecting road beyond cannot follow)
+      d[0] = laneOffsetSlope(base, ss[0]);
+      d[n - 1] = laneOffsetSlope(base, ss[n - 1]);
+      // knots every ~10 m, plus one a sample in from each end; a cubic spline through them: pieces join with equal
+      // value, slope and second derivative, so lane edges stay G2 inside the road (Annex D.1.3 smoothness of lanes;
+      // finite-difference knot slopes gave C1 pieces whose curvature stepped at every knot). At both ends the spline
+      // keeps the original offset's slope and second derivative (lane edges meet the connecting roads G2 as before):
+      // the two extra conditions are met by freeing the values at the two near-end knots (one sample from the end)
+      std::vector<int> knots;
+      for (int k = 0; k < n - 1; k += every) {
+        knots.push_back(k);
+        if (k == 0 && every > 1 && n >= 4) knots.push_back(1);  // (a road of a few samples: knots 0 and n - 1 only)
+      }
+      if (every > 1 && n >= 4 && knots.back() != n - 2) knots.push_back(n - 2);
+      knots.push_back(n - 1);
+      const size_t K = knots.size();
+      std::vector<double> y(K), slope(K);
+      for (size_t j = 0; j < K; ++j) y[j] = off[knots[j]];
+      slope[0] = d[0], slope[K - 1] = d[n - 1];
+      auto secondDeriv = [&](double s) {  // of the original laneOffset
+        const std::vector<odr::Poly3> &rec = original[mi];
+        for (size_t r = rec.size(); r-- > 0;)
+          if (rec[r].s <= s + 1e-9) return 2.0 * rec[r].c + 6.0 * rec[r].d * (s - rec[r].s);
+        return 0.0;
+      };
+      if (K >= 4) {
+        // unknowns: slope[1 .. K-2], y[1], y[K-2]; equations: C2 at knots 1 .. K-2, f'' at s = 0 and s = L
+        const size_t U = K;  // (K - 2) slopes + 2 values
+        auto col = [&](bool isSlope, size_t j) -> long {
+          if (isSlope) return (j >= 1 && j + 1 < K) ? static_cast<long>(j - 1) : -1;
+          return j == 1 ? static_cast<long>(K - 2) : j + 2 == K ? static_cast<long>(K - 1) : -1;
+        };
+        std::vector<std::vector<double>> A(U, std::vector<double>(U + 1, 0.0));
+        auto add = [&](size_t row, bool isSlope, size_t j, double coef) {
+          const long c = col(isSlope, j);
+          if (c >= 0) A[row][c] += coef;
+          else A[row][U] -= coef * (isSlope ? slope[j] : y[j]);
+        };
+        for (size_t j = 1; j + 1 < K; ++j) {
+          const double h0 = ss[knots[j]] - ss[knots[j - 1]], h1 = ss[knots[j + 1]] - ss[knots[j]];
+          const size_t row = j - 1;
+          add(row, true, j - 1, 1.0 / h0), add(row, true, j, 2.0 * (1.0 / h0 + 1.0 / h1)), add(row, true, j + 1, 1.0 / h1);
+          add(row, false, j - 1, 3.0 / (h0 * h0)), add(row, false, j, -3.0 / (h0 * h0) + 3.0 / (h1 * h1));
+          add(row, false, j + 1, -3.0 / (h1 * h1));
+        }
+        {  // f''(0) of the first piece = (6 (y1 - y0) - h (4 m0 + 2 m1)) / h^2
+          const double h = ss[knots[1]] - ss[knots[0]];
+          const size_t row = K - 2;
+          add(row, false, 1, 6.0 / (h * h)), add(row, false, 0, -6.0 / (h * h));
+          add(row, true, 0, -4.0 / h), add(row, true, 1, -2.0 / h);
+          A[row][U] += secondDeriv(ss[0]);
+        }
+        {  // f''(h) of the last piece = (-6 (y1 - y0) + h (2 m0 + 4 m1)) / h^2
+          const double h = ss[knots[K - 1]] - ss[knots[K - 2]];
+          const size_t row = K - 1;
+          add(row, false, K - 1, -6.0 / (h * h)), add(row, false, K - 2, 6.0 / (h * h));
+          add(row, true, K - 2, 2.0 / h), add(row, true, K - 1, 4.0 / h);
+          A[row][U] += secondDeriv(ss[n - 1]);
+        }
+        // Gaussian elimination, partial pivoting (banded except the two end rows; U is a few hundred at most)
+        bool ok = true;
+        for (size_t c = 0; c < U && ok; ++c) {
+          size_t piv = c;
+          for (size_t r = c + 1; r < U; ++r)
+            if (std::abs(A[r][c]) > std::abs(A[piv][c])) piv = r;
+          if (std::abs(A[piv][c]) < 1e-12) ok = false;
+          else {
+            std::swap(A[c], A[piv]);
+            for (size_t r = c + 1; r < U; ++r) {
+              const double f = A[r][c] / A[c][c];
+              if (f != 0.0)
+                for (size_t k = c; k <= U; ++k) A[r][k] -= f * A[c][k];
+            }
+          }
+        }
+        if (ok) {
+          std::vector<double> x(U);
+          for (size_t r = U; r-- > 0;) {
+            double v = A[r][U];
+            for (size_t k = r + 1; k < U; ++k) v -= A[r][k] * x[k];
+            x[r] = v / A[r][r];
+          }
+          for (size_t j = 1; j + 1 < K; ++j) slope[j] = x[j - 1];
+          y[1] = x[K - 2], y[K - 2] = x[K - 1];
+        } else {
+          for (size_t j = 1; j + 1 < K; ++j) slope[j] = d[knots[j]];
+        }
+      } else {
+        for (size_t j = 1; j + 1 < K; ++j) slope[j] = d[knots[j]];
+      }
       std::vector<odr::Poly3> lo;
-      int k0 = 0;
-      while (k0 < n - 1) {
-        const int k1 = std::min(n - 1, k0 + every);
-        lo.push_back(odr::Poly3::hermite(ss[k0], ss[k1] - ss[k0], off[k0], d[k0], off[k1], d[k1]));
-        k0 = k1;
+      for (size_t j = 0; j + 1 < K; ++j) {
+        const int k0 = knots[j], k1 = knots[j + 1];
+        lo.push_back(odr::Poly3::hermite(ss[k0], ss[k1] - ss[k0], y[j], slope[j], y[j + 1], slope[j + 1]));
       }
       a.laneOffset = lo;
+      measure(mi);
       ++shifted;
     }
     rep.overlapShifts += shifted;

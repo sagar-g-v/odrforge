@@ -9,6 +9,8 @@ namespace odrforge {
 
 namespace {
 
+// lanes carrying vehicle traffic: driving and the motorway lane types of OpenDRIVE 1.8.0 §11.7.1
+const std::set<std::string> kVehicleLanes = {"driving", "entry", "exit", "onRamp", "offRamp", "connectingRamp", "bidirectional"};
 const std::set<std::string> kLaneTypes14 = {"none", "driving", "stop", "shoulder", "biking", "sidewalk", "border",
                                             "restricted", "parking", "bidirectional", "median", "special1",
                                             "special2", "special3", "roadWorks", "tram", "rail", "entry", "exit",
@@ -71,16 +73,23 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
   auto err = [&](const std::string &rule, const std::string &m) { report(true, rule, m); };
   auto warn = [&](const std::string &rule, const std::string &m) { report(false, rule, m); };
 
-  // ---- header (spec 1.2, 1.3)
+  // ---- header (OpenDRIVE 1.8.0 §6.4, georeferencing §8.5)
   if (od.header.revMinor < 4 || od.header.revMinor > 9) err("spec1.2.revMinor", "unsupported revMinor");
   if (od.header.geoReference.empty()) warn("spec1.3.geoReference", "no geoReference");
 
   std::map<std::string, const odr::Road *> roads;
   std::map<std::string, const odr::Junction *> junctions;
-  for (const auto &j : od.junctions)
-    if (!junctions.emplace(j.id, &j).second) err("spec6.junction_id_unique", "duplicate junction id " + j.id);
+  std::set<std::string> crossingRoads;  // OpenDRIVE 1.9 §12.5: a cross path's road, linked by its lane links
+  std::set<std::string> boundaryRoads;  // roads a junction boundary runs along by their reference line
+  for (const auto &j : od.junctions) {
+    if (!junctions.emplace(j.id, &j).second) err("ids.id_unique_in_class", "duplicate junction id " + j.id);
+    for (const auto &cp : j.crossPaths) crossingRoads.insert(cp.crossingRoad);
+    // OpenDRIVE 1.8.0 §12.10: roads added to close a junction boundary "are not required to have any lanes"
+    for (const auto &sg : j.boundary)
+      if (sg.type == "lane" && sg.boundaryLane == 0) boundaryRoads.insert(sg.roadId);
+  }
   for (const auto &r : od.roads) {
-    if (!roads.emplace(r.id, &r).second) err("spec5.road_id_unique", "duplicate road id " + r.id);
+    if (!roads.emplace(r.id, &r).second) err("ids.id_unique_in_class", "duplicate road id " + r.id);
     if (target.name == "carla" && !isNumeric(r.id)) err("carla.numeric_ids", "road id not numeric " + r.id);
     if (target.maxIdLength && r.id.size() > target.maxIdLength) err("carla.id_length", "road id too long " + r.id);
   }
@@ -88,9 +97,9 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
   for (const auto &r : od.roads) {
     const std::string R_ = "road " + r.id + ": ";
     const double L = r.length();
-    if (r.junction != "-1" && !junctions.count(r.junction)) err("spec5.junction_attribute", R_ + "unknown junction " + r.junction);
-    // ---- planView (spec 2)
-    if (r.planView.elements.empty()) err("spec2.planView_required", R_ + "no geometry");
+    if (r.junction != "-1" && !junctions.count(r.junction)) err("ids.only_ref_defined_ids", R_ + "unknown junction " + r.junction);
+    // ---- planView (OpenDRIVE 1.8.0 §9.2 road reference line)
+    if (r.planView.elements.empty()) err("road.geometry.refline_exists", R_ + "no geometry");
     double s = 0.0;
     for (size_t i = 0; i < r.planView.elements.size(); ++i) {
       const auto &e = r.planView.elements[i];
@@ -115,7 +124,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       }
       s += e.length;
     }
-    // ---- elevation / laneOffset records (spec 3, 4.1): ascending and continuous
+    // ---- elevation / laneOffset records (OpenDRIVE 1.8.0 §10.5, §11.4): ascending and continuous
     auto profile = [&](const std::vector<odr::Poly3> &v, const char *rule, const char *what) {
       for (size_t i = 1; i < v.size(); ++i) {
         if (v[i].s < v[i - 1].s) err(rule, R_ + what + " records not ascending");
@@ -131,9 +140,9 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       if (rev >= 8 && !t.country.empty() && t.country.size() != 2) err("road.type.only_alpha_2_country_codes", R_ + "country " + t.country);
       if (t.speedMax && !kSpeedUnits.count(t.speedUnit)) err("spec3.speed_unit", R_ + "road speed unit " + t.speedUnit);
     }
-    // ---- lane sections (spec 4)
-    if (r.lanes.empty()) err("spec4.1.lane_section_required", R_ + "no lane section");
-    if (!r.lanes.empty() && r.lanes.front().s > 1e-6) err("spec4.1.lane_section_from_zero", R_ + "first lane section does not start at 0");
+    // ---- lane sections (OpenDRIVE 1.8.0 §11.3)
+    if (r.lanes.empty()) err("road.lane_section.lane_sect_req", R_ + "no lane section");
+    if (!r.lanes.empty() && r.lanes.front().s > 1e-6) err("road.lane.lane_sect_first", R_ + "first lane section does not start at 0");
     for (size_t si = 0; si < r.lanes.size(); ++si) {
       const auto &sec = r.lanes[si];
       const double s1 = si + 1 < r.lanes.size() ? r.lanes[si + 1].s : L;
@@ -144,19 +153,20 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       if (sec.center.id != 0) err("road.lane.center_lane_singular", S_ + "center lane id is not 0");
       if (!sec.center.widths.empty() || sec.center.speedMax || !sec.center.accessDeny.empty())
         err("spec4.1.center_lane_properties", S_ + "center lane carries width / speed / access");
-      if (sec.left.empty() && sec.right.empty()) err("road.lane.lane_section_drivable", S_ + "no lanes besides the center lane");
+      if (sec.left.empty() && sec.right.empty() && !(boundaryRoads.count(r.id) && r.junction != "-1"))
+        err("road.lane.lane_section_drivable", S_ + "no lanes besides the center lane");
       for (int sign : {1, -1}) {
         const auto &side = sign > 0 ? sec.left : sec.right;
         for (size_t k = 0; k < side.size(); ++k) {
           const odr::Lane &l = side[k];
           const std::string Ls = S_ + "lane " + std::to_string(l.id) + ": ";
-          if (l.id != sign * static_cast<int>(k + 1)) err("spec10.lane_id_contiguity", Ls + "ids not contiguous 1..n / -1..-m");
+          if (l.id != sign * static_cast<int>(k + 1)) err("road.lane.lane_order_no_gaps", Ls + "ids not contiguous 1..n / -1..-m");
           if (!validLaneType(l.type, rev)) err("spec4.3.lane_type_enum", Ls + "type '" + l.type + "' not valid in 1." + std::to_string(rev));
           if (target.name == "carla" && !carlaLaneType(l.type)) err("carla.lane_type", Ls + "type unknown to CARLA");
-          // width (spec 4.4)
+          // width (OpenDRIVE 1.8.0 §11.6)
           if (l.widths.empty() || std::abs(l.widths.front().s) > 1e-9) err("road.lane.width.sOffset_zero", Ls + "no width entry at sOffset 0");
           for (size_t w = 1; w < l.widths.size(); ++w) {
-            if (l.widths[w].s < l.widths[w - 1].s) err("spec4.4.width_ascending", Ls + "width records not ascending");
+            if (l.widths[w].s < l.widths[w - 1].s) err("road.lane.width.elem_asc_order", Ls + "width records not ascending");
             const double jump = std::abs(l.widths[w - 1].eval(l.widths[w].s - l.widths[w - 1].s) - l.widths[w].a);
             if (jump > 1e-3) warn("spec4.4.width_continuity", Ls + "width jumps by " + std::to_string(jump) + " m");
           }
@@ -171,7 +181,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
             if (m.weight != "standard" && m.weight != "bold") err("spec4.5.roadMark_weight", Ls + "roadMark weight " + m.weight);
           }
           if (l.speedMax && !kSpeedUnits.count(l.speedUnit)) err("spec4.7.speed_unit", Ls + "lane speed unit " + l.speedUnit);
-          // lane links inside the road (spec 4.6): must exist in the neighbouring section, consistently
+          // lane links inside the road (OpenDRIVE 1.8.0 §11.5): must exist in the neighbouring section, consistently
           if (l.link.predecessor && si > 0) {
             const auto *p = odr::findLane(r.lanes[si - 1], *l.link.predecessor);
             if (!p) err("spec4.6.lane_link_target", Ls + "predecessor lane missing in previous section");
@@ -180,28 +190,31 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
           if (l.link.successor && si + 1 < r.lanes.size()) {
             if (!odr::findLane(r.lanes[si + 1], *l.link.successor)) err("spec4.6.lane_link_target", Ls + "successor lane missing in next section");
           }
-          // a lane with zero width at a section joint must not be linked across it (spec 4.4)
+          // a lane with zero width at a section joint must not be linked across it (OpenDRIVE 1.8.0 §11.5,
+          // rules road.lane.link.zero_width_at_start / zero_width_at_end)
           if (si > 0 && l.link.predecessor && odr::laneWidthAt(l, 0.0) < 1e-6)
-            err("spec4.4.zero_width_no_predecessor", Ls + "starts with zero width but has a predecessor");
+            err("road.lane.link.zero_width_at_start", Ls + "starts with zero width but has a predecessor");
           if (si + 1 < r.lanes.size() && l.link.successor && odr::laneWidthAt(l, secLen) < 1e-6)
-            err("spec4.4.zero_width_no_successor", Ls + "ends with zero width but has a successor");
+            err("road.lane.link.zero_width_at_end", Ls + "ends with zero width but has a successor");
         }
       }
     }
-    // ---- road links (spec 5)
+    // ---- road links (OpenDRIVE 1.8.0 §10.3)
     for (bool pred : {true, false}) {
       const auto &lt = pred ? r.predecessor : r.successor;
       if (!lt) continue;
       if (lt->elementType == "junction") {
         auto jt = junctions.find(lt->elementId);
         if (jt == junctions.end()) {
-          err("spec5.link_target", R_ + "unknown junction " + lt->elementId);
+          err("ids.only_ref_defined_ids", R_ + "unknown junction " + lt->elementId);
           continue;
         }
         if (r.junction != "-1") err("spec6.1.connecting_road_links", R_ + "connecting road links to a junction");
         bool known = false;  // the junction must know this road (incoming, or target of a connecting road)
         for (const auto &c : jt->second->connections) {
           if (c.incomingRoad == r.id) known = true;
+          // OpenDRIVE 1.9 §12.6: a direct junction names the road it links to (@linkedRoad)
+          if (jt->second->type == "direct" && c.connectingRoad == r.id) known = true;
           auto cr = roads.find(c.connectingRoad);
           if (cr != roads.end() && cr->second->successor && cr->second->successor->elementId == r.id) known = true;
         }
@@ -209,7 +222,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       } else if (lt->elementType == "road") {
         auto ot = roads.find(lt->elementId);
         if (ot == roads.end()) {
-          err("spec5.link_target", R_ + "unknown road " + lt->elementId);
+          err("ids.only_ref_defined_ids", R_ + "unknown road " + lt->elementId);
           continue;
         }
         if (lt->contactPoint != "start" && lt->contactPoint != "end") err("spec5.contactPoint", R_ + "road link without contactPoint");
@@ -226,8 +239,9 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         err("spec5.elementType", R_ + "link elementType " + lt->elementType);
       }
     }
-    // ---- connecting roads: lane-level fit at both ends (spec 6.1, pitfalls 4 - 6, 11)
-    if (r.junction != "-1" && !r.lanes.empty()) {
+    // ---- connecting roads: lane-level fit at both ends (OpenDRIVE 1.8.0 §12.4 "The linked lanes shall
+    // fit smoothly", 1.9.0 rule junctions.connection.smooth_fit)
+    if (r.junction != "-1" && !r.lanes.empty() && !crossingRoads.count(r.id)) {
       if (!r.predecessor || !r.successor) err("spec6.1.connecting_road_links", R_ + "connecting road without predecessor and successor");
       const auto &first = r.lanes.front(), &last = r.lanes.back();
       for (const auto *side : {&first.left, &first.right})
@@ -268,7 +282,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
               R.maxLinkWidthDiff = std::max(R.maxLinkWidthDiff, std::abs(wo - wc));
               if (std::abs(wo - wc) > 0.02) err("spec10.lane_width_at_junction", R_ + "lane width differs from road " + o.id);
             }
-            // surface height at the two lane centres (elevation + banking, spec 3)
+            // surface height at the two lane centres (elevation + banking, OpenDRIVE 1.8.0 §10.5)
             double oa, ob, ca, cb;
             odr::laneBorders(o, so, *ll, oa, ob);
             odr::laneBorders(r, sc, l.id, ca, cb);
@@ -280,20 +294,20 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
     }
   }
 
-  // ---- signals (spec 7) and objects (spec 8)
+  // ---- signals (OpenDRIVE 1.8.0 §14) and objects (§13)
   std::set<std::string> signalIds, dynamicSignals, objectIds;
   for (const auto &r : od.roads) {
     const bool lhtRoad = r.rule == "LHT";
     for (const auto &s : r.signals) {
       const std::string S_ = "signal " + s.id + ": ";
-      if (!signalIds.insert(s.id).second) err("spec7.1.id_unique", S_ + "duplicate id");
+      if (!signalIds.insert(s.id).second) err("ids.id_unique_in_class", S_ + "duplicate id");
       if (s.dynamic) dynamicSignals.insert(s.id);
       if (target.maxIdLength && s.id.size() > target.maxIdLength) err("carla.id_length", S_ + "id too long");
       if (s.s < -1e-6 || s.s > r.length() + 1e-6) err("spec7.1.s_range", S_ + "s outside road " + r.id);
       if (s.orientation != "+" && s.orientation != "-" && s.orientation != "none") err("spec7.1.orientation", S_ + "orientation " + s.orientation);
       if (s.value && s.unit.empty()) err("spec7.1.value_unit", S_ + "value without unit");
       if (rev >= 8 && s.country != "OpenDRIVE" && s.country.size() != 2) err("spec7.1.country_alpha2", S_ + "country " + s.country);
-      if (s.type.empty()) err("spec7.1.type_required", S_ + "no type");
+      if (s.type.empty()) err("road.signal.signal_type", S_ + "no type");
       for (const auto &v : s.validity) {
         if (v.fromLane > v.toLane) err("spec7.1.validity_order", S_ + "fromLane > toLane");
         for (int id : {v.fromLane, v.toLane}) {
@@ -308,13 +322,18 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
     }
     for (const auto &o : r.objects) {
       const std::string O_ = "object " + o.id + ": ";
-      if (!objectIds.insert(o.id).second) err("spec8.1.id_unique", O_ + "duplicate id");
+      if (!objectIds.insert(o.id).second) err("ids.id_unique_in_class", O_ + "duplicate id");
       if (o.s < -1e-6 || o.s > r.length() + 1e-6) err("spec8.1.s_range", O_ + "s outside road " + r.id);
       if (!o.type.empty() && !kObjectTypes.count(o.type)) err("spec8.1.type_enum", O_ + "type " + o.type);
       if (rev >= 8 && kObjectTypesDeprecated18.count(o.type)) warn("spec8.1.type_deprecated", O_ + "type " + o.type + " deprecated in 1.8");
-      if (o.radius > 0 && o.length > 0) err("spec8.1.box_or_circle", O_ + "both radius and length");
+      if (o.radius > 0 && o.length > 0) err("road.object.circular_vs_angular", O_ + "both radius and length");
+      // 1.9.0 road.object.repeating.valid_s_length: a repeat lies on its road
+      for (const auto &rp : o.repeats)
+        if (rp.s < -1e-6 || rp.length < 0 || rp.s + rp.length > r.length() + 1e-6)
+          err("road.object.repeating.valid_s_length", O_ + "repeat [" + std::to_string(rp.s) + ", " +
+                                                          std::to_string(rp.s + rp.length) + "] outside road " + r.id);
       if (!o.outline.empty()) {
-        if (o.outline.size() < 2) err("spec8.2.outline_corners", O_ + "outline with fewer than 2 corners");
+        if (o.outline.size() < 2) err("road.corner_local.element_min_amount", O_ + "outline with fewer than 2 corners");
         double area = 0;
         for (size_t i = 0; i < o.outline.size(); ++i) {
           const auto &a = o.outline[i], &b = o.outline[(i + 1) % o.outline.size()];
@@ -324,32 +343,32 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
       }
     }
     for (const auto &b : r.bridges)
-      if (!objectIds.insert(b.id).second) err("spec8.1.id_unique", "bridge " + b.id + ": duplicate object id");
+      if (!objectIds.insert(b.id).second) err("ids.id_unique_in_class", "bridge " + b.id + ": duplicate object id");
     for (const auto &t : r.tunnels)
-      if (!objectIds.insert(t.id).second) err("spec8.1.id_unique", "tunnel " + t.id + ": duplicate object id");
+      if (!objectIds.insert(t.id).second) err("ids.id_unique_in_class", "tunnel " + t.id + ": duplicate object id");
   }
-  // ---- controllers (spec 7.2)
+  // ---- controllers (OpenDRIVE 1.8.0 §14.6)
   std::set<std::string> ctrlIds, referenced;
   for (const auto &c : od.controllers) {
-    if (!ctrlIds.insert(c.id).second) err("spec7.2.controller_id_unique", "duplicate controller id " + c.id);
-    if (c.signalIds.empty()) err("spec7.2.controller_controls", "controller " + c.id + " controls no signal");
+    if (!ctrlIds.insert(c.id).second) err("ids.id_unique_in_class", "duplicate controller id " + c.id);
+    if (c.signalIds.empty()) err("road.signal.controller.valid_for_signals", "controller " + c.id + " controls no signal");
     for (const auto &sid : c.signalIds) {
-      if (!signalIds.count(sid)) err("spec7.2.control_signal", "controller " + c.id + " references unknown signal " + sid);
+      if (!signalIds.count(sid)) err("ids.only_ref_defined_ids", "controller " + c.id + " references unknown signal " + sid);
       else if (!dynamicSignals.count(sid)) warn("spec7.2.control_dynamic", "controller " + c.id + " controls static signal " + sid);
     }
   }
-  // ---- junctions (spec 6)
+  // ---- junctions (OpenDRIVE 1.8.0 §12)
   for (const auto &j : od.junctions) {
     const std::string J_ = "junction " + j.id + ": ";
     std::set<std::pair<std::string, std::string>> pairs;
     for (const auto &cn : j.connections) {
       auto ir = roads.find(cn.incomingRoad), cr = roads.find(cn.connectingRoad);
       if (ir == roads.end() || cr == roads.end()) {
-        err("spec6.1.connection_roads", J_ + "unknown road in connection " + cn.id);
+        err("ids.only_ref_defined_ids", J_ + "unknown road in connection " + cn.id);
         continue;
       }
       if (!pairs.insert({cn.incomingRoad, cn.connectingRoad}).second) err("junctions.connection.one_link_to_incoming", J_ + "duplicate connection pair");
-      if (ir->second->junction != "-1") err("spec6.1.incoming_not_connecting", J_ + "incoming road " + cn.incomingRoad + " is a connecting road");
+      if (ir->second->junction != "-1") err("junctions.connection.connect_road_no_incoming_road", J_ + "incoming road " + cn.incomingRoad + " is a connecting road");
       if (j.type != "direct" && cr->second->junction != j.id) err("spec6.1.connecting_road_junction", J_ + "connecting road " + cn.connectingRoad + " not in junction");
       if (cn.contactPoint != "start" && cn.contactPoint != "end") err("spec6.1.contactPoint", J_ + "connection without contactPoint");
       if (cn.laneLinks.empty()) warn("spec6.1.laneLink_required", J_ + "connection " + cn.id + " without laneLink");
@@ -371,7 +390,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
     }
     for (const auto &c : j.controllers) {
       referenced.insert(c.id);
-      if (!ctrlIds.count(c.id)) err("spec7.2.junction_controller", J_ + "unknown controller " + c.id);
+      if (!ctrlIds.count(c.id)) err("ids.only_ref_defined_ids", J_ + "unknown controller " + c.id);
     }
   }
   for (const auto &c : od.controllers)
@@ -474,7 +493,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         const odr::LaneSection &sec = odr::sectionAt(r, s);
         for (const auto *side : {&sec.left, &sec.right})
           for (const auto &l : *side) {
-            if (l.type != "driving") continue;
+            if (!kVehicleLanes.count(l.type)) continue;
             Pose c;
             double a, b;
             if (!odr::laneCenter(r, s, l.id, c) || !odr::laneBorders(r, s, l.id, a, b) || std::abs(b - a) < 0.5) continue;
@@ -499,7 +518,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
               for (const auto *qside : {&qs.left, &qs.right})
                 for (const auto &ql : *qside) {
                   double qa, qb;
-                  if (ql.type != "driving" || !odr::laneBorders(q, so, ql.id, qa, qb)) continue;
+                  if (!kVehicleLanes.count(ql.type) || !odr::laneBorders(q, so, ql.id, qa, qb)) continue;
                   if (to > std::min(qa, qb) + 0.2 && to < std::max(qa, qb) - 0.2) inside = true;
                 }
               if (inside && std::abs(odr::surfaceZ(q, so, to) - z) < 3.0) {

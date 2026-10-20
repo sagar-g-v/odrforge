@@ -48,10 +48,19 @@ add_library(odrforge
   src/validate.cpp
   src/odr_reader.cpp
   src/terrain.cpp
+  src/conform.cpp
   src/elevation.cpp
   src/overlap.cpp
   src/snap.cpp
   src/gore.cpp
+  src/direct_junctions.cpp
+  src/curbs.cpp
+  src/cross_paths.cpp
+  src/barriers.cpp
+  src/junction_surface.cpp
+  src/sidewalk.cpp
+  src/kerbs.cpp
+  src/parking.cpp
   src/viz.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/viz_template.cpp
 )
@@ -79,7 +88,8 @@ endif()
 if(ODRFORGE_BUILD_TESTS)
   enable_testing()
   add_executable(odrforge_tests tests/test_main.cpp tests/test_geometry.cpp tests/test_projection.cpp
-    tests/test_spec.cpp tests/test_network.cpp tests/test_elevation.cpp tests/test_topology.cpp)
+    tests/test_spec.cpp tests/test_network.cpp tests/test_elevation.cpp tests/test_topology.cpp tests/test_parking.cpp
+    tests/test_kerbs.cpp)
   target_link_libraries(odrforge_tests PRIVATE odrforge)
   set(ODRFORGE_TEST_OUT ${CMAKE_CURRENT_BINARY_DIR}/test_out)
   file(MAKE_DIRECTORY ${ODRFORGE_TEST_OUT})
@@ -94,9 +104,29 @@ if(ODRFORGE_BUILD_TESTS)
       add_test(NAME xsd_conformance COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
                ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${ODRFORGE_TEST_OUT})
       set_tests_properties(xsd_conformance PROPERTIES FIXTURES_REQUIRED scenario_files)
+      add_test(NAME xsd_conformance_1_4 COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py --allow-lht-rule
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_4/OpenDRIVE_1.4H.xsd ${ODRFORGE_TEST_OUT}/rev4)
+      set_tests_properties(xsd_conformance_1_4 PROPERTIES FIXTURES_REQUIRED scenario_files)
       add_test(NAME xsd_rejects_invalid COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd_validate.py
                ${CMAKE_CURRENT_SOURCE_DIR}/tests/xsd/opendrive_1_8_1 ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/invalid_roadmark_height.xodr)
       set_tests_properties(xsd_rejects_invalid PROPERTIES WILL_FAIL TRUE)
+      # tools/odrforge_pipeline.py: config defaults / merging, source choice, download plans (no network)
+      add_test(NAME pipeline_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/pipeline_selftest.py)
+      # tools/inspect/metrics.py: the per-run metrics snapshot and its before / after difference
+      add_test(NAME metrics_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/metrics_selftest.py)
+      # tools/make_terrain.py: deck cells need a smooth surface (structure edges and tree crowns are not decks)
+      add_test(NAME make_terrain_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/make_terrain_selftest.py)
+      # tools/inspect/gate.py: outputs staged during a run, published together at its end
+      add_test(NAME gate_stage_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/gate_stage_selftest.py)
+      # laneflow.py / invariants.py NAT-2: a section boundary where a lane rule changes (no-stopping near junctions)
+      add_test(NAME lane_rule_selftest COMMAND ${Python3_EXECUTABLE} -I
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/lane_rule_selftest.py $<TARGET_FILE:osm2xodr>)
+      # laneflow.py: a parking lane growing from zero by a mapped street-side parking area is explained
+      add_test(NAME laneflow_area_selftest COMMAND ${Python3_EXECUTABLE} -I
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/laneflow_area_selftest.py $<TARGET_FILE:osm2xodr>)
+      # kerb_gap.py (the proof measure of kerb-anchored edges): edges on the kerbs, and planted ones off them
+      add_test(NAME kerb_gap_selftest COMMAND ${Python3_EXECUTABLE} -I
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/kerb_gap_selftest.py $<TARGET_FILE:osm2xodr>)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()

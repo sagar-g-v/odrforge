@@ -1,0 +1,1014 @@
+[
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/00_preface/overview_open_x.png",
+  "viewed": true,
+  "figure": "Figure 1",
+  "chapter": "Preface (Introduction)",
+  "section": "Overview",
+  "caption": "Relationship between ASAM OpenDRIVE, ASAM OpenCRG, and ASAM OpenSCENARIO",
+  "shows": "Three tiles: an OpenDRIVE junction tile labelled static road network description, plus an OpenSCENARIO tile of the same junction with coloured vehicle paths and moving cars labelled dynamic scenario description, equals a page labelled scenario description with dynamic and static content. A bent arrow from the OpenDRIVE tile points to an OpenCRG tile (cobblestones, pothole, lane marking) labelled static road surface description.",
+  "lesson": "OpenDRIVE carries only static network content. Surface micro-relief belongs to OpenCRG (referenced from the road), traffic participants and their motion belong to OpenSCENARIO. A converter emits only the static layer.",
+  "right": [
+   "Emit roads, lanes, markings, signals, objects and junctions as static content only",
+   "Reference fine surface detail (potholes, cobbles) through <surface><CRG> instead of encoding it in elevation polynomials"
+  ],
+  "wrong": [
+   "Encoding vehicles, routes or signal phase timing in the .xodr",
+   "Trying to model pothole-scale relief with <elevation>/<shape> records"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same content as 1.7 Figure 3; now numbered Figure 1 and placed first in the introduction."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/00_preface/uml_notation.drawio.svg",
+  "viewed": true,
+  "figure": "Figure 2",
+  "chapter": "Preface (Introduction)",
+  "section": "Conventions and notations - Typographic conventions",
+  "caption": "UML notation",
+  "shows": "Drawio diagram (rendered for review): a directed association Class #1 -> Class #2 with the role name at the target end; five cardinality examples (no label = only one, 0..* zero or more, 0..1 optional, 1..* one or more, n specific number); an aggregation tree (aggregate class with hollow diamond, children Class #1..#n); and an inheritance tree (superclass with children Subclass #1..#n). In this 1.9 drawing the inheritance tree uses the same hollow diamond as aggregation instead of the UML hollow triangle (source uses endArrow=diamondThin for all six tree edges).",
+  "lesson": "Read association ends without a label as multiplicity exactly 1; the role name sits at the target end. In the 1.9 notation figure, inheritance and aggregation look identical, so decide subtype vs. composition from the class names/text (e.g. t_road_planView_geometry_* subtypes) rather than from the arrowhead shape.",
+  "right": [
+   "Treat an unlabelled association end as mandatory single child (e.g. exactly one <planView>)",
+   "Treat 0..1 as optional single, 0..* / 1..* as repeated children"
+  ],
+  "wrong": [
+   "Inferring inheritance vs aggregation from the arrowhead in this figure (it is drawn the same for both)",
+   "Emitting zero instances of an unlabelled (exactly-one) association"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same meaning as 1.7 Figure 1 but redrawn as drawio SVG; the ISO TS 19103 reference moved from the caption to the text; the inheritance tree now (incorrectly) shows a diamond head."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/00_preface/uml_attributes.png",
+  "viewed": true,
+  "figure": "Figure 3",
+  "chapter": "Preface (Introduction)",
+  "section": "Conventions and notations - Typographic conventions",
+  "caption": "UML attribute notation",
+  "shows": "The t_header class (stereotype _OpenDriveElement) with its attribute list. revMajor and revMinor have no multiplicity suffix; revMinor is boxed red as 'mandatory attribute'. name: string [0..1] is boxed blue as 'optional attribute'. Other optional attributes: version, date, north, south, east, west, vendor, all [0..1].",
+  "lesson": "An attribute without a [0..1] suffix is required and must always be written; [0..1] attributes may be omitted. For <header> only revMajor and revMinor are required (for 1.9 output: revMajor=1, revMinor=9).",
+  "right": [
+   "<header revMajor=\"1\" revMinor=\"9\"/> is minimally valid",
+   "Omit optional header attributes rather than writing empty strings"
+  ],
+  "wrong": [
+   "Omitting revMinor",
+   "Writing north/south/east/west with placeholder zeros when unknown"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Identical image to 1.7 Figure 2."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/00_images_reused/fig_junction.drawio.svg",
+  "viewed": true,
+  "figure": "Figure 110 (12.14) / Figure 135 (14.6)",
+  "chapter": "12 Junctions / 14 Signals (shared image)",
+  "section": "12.14 Signal synchronization groups in junctions; 14.6 Signal Controllers",
+  "caption": "Example of a junction with 20 traffic lights mapped into six signal groups (IDs 42-47)",
+  "shows": "Drawio plan view of a 4-arm crossroads with a double tram track running north-south through the middle and a pedestrian refuge on the north arm. Each signal head is labelled 'controllerId / signalId': vehicle three-aspect heads (44/17270, 44/17200, 46/16970, 46/16980, 46/17070, 46/17060), pedestrian heads (45/17271, 45/17300, 45/17361, 45/17360, 47/17080, 47/17061, 47/16971, 47/16990) and tram bar signals (42/17251-17253 on the north track, 43/17261-17263 on the south track). 20 signals, 6 controllers 42-47.",
+  "lesson": "Signals are grouped by <controller> (one controller per signal group, each referencing its signals via <control signalId>); signals of one group switch together. Several groups in one junction may be combined into a synchronisation group via <junction><controller id=...>. Vehicle, pedestrian and tram heads can share a junction but belong to different groups.",
+  "right": [
+   "One <controller> per group of signals that always show the same phase (e.g. 44 for both opposing vehicle heads)",
+   "Reference the controllers from the <junction> via <controller id> to synchronise them",
+   "Give every dynamic signal a unique id and reference it from exactly the controller that switches it"
+  ],
+  "wrong": [
+   "Putting conflicting movements (e.g. 44 and 46) into the same controller",
+   "Encoding signal timing/phases in OpenDRIVE (belongs to OpenSCENARIO / signal program)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.8/1.9 (no counterpart in the 1.7 figure set). Not part of ch08-10 text but stored in the reused-images folder."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_overview.png",
+  "viewed": true,
+  "figure": "Figure 7",
+  "chapter": "8 Coordinate systems",
+  "section": "8.1 Introduction to coordinate systems",
+  "caption": "Available coordinate systems in ASAM OpenDRIVE",
+  "shows": "Three axis triads side by side with identical layout: inertial x (forward-right), y (left), z (up); road reference line s (forward), t (left), h (up); local u (forward), v (left), z (up). Same colour coding: first axis blue, second green pointing left, third red up.",
+  "lesson": "All three frames are right-handed with the second axis to the LEFT of the first and the third axis up. +t and +v are left of the direction of travel along s/u.",
+  "right": [
+   "t > 0 means left of the reference line",
+   "Cross product s x t = h (up)"
+  ],
+  "wrong": [
+   "Treating t as positive to the right (left-handed/screen convention)",
+   "Using y-down image coordinates for x/y"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 5 (redrawn, 'road reference line' wording)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_interact.png",
+  "viewed": true,
+  "figure": "Figure 8",
+  "chapter": "8 Coordinate systems",
+  "section": "8.1 Introduction to coordinate systems",
+  "caption": "Coordinate systems in ASAM OpenDRIVE interacting with another",
+  "shows": "Plan view on an x/y grid: a curved road reference line rising to the upper right. At one point the s/t frame (s tangent, t perpendicular to the left); from there a perpendicular segment (right-angle mark) goes to the right side of the line to the local frame origin, whose u axis points down-right and v up-right (rotated relative to s).",
+  "lesson": "A local position is reached by going to s on the reference line, then moving perpendicular to the tangent by t (here t < 0, right side); the local orientation is then given relative to the s/t frame at that s, not relative to inertial x.",
+  "right": [
+   "x,y of an object = refline(s) + t * normal_left(s)",
+   "Object hdg relative to the reference-line tangent at its s"
+  ],
+  "wrong": [
+   "Offsetting t along inertial y instead of the local normal",
+   "Interpreting object hdg as an inertial heading"
+  ],
+  "formula": "P = C(s) + t * [-sin(theta(s)), cos(theta(s))]",
+  "new_vs_1_7": "Same content as 1.7 Figure 6 (redrawn, larger)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_all_2.png",
+  "viewed": true,
+  "figure": "Figure 9",
+  "chapter": "8 Coordinate systems",
+  "section": "8.1 Introduction to coordinate systems",
+  "caption": "Summary of coordinate system in ASAM OpenDRIVE",
+  "shows": "Perspective view: inertial triad at lower left; a straight road reference line (blue, labelled s) lying in the x/y plane; above it a shaded vertical wall up to a curved dark line labelled 'elevated road'. The s/t/h triad sits on the flat reference line; a dashed green line drops from the elevated road toward a local u/v/z triad offset to the right side; the local z axis is drawn as a long red line passing through the local origin.",
+  "lesson": "The planView reference line itself always lies in the z=0 plane; elevation lifts the road surface above it as a function of s. The local frame origin is at the road elevation at its (s,t) position, then oriented relative to s/t/h.",
+  "right": [
+   "Compute x,y from planView only; add z from elevation(s) (+ lateral profile) separately",
+   "Place object/local origins at elevation(s) + zOffset"
+  ],
+  "wrong": [
+   "Measuring s along the 3D (elevated) curve",
+   "Putting local origins at z=0 when the road is elevated"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Redrawn vs 1.7 Figure 17: now explicitly shows the 'elevated road' surface above a flat reference line, and the text adds that the local origin lies at the elevation of that position."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_s-t-road-based.drawio.svg",
+  "viewed": true,
+  "figure": "Figure 10",
+  "chapter": "8 Coordinate systems",
+  "section": "8.1 Introduction to coordinate systems",
+  "caption": "Reference-line-based s/t-coordinate system with origin at the beginning of the road",
+  "shows": "Drawio 3D sketch (rendered for review): inertial x/y/z axes; the road origin (x0, y0, 0) on the road reference line, whose dashed projection gives the orientation of the road on the x/y plane. Three road layers: the road projection P0 on the x/y plane (light blue), road section P1 with superelevation and no elevation (green, tilted about the reference line), and the actual road section P (grey) which is both superelevated and raised (labelled 'elevation (uphill)'). A sample point with coordinates s_i along the line and t_i across; t_superelevation drawn along the tilted cross-section; a rotation arrow about s labelled superelevation. Lane markings, 'driving direction, RHT' on the right side and 'oncoming traffic direction' on the left.",
+  "lesson": "s starts at 0 at the road origin (the start of the first <geometry>) and is measured on the x/y projection; t is measured across the road along the superelevated cross-section; the actual surface = projection, then rolled by superelevation about the reference line, then lifted by elevation. With RHT, right lanes (t<0) drive along +s and left lanes against it.",
+  "right": [
+   "Build the 3D surface as: plan-view point -> roll by superelevation about s -> add elevation(s)",
+   "s=0 at the first geometry's (x, y)",
+   "Under RHT, assign right-side lanes (negative ids) to the +s driving direction"
+  ],
+  "wrong": [
+   "Measuring t horizontally on a superelevated road",
+   "Applying elevation before computing plan-view arc length (changes s)",
+   "Assuming the reference line direction is the driving direction for both sides"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New figure in 1.8/1.9 (no 1.7 counterpart): a single 3D picture combining origin, projection, superelevation and elevation with RHT driving directions."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_inertial.png",
+  "viewed": true,
+  "figure": "Figure 11",
+  "chapter": "8 Coordinate systems",
+  "section": "8.2 Inertial coordinate systems",
+  "caption": "Inertial coordinate system with defined rotations",
+  "shows": "Three panels. Heading > 0: x and y rotate counter-clockwise about z (x' ahead of x toward y, y' rotated away), z = z'. Heading = 0, pitch > 0: rotation about y = y''; x'' tilts DOWN below x and z'' tilts forward toward x. Heading = pitch = 0, roll > 0: rotation about x = x'''; y''' rises above y and z''' tilts toward -y.",
+  "lesson": "Rotation order is heading (about z), then pitch (about the new y'), then roll (about the new x''). Right-hand rule throughout: positive heading = counter-clockwise seen from above; positive pitch = nose down; positive roll = left side up. Geographic: x=east, y=north, z=up.",
+  "right": [
+   "R = Rz(hdg) * Ry(pitch) * Rx(roll) applied in that intrinsic order",
+   "hdg 0 = east, +pi/2 = north"
+  ],
+  "wrong": [
+   "Treating positive pitch as nose-up",
+   "Applying roll before pitch",
+   "Measuring hdg clockwise from north (compass)"
+  ],
+  "formula": "R = Rz(heading) * Ry'(pitch) * Rx''(roll)",
+  "new_vs_1_7": "Same as 1.7 Figure 7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_inertial_example.png",
+  "viewed": true,
+  "figure": "Figure 12",
+  "chapter": "8 Coordinate systems",
+  "section": "8.2 Inertial coordinate systems",
+  "caption": "Inertial coordinate system with defined rotations",
+  "shows": "Four boxes showing a cube frame: (0,0,0) seen face-on with y left and z up; heading < 0 turns the box so x' appears pointing right toward the viewer side; heading < 0 & pitch < 0 lifts the front so x'' points up-right and z'' tilts back; heading < 0, pitch < 0, roll > 0 additionally rolls so y''' drops on one side and z''' leans.",
+  "lesson": "Same rotation convention demonstrated with signs: negative heading = clockwise from above, negative pitch = front edge up, positive roll = left side up. Each step rotates about the already-rotated axis.",
+  "right": [
+   "Use intrinsic z-y'-x'' rotations",
+   "Negative pitch for an uphill-facing object"
+  ],
+  "wrong": [
+   "Using extrinsic fixed-axis rotations",
+   "Flipping the pitch sign"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 8 (caption still duplicated with Figure 11)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/ref_line_sys.png",
+  "viewed": true,
+  "figure": "Figure 13",
+  "chapter": "8 Coordinate systems",
+  "section": "8.3 Road reference line coordinate systems",
+  "caption": "Road reference line coordinate system",
+  "shows": "Plan view on an X/Y grid (x=1..7, y=1..6): an S-shaped grey road with a dashed white reference line from about (2.3,1.2) to (5.8,5.4). Cross-section ticks labelled s=0..8 cross the road perpendicular to the line; at s=0 the s arrow (blue, tangent) and t arrow (green, pointing left) are drawn.",
+  "lesson": "s is arc length along the reference line in the x/y plane starting at 0 at the road start; t is perpendicular to the local tangent, positive to the left; constant-s lines are normals to the reference line (the tick spacing in the drawing is illustrative, not to scale).",
+  "right": [
+   "Constant-s cross-sections are perpendicular to the plan-view tangent",
+   "s monotonically increases along the road"
+  ],
+  "wrong": [
+   "Measuring t along a fixed inertial direction",
+   "Using chord length instead of arc length for s"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 9."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/ref_line_sys_rot.png",
+  "viewed": true,
+  "figure": "Figure 14",
+  "chapter": "8 Coordinate systems",
+  "section": "8.3 Road reference line coordinate systems",
+  "caption": "Road reference line coordinate system with defined rotations",
+  "shows": "Two panels. Left: heading rotation about h = h', s' and t' rotated counter-clockwise from s and t. Right: roll about s = s''', t''' raised above t and h''' tilted toward -t.",
+  "lesson": "The reference-line frame has only heading (from planView) and roll (from superelevation). No pitch exists in s/t/h; elevation does not rotate the frame.",
+  "right": [
+   "Frame orientation at s = Rz(theta(s)) * Rx(superelevation(s))"
+  ],
+  "wrong": [
+   "Adding a pitch from the elevation slope to the s/t/h frame"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 10 (redrawn; roll panel now labelled s = s''')."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/ref_line_sys_heading.png",
+  "viewed": true,
+  "figure": "Figure 15",
+  "chapter": "8 Coordinate systems",
+  "section": "8.3 Road reference line coordinate systems",
+  "caption": "Heading in road reference line",
+  "shows": "Plan view: a light-blue curving reference line from lower left to upper right with arrowhead. At the start the s arrow points east-north-east with t perpendicular to the left; at a later point s' is steeper (about 45 deg) and t' rotated accordingly. Caption inside: 'heading caused by <geometry>'.",
+  "lesson": "The heading of the s/t frame at any s comes only from the planView geometry (start hdg of the enclosing <geometry> plus integrated curvature) and changes continuously along the line.",
+  "right": [
+   "theta(s) = hdg_i + integral of curvature over (s - s_i) within geometry i"
+  ],
+  "wrong": [
+   "Taking heading from the chord between OSM nodes at sample positions while geometry says otherwise"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 11 (redrawn)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/ref_line_sys_superele.png",
+  "viewed": true,
+  "figure": "Figure 16",
+  "chapter": "8 Coordinate systems",
+  "section": "8.3 Road reference line coordinate systems",
+  "caption": "Roll in road reference line by superelevation",
+  "shows": "Cross-section in the x/z plane (looking along s): the road line pivots about the s point at z=0; the left part (t side) rises, the right part falls. t_superelevation lies along the tilted surface; a brace labelled 'lane width' is measured ALONG the tilted surface; h tilts to h_superelevation (toward -t). Caption: 'roll caused by <superelevation>'.",
+  "lesson": "Superelevation is a roll of the cross-section about the reference line (pivot at t=0). Lane width is measured along the tilted surface and does not change; only its plan-view projection shrinks (width*cos(alpha)). Positive superelevation raises the left side (road falls to the right).",
+  "right": [
+   "Lateral point: y_plan = t*cos(alpha), dz = t*sin(alpha)",
+   "Keep @width values unchanged when adding superelevation"
+  ],
+  "wrong": [
+   "Pivoting the roll about the road edge or centre of the carriageway when the reference line is elsewhere",
+   "Shrinking lane width to compensate for superelevation"
+  ],
+  "formula": "plan offset = t*cos(sup); dz = t*sin(sup)",
+  "new_vs_1_7": "Redrawn from 1.7 Figure 12; new 'lane width' brace along the tilted t-axis and the text now states width is measured in the superelevated lane while the projected width differs."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/ref_line_sys_ele.png",
+  "viewed": true,
+  "figure": "Figure 17",
+  "chapter": "8 Coordinate systems",
+  "section": "8.3 Road reference line coordinate systems",
+  "caption": "Elevation in road reference line",
+  "shows": "Side view (z vs. s): a grey elevation profile flat at 0 then rising smoothly to a plateau. Two s/t/h triads are drawn at z=0, one at the start and one under the rising part; both keep s horizontal and h vertical. Caption: '<elevation> projected on road reference line'.",
+  "lesson": "Elevation never pitches the s/t/h frame and does not change s (s stays plan-view arc length). Objects and signals use their own s/t, are NOT rolled by superelevation; their t follows the superelevated lane (so an object at a lane border stays at it), and zOffset is measured vertically from the elevation at s - to sit on a superelevated surface the zOffset must include the superelevation height t*sin(alpha).",
+  "right": [
+   "Road length = plan-view length regardless of grade",
+   "Object z = elevation(s) + zOffset; if the object should sit on a superelevated lane, add the cross-fall height into zOffset"
+  ],
+  "wrong": [
+   "Using 3D arc length for s or road @length",
+   "Rolling objects automatically with superelevation",
+   "Assuming zOffset=0 puts an object on a superelevated surface away from t=0"
+  ],
+  "formula": "z_object = elev(s) + zOffset",
+  "new_vs_1_7": "Image same as 1.7 Figure 13; NEW text in 1.8/1.9 on how objects/signals relate to superelevation (t along tilted lane, zOffset vertical from elevation)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_local.png",
+  "viewed": true,
+  "figure": "Figure 18",
+  "chapter": "8 Coordinate systems",
+  "section": "8.4 Local coordinate systems",
+  "caption": "Local coordinate system with defined rotations",
+  "shows": "Three panels identical in layout to Figure 11 but with u/v/z: heading about z (u', v' counter-clockwise), pitch about v = v'' (u'' tilts down, z'' forward), roll about u = u''' (v''' up, z''' toward -v).",
+  "lesson": "Local u/v/z uses the same heading-pitch-roll order and signs as the inertial frame; unrotated u = s direction, v = t direction, z = h.",
+  "right": [
+   "Object hdg/pitch/roll applied in z-y'-x'' order relative to the s/t/h frame"
+  ],
+  "wrong": [
+   "Using a different sign convention for objects than for the inertial frame"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 14."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_local_example.png",
+  "viewed": true,
+  "figure": "Figure 19",
+  "chapter": "8 Coordinate systems",
+  "section": "8.4 Local coordinate systems",
+  "caption": "Local coordinate systems with heading, pitch, roll",
+  "shows": "Four cube states as in Figure 12 with u/v/z labels: all zero; heading < 0; heading < 0 & pitch < 0; heading < 0, pitch < 0, roll > 0.",
+  "lesson": "Same sign demonstration for the local frame: negative heading clockwise from above, negative pitch lifts the front, positive roll lifts the left side.",
+  "right": [
+   "Reuse the inertial rotation code for objects"
+  ],
+  "wrong": [
+   "Inverting pitch for objects only"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 15."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/coo_sys_all_1.png",
+  "viewed": true,
+  "figure": "Figure 20",
+  "chapter": "8 Coordinate systems",
+  "section": "8.4 Local coordinate systems",
+  "caption": "Local coordinate system with respect to road reference line coordinate system",
+  "shows": "Plan view: curved reference line with the s/t frame at one point; a local origin on the right side (perpendicular foot marked); the local frame first drawn aligned with s/t (u', v' dashed), then rotated by an angle (arrow) to u, v. Annotation: 'Heading of local coordinate system with respect to reference line coordinate system'.",
+  "lesson": "A local frame is placed only via (s, t) and an orientation relative to s/t; heading 0 means u parallel to the reference-line tangent at that s, positive turns toward +t.",
+  "right": [
+   "Object world heading = theta(s) + hdg_object"
+  ],
+  "wrong": [
+   "Writing the inertial heading of an OSM feature directly into object @hdg"
+  ],
+  "formula": "heading_world = theta(s) + hdg_local",
+  "new_vs_1_7": "Same image as 1.7 Figure 16."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/08_coordinate_systems/geo_ref.png",
+  "viewed": true,
+  "figure": "Figure 21",
+  "chapter": "8 Coordinate systems",
+  "section": "8.5 Georeferencing",
+  "caption": "geoReference and offset",
+  "shows": "X/Y plot with broken axes: an S-shaped road at small OpenDRIVE coordinates (start circle near x=15, y=10) and the same road at large geo-referenced coordinates (near x=500000, y=40005). A dashed path from one start to the other is labelled 'x offset' and 'y offset'.",
+  "lesson": "Keep the OpenDRIVE coordinates small and put the large projected (e.g. UTM) values into <header><offset>. World = rotate(ODR by offset hdg) + offset, then pass to PROJ. Prefer hdg=0. Do not alter +x_0/+y_0 in the PROJ string to fake an offset; at most one projection definition; no projection means local Cartesian.",
+  "right": [
+   "<offset x=... y=... z=... hdg=\"0\"/> with x,y ~ UTM origin of the dataset",
+   "Use an official EPSG PROJ string in CDATA",
+   "Centre the OpenDRIVE coordinates roughly around (0,0)"
+  ],
+  "wrong": [
+   "Writing raw UTM eastings (5e5) into geometry @x",
+   "Editing +x_0/+y_0 of the projection to shift data",
+   "Applying PROJ before the offset",
+   "Two <geoReference> definitions"
+  ],
+  "formula": "xW = xODR*cos(hdg) - yODR*sin(hdg) + xOff; yW = xODR*sin(hdg) + yODR*cos(hdg) + yOff; zW = zODR + zOff (hdg=0: plain addition). Note the prose ('translated first, then rotated') contradicts this formula, which rotates first; prefer hdg=0 to avoid the ambiguity.",
+  "new_vs_1_7": "Image same as 1.7 Figure 18; NEW in 1.8/1.9: explicit offset formula, 'apply offset before PROJ', 'do not change +x_0/+y_0', rule max_one_proj (1.9.0)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/geom_overview.png",
+  "viewed": true,
+  "figure": "Figure 22",
+  "chapter": "9 Geometries",
+  "section": "9.1 Introduction to geometries",
+  "caption": "Geometry elements in ASAM OpenDRIVE",
+  "shows": "Five matplotlib plots: straight line (0,0)-(5,1.25); spiral starting at the origin heading north and curling clockwise into a tightening curl; arc from (-7.2,3.2) to (0,7.9) flattening to horizontal; parametric cubic polynomial falling smoothly from (0,0) to (65,-0.85); cubic polynomial (deprecated) y(x) from -5..5 with an S-wiggle rising to 2.25.",
+  "lesson": "Exactly five planView primitives; poly3 is deprecated and shown last. Use line/arc/spiral (curvature-continuous, exact) or paramPoly3; do not emit <poly3>.",
+  "right": [
+   "Fit OSM polylines with line/arc/spiral, fall back to paramPoly3"
+  ],
+  "wrong": [
+   "Emitting <poly3> in new 1.9 files"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Redrawn from 1.7 Figure 19: order changed (paramPoly3 before poly3) and the cubic polynomial panel is now explicitly labelled 'deprecated'."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/adding_primitives.png",
+  "viewed": true,
+  "figure": "Figure 23",
+  "chapter": "9 Geometries",
+  "section": "9.1 Introduction to geometries",
+  "caption": "Example for creating a road reference line from geometry elements",
+  "shows": "Left: five boxes line (orange), spiral (blue), arc (green), spiral (blue), arc (green). Right: the assembled reference line from lower left (s/t frame at start) along a long line, a spiral, an arc bending north, a second spiral, and a final gentle arc ending northward (s/t frame at end). Bottom: curvature vs s: 0 along the line, linear ramp in the spiral, constant in the arc, linear decrease in the second spiral to a smaller non-zero constant in the last arc; steering-wheel icons illustrate wheel held, turned, held, turned back.",
+  "lesson": "Concatenate geometries so position, heading and curvature are continuous; spirals act as the steering-wheel ramp between curvature levels (a spiral can go between two non-zero curvatures, not only from 0). Each geometry starts where the previous ended.",
+  "right": [
+   "curvStart of a spiral = curvature at end of previous element; curvEnd = curvature of next",
+   "geometry[i+1].s = geometry[i].s + geometry[i].length; x,y,hdg = end state of geometry[i]"
+  ],
+  "wrong": [
+   "Line directly followed by arc when curvature jumps matter (should insert a spiral)",
+   "Gaps or heading kinks between successive <geometry>"
+  ],
+  "formula": "kappa(s) piecewise linear: spiral kappa = curvStart + (curvEnd-curvStart)*ds/length",
+  "new_vs_1_7": "Same as 1.7 Figure 25 (now placed in 9.1 next to the overview, with sample file Ex_Line-Spiral-Arc.xodr)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/road_elements.png",
+  "viewed": true,
+  "figure": "Figure 24",
+  "chapter": "9 Geometries",
+  "section": "9.2 Road reference line",
+  "caption": "Individual parts of a road",
+  "shows": "Top strip: reference line + lanes + features = the composed road below. Bottom perspective: blue reference line in the middle of the road with s along it and t pointing left; lane 1 (yellow) on the left, lane -1 (blue) on the right, outer border strips; a 60 sign far on the right edge and an 80 sign near on the right edge.",
+  "lesson": "A road is layered: reference line geometry, lanes defined laterally relative to it (positive ids left, negative right), and features (signals/objects) placed by s/t. The reference line direction does not indicate driving direction.",
+  "right": [
+   "Lanes left of the line get positive ids, right get negative ids",
+   "Place signs by (s, t) with t<0 on the right"
+  ],
+  "wrong": [
+   "Inferring traffic direction from reference-line direction alone"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Redrawn from 1.7 Figure 20; same content."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/straight_line.png",
+  "viewed": true,
+  "figure": "Figure 26",
+  "chapter": "9 Geometries",
+  "section": "9.3 Straight line",
+  "caption": "A straight line",
+  "shows": "Matplotlib plot of a straight segment from about (-47.2, 0.7) to (-1.7, 35.7) m, matching the XML example x=-47.17, y=0.728, hdg=0.6548 rad, length=57.28.",
+  "lesson": "A <line> is fully determined by @x, @y, @hdg, @length; the end point is start + length*(cos hdg, sin hdg). hdg is the mathematical angle from +x (0.655 rad ~ 37.5 deg).",
+  "right": [
+   "x_end = x + L*cos(hdg), y_end = y + L*sin(hdg)"
+  ],
+  "wrong": [
+   "Using compass bearings for hdg",
+   "Degrees instead of radians"
+  ],
+  "formula": "x(ds) = x0 + ds*cos(hdg); y(ds) = y0 + ds*sin(hdg)",
+  "new_vs_1_7": "Same image as 1.7 Figure 22."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/spiral.png",
+  "viewed": true,
+  "figure": "Figure 27",
+  "chapter": "9 Geometries",
+  "section": "9.4 Spiral",
+  "caption": "Road geometry described by a spiral",
+  "shows": "Matplotlib plot: a clothoid starting at (0,0) heading north, bending right (clockwise) with steadily increasing |curvature| into a tight curl ending around (0.35, 0.49). Axes 0..0.7 m.",
+  "lesson": "Spiral curvature varies linearly with arc length from @curvStart to @curvEnd; a clockwise (right) turn has negative curvature. Used to transition between line and arc without curvature jumps.",
+  "right": [
+   "Evaluate with Fresnel integrals / numeric integration of heading",
+   "Negative curvature for right-hand turns"
+  ],
+  "wrong": [
+   "Approximating a spiral with an arc of average curvature",
+   "Sign flip: positive curvature for a right turn"
+  ],
+  "formula": "kappa(ds) = curvStart + (curvEnd - curvStart)*ds/length; theta(ds) = hdg + curvStart*ds + (curvEnd-curvStart)*ds^2/(2*length)",
+  "new_vs_1_7": "Same image as 1.7 Figure 23."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/arc.png",
+  "viewed": true,
+  "figure": "Figure 28",
+  "chapter": "9 Geometries",
+  "section": "9.5 Arc",
+  "caption": "Road geometry described by an arc",
+  "shows": "Matplotlib plot: a quarter-circle-like arc from (0, 72) heading east, curving clockwise down to (70, 12); a single dot at (0,0) marks the centre. Radius about 72 m.",
+  "lesson": "An arc has constant curvature 1/R; positive = left (counter-clockwise), negative = right (clockwise). The centre lies at distance R on the +t side for positive and on the -t side for negative curvature.",
+  "right": [
+   "curvature = +1/R for left turn, -1/R for right turn",
+   "centre = start + (1/curvature) * normal_left(hdg)"
+  ],
+  "wrong": [
+   "Storing radius instead of curvature",
+   "Wrong sign for clockwise arcs"
+  ],
+  "formula": "x(ds) = x0 + (sin(hdg + k*ds) - sin(hdg))/k; y(ds) = y0 - (cos(hdg + k*ds) - cos(hdg))/k",
+  "new_vs_1_7": "Same image as 1.7 Figure 24."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/param_poly_1.png",
+  "viewed": true,
+  "figure": "Figure 29",
+  "chapter": "9 Geometries",
+  "section": "9.6.1 Generating roads using parametric cubic curves",
+  "caption": "A parametric cubic curve for interpolation of the u-coordinate",
+  "shows": "Plot of u vs p (p=0..7): cubic starts at u=aU (~1.4) with slope angle arctan(bU), rises to ~3.4 near p=3.3 and falls to ~2.85 at p~4.9. A red marker at (p~4.9, u~4.3) is joined by a horizontal red line labelled 'p' and a vertical red line labelled 'u(p)'; the marker does not lie on the plotted cubic (drawing inconsistency carried over).",
+  "lesson": "u(p) is an independent cubic in p: u(0)=aU, du/dp(0)=bU; u need not be monotonic, so the curve can move backward in u. Ignore the off-curve red marker; the evaluated value is the cubic itself.",
+  "right": [
+   "u(p) = aU + bU*p + cU*p^2 + dU*p^3",
+   "Usually aU=0 and bU>0 so the curve starts at the geometry origin along hdg"
+  ],
+  "wrong": [
+   "Assuming u(p) is monotonic or equals arc length"
+  ],
+  "formula": "u(p) = aU + bU*p + cU*p^2 + dU*p^3",
+  "new_vs_1_7": "Same as 1.7 Figure 30 (redrawn, identical content including the marker inconsistency)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/param_poly_2.png",
+  "viewed": true,
+  "figure": "Figure 30",
+  "chapter": "9 Geometries",
+  "section": "9.6.1 Generating roads using parametric cubic curves",
+  "caption": "A parametric cubic curve for interpolation of the v-coordinate",
+  "shows": "Plot of v vs p: cubic starts at v=aV (~2.6) with slope angle arctan(bV) and rises to v~4.3 at p~4.9 where the red marker sits on the curve; red lines labelled p and v(p).",
+  "lesson": "v(p) is the lateral cubic: v(0)=aV, dv/dp(0)=bV. For a curve that starts at the geometry point tangent to hdg, aV=bV=0.",
+  "right": [
+   "v(p) = aV + bV*p + cV*p^2 + dV*p^3",
+   "aU=aV=bV=0, bU>0 for G1 continuity with the previous geometry"
+  ],
+  "wrong": [
+   "Non-zero aV causing a lateral jump at the geometry start"
+  ],
+  "formula": "v(p) = aV + bV*p + cV*p^2 + dV*p^3",
+  "new_vs_1_7": "Same as 1.7 Figure 31 (redrawn)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/param_poly_3.png",
+  "viewed": true,
+  "figure": "Figure 31",
+  "chapter": "9 Geometries",
+  "section": "9.6.1 Generating roads using parametric cubic curves",
+  "caption": "A parametric cubic curve",
+  "shows": "X/Y plot: the geometry start point (x(p=0), y(p=0)) at about (3, 1.4) with s/t drawn along the start tangent; the u/v frame origin (orange dot) is offset from it by aU along u and aV along v; u axis rotated by hdg from x. The curve leaves the start at arctan(bV/bU) relative to u, swings up and doubles back (u decreasing) to a point at (4.8, 4.8) whose u(p) and v(p) projections are drawn, together with x(u), y(u).",
+  "lesson": "paramPoly3: evaluate u(p), v(p), rotate by @hdg and translate by (@x,@y). The start tangent direction is hdg + atan2(bV, bU); p is not arc length (only endpoints match for pRange=arcLength). The curve may turn back in u, which poly3 cannot.",
+  "right": [
+   "x = x0 + u*cos(hdg) - v*sin(hdg); y = y0 + u*sin(hdg) + v*cos(hdg)",
+   "Emit pRange=normalized (p in [0,1]) or arcLength explicitly"
+  ],
+  "wrong": [
+   "Treating p as arc length for intermediate points (lane widths/objects must use true s)",
+   "Ignoring aU/aV/bV offsets when computing the start heading"
+  ],
+  "formula": "x(p) = x + u(p)cos(hdg) - v(p)sin(hdg); y(p) = y + u(p)sin(hdg) + v(p)cos(hdg)",
+  "new_vs_1_7": "Same image as 1.7 Figure 32."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/poly3.png",
+  "viewed": true,
+  "figure": "Figure 32",
+  "chapter": "9 Geometries",
+  "section": "9.7.1 Background information on cubic polynomials (deprecated)",
+  "caption": "A cubic polynomial",
+  "shows": "Matplotlib plot of y(x) = 20 + 0.0005x^2 + 0.0001x^3 for x = -100..100 (y from -75 to 125), flat near y=20 around x=0.",
+  "lesson": "Background only: a plain cubic in x/y is single-valued y(x). The deprecated <poly3> is evaluated in a local u/v frame, not in inertial x/y.",
+  "right": [
+   "Check: y(100) = 20+5+100 = 125"
+  ],
+  "wrong": [
+   "Using inertial x as the poly3 parameter"
+  ],
+  "formula": "y(x) = a + b*x + c*x^2 + d*x^3 (a=20, b=0, c=0.0005, d=0.0001)",
+  "new_vs_1_7": "Same image as 1.7 Figure 26; section now marked deprecated."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/curve_1.png",
+  "viewed": true,
+  "figure": "Figure 33",
+  "chapter": "9 Geometries",
+  "section": "9.7.2 Creating roads using cubic polynomials (deprecated)",
+  "caption": "A curve which cannot be represented by a cubic polynomial w.r.t x parameter",
+  "shows": "X/Y grid: a blue curve from (3,1.5) rising to the right, bulging to x~5 and turning back to (4.5, 5.1). A vertical red line at x~4.9 cuts it twice (blue markers at y~3.3 and y~4.3); warning sign 'two Y-values for one X-value'. The horizontal red line is labelled 'x' and the vertical one 'y' (labels swapped relative to their meaning).",
+  "lesson": "A curve that turns back in x cannot be y(x); poly3 therefore uses a local u/v frame aligned with the start heading so v(u) is single-valued. Curves that turn back even in u need paramPoly3.",
+  "right": [
+   "Check monotonicity of u before choosing poly3; prefer paramPoly3 anyway"
+  ],
+  "wrong": [
+   "Fitting y(x) in inertial coordinates"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 27."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/curve_2.png",
+  "viewed": true,
+  "figure": "Figure 34",
+  "chapter": "9 Geometries",
+  "section": "9.7.2 Creating roads using cubic polynomials (deprecated)",
+  "caption": "Transformation from a u/v to a x/y coordinate system with a=b=0",
+  "shows": "X/Y grid: start point (x(u=0), y(u=0)) at (3, 1.45) with s/t; the u axis rotated by hdg from x, v perpendicular; a curve point at (5, 4.5) with its u and v(u) projections and x(u), y(u) leaders. Text: 'Cubic polynom with a = b = 0', 'For every u-value only one v-value is possible' (check mark), and the transformation formulas.",
+  "lesson": "With a=b=0 the u/v frame coincides with s/t at the start; a point is start + rotation(hdg) * (u, v(u)). The figure writes this as distance sqrt(u^2+v^2) at angle hdg + arctan(v/u) - equivalent to the rotation, but implement it with the rotation matrix (atan(v/u) breaks for u<=0).",
+  "right": [
+   "x = x0 + u*cos(hdg) - v*sin(hdg); y = y0 + u*sin(hdg) + v*cos(hdg)"
+  ],
+  "wrong": [
+   "Using arctan(v/u) without quadrant handling"
+  ],
+  "formula": "beta = hdg + arctan(v(u)/u); x(u) = x(0) + sqrt(u^2+v(u)^2)*cos(beta); y(u) = y(0) + sqrt(u^2+v(u)^2)*sin(beta)",
+  "new_vs_1_7": "Same image as 1.7 Figure 28."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/09_geometry/curve_3.png",
+  "viewed": true,
+  "figure": "Figure 35",
+  "chapter": "9 Geometries",
+  "section": "9.7.2 Creating roads using cubic polynomials (deprecated)",
+  "caption": "Transformation from a u/v to a x/y coordinate system with a!=0 and b!=0",
+  "shows": "Same construction as Figure 31: start point offset from the u/v origin by aU, aV; start tangent at arctan(bV/bU) from u; hdg between x and u; curve doubles back to (4.8,4.8). Labels use paramPoly3 names (aU, aV, bU, bV, u(p), v(p)) although the section is about poly3 with a, b.",
+  "lesson": "For poly3, a non-zero a shifts the curve start off the u-axis along v and a non-zero b rotates the start tangent by arctan(b) relative to u; hdg orients the u-axis. The figure reuses paramPoly3 labels - map aV->a, bV/bU->b. Since poly3 is deprecated, a converter should just write paramPoly3 with a=b=0 (aU=aV=bV=0).",
+  "right": [
+   "Keep a=b=0 (or aU=aV=bV=0) so (@x,@y,@hdg) is the true start pose"
+  ],
+  "wrong": [
+   "Using non-zero a/b, which makes @hdg differ from the actual start tangent and breaks continuity checks"
+  ],
+  "formula": "v(u) = a + b*u + c*u^2 + d*u^3; start tangent angle = hdg + arctan(b)",
+  "new_vs_1_7": "Same image as 1.7 Figure 29."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/allow_link_1.png",
+  "viewed": true,
+  "figure": "Figure 38",
+  "chapter": "10 Roads",
+  "section": "10.3 Road linkage",
+  "caption": "Allowed, prohibited, and recommended road linkage",
+  "shows": "Four panels, each two road pieces (lane 1 yellow, -1 blue, blue reference arrows). Top-left 'Gap in reference line' (red X). Top-right 'Overlap in reference line' (red X). Bottom-left reference lines meet exactly but with a heading kink, producing 'Gap in lane' on the outside and 'Overlap in lane' on the inside (warning triangle = allowed but not recommended). Bottom-right two curved pieces meeting with continuous position and tangent (green check = recommended).",
+  "lesson": "Linked reference lines must share the end/start point exactly (no gap, no overlap). A heading kink is tolerated but produces lane gaps/overlaps; tangent-continuous joints are recommended.",
+  "right": [
+   "successor road starts exactly at predecessor end point (within tolerance ~1e-6..1e-3 m)",
+   "Match headings at joints"
+  ],
+  "wrong": [
+   "Small gaps/overlaps from rounding OSM nodes",
+   "Heading kinks at road joints when avoidable"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 35."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/allow_link_2.png",
+  "viewed": true,
+  "figure": "Figure 39",
+  "chapter": "10 Roads",
+  "section": "10.3 Road linkage",
+  "caption": "Allowed cases of road linkage",
+  "shows": "Four panels, roads @id=1 and @id=2 end to end, with link tables. Same direction: road1 successor = 2 start, road2 predecessor = 1 end (check). Both reference lines pointing away from the joint (starts touch): road1 predecessor = 2 start, road2 predecessor = 1 start (check). Both pointing toward the joint (ends touch): road1 successor = 2 end, road2 successor = 1 end (check). Bottom-right: road1 reference line at the lane 1/2 border, road2 reference line at the lane 1/-1 border, lanes line up but reference lines do not touch (red X).",
+  "lesson": "predecessor/successor refer to the start/end of a road's OWN reference line; contactPoint says which end of the other road is touched. Linking is valid in same, opposite and converging directions, but only if the reference lines themselves connect - matching lanes with laterally offset reference lines is not a valid link (use a consistent reference line, adjust via laneOffset within a road instead).",
+  "right": [
+   "Set contactPoint start/end from which endpoint of the neighbour coincides",
+   "Keep reference-line endpoints coincident at every road-road link"
+  ],
+  "wrong": [
+   "Linking roads whose reference lines are laterally offset even if the lanes align",
+   "Always writing contactPoint=start for successors"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Redrawn from 1.7 Figure 36 (now uses road @id=\"1\" notation, typo 'predesscor' fixed); same rules."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/allow_link_3.png",
+  "viewed": true,
+  "figure": "Figure 40",
+  "chapter": "10 Roads",
+  "section": "10.3 Road linkage",
+  "caption": "Allowed case of road linkage within a junction",
+  "shows": "An incoming road with lanes -1 and -2 (reference line at its upper edge) enters a dashed junction area. Inside, one connecting road continues from the -1 lane and curves up-right (its own lane -1), another starts at the -1/-2 lane border (laterally offset from the incoming reference line) and continues straight to an outgoing road with lane -1. Green check.",
+  "lesson": "Splits are modelled as a junction with one connecting road per path; each connecting road has its own reference line that may start at a lane boundary of the incoming road (lane-level continuity, not reference-line identity, is what matters inside junctions).",
+  "right": [
+   "One connecting road per movement, starting at the lane it continues",
+   "Link incoming road successor to the junction, connecting roads to the incoming/outgoing roads"
+  ],
+  "wrong": [
+   "Splitting one road into two directly via road-to-road links without a junction"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Redrawn from 1.7 Figure 37; the in-figure labels 'Connection roads' and 'Roads with junctions' were removed, otherwise same."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/types_elevation.png",
+  "viewed": true,
+  "figure": "Figure 42",
+  "chapter": "10 Roads",
+  "section": "10.5 Road elevation methods",
+  "caption": "Types of elevation",
+  "shows": "Four panels (transparent PNG; labels black on transparent - flatten onto white to read). road elevation: z vs s profile, 'elevation along s-axis'. superelevation: cross-section rolled about s, 'elevation along t-axis'. road shape: piecewise profile with widths 1/4/3/1 m, h=0.05, 0.45, 0.0 m, slopes b=-0.10 and 0.15 m/m at t=5,4,0,-3,-4 m, 'elevation along t-axis'. cross section surface: 3D road with strips @id=2, 1, -1 and s/t/h axes, 'elevation along s-axis and t-axis'.",
+  "lesson": "Four independent height mechanisms: elevation(s), superelevation roll(s), shape h(s,t), and the new crossSectionSurface (polynomials in s for each t-power, per strip). s length never changes with elevation.",
+  "right": [
+   "Use <elevation> for grade, superelevation for banking, and at most one lateral method per road"
+  ],
+  "wrong": [
+   "Combining crossSectionSurface with shape or superelevation (forbidden)",
+   "Combining shape with superelevation (deprecated)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Redrawn from 1.7 Figure 39; NEW fourth panel 'cross section surface' (1.8.0 feature)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/superelevation.png",
+  "viewed": true,
+  "figure": "Figure 43",
+  "chapter": "10 Roads",
+  "section": "10.5.2 Superelevation",
+  "caption": "Superelevation",
+  "shows": "Two cross-sections in x/z. alpha = 0: flat road, t1 measured horizontally from s. alpha > 0: road rolled about s, left side up; t1 measured along t_superelevation, its horizontal projection labelled t1*cos(alpha); h tilted to h_superelevation.",
+  "lesson": "Superelevation is a roll angle (rad) about the reference line; positive = road falls to the right. Lane widths stay measured along the tilted surface; plan-view footprint is t*cos(alpha). Default 0. The example's reference line is parallel to y for simplicity.",
+  "right": [
+   "Inward banking: a RIGHT-hand curve (right side low) gets a positive value, a LEFT-hand curve (left side low) a negative value",
+   "Plan-view lateral position = t*cos(alpha)"
+  ],
+  "wrong": [
+   "Interpreting superelevation as a percentage cross-fall",
+   "Pivoting about the road edge"
+  ],
+  "formula": "y_plan = t*cos(alpha); z = elev(s) + t*sin(alpha)",
+  "new_vs_1_7": "Redrawn from 1.7 Figure 40 (alpha instead of a, explicit t_superelevation/h_superelevation labels); same meaning."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/road_shape_min_t.png",
+  "viewed": true,
+  "figure": "Figure 44",
+  "chapter": "10 Roads",
+  "section": "10.5.3 Shape definition",
+  "caption": "Minimum t-definition range for road shapes",
+  "shows": "Plan view of a road with lanes 4..1 left and -1..-3 right whose outer edges narrow from s_R1 to s_R2. At s_R1 five shape records (circles along a vertical arrow) start from the bottom of the overall t-range; at s_R2 three records. A point (s_P, t_P) between them. A double arrow marks the 'minimum t-definition range for road shapes' = the whole t extent of the road over all s. Formulas for linear interpolation between the two profiles.",
+  "lesson": "Shape heights between two profile s-positions are linearly interpolated in s at the same t; each profile is a piecewise cubic in dt = t - t_record. Every profile must cover the maximum t extent of the entire road, not only the local width. Shapes interpolate linearly in s and therefore cannot follow non-linear laneOffset exactly.",
+  "right": [
+   "Emit every shape profile from t_min_global to t_max_global",
+   "Order <shape> by s then t"
+  ],
+  "wrong": [
+   "Profiles covering only the local road width",
+   "Assuming cubic interpolation in s between profiles"
+  ],
+  "formula": "h(sP,tP) = h_R1(tP) + (h_R2(tP) - h_R1(tP)) * (sP - sR1)/(sR2 - sR1); h_Ri(t) = a + b*dt + c*dt^2 + d*dt^3",
+  "new_vs_1_7": "Redrawn from 1.7 Figure 41; the interpolation formula is CORRECTED (1.7 showed (h1+h2)*(sP-sR1)/(sR2-sR1), 1.9 shows proper linear interpolation h1 + (h2-h1)*...). Also the text adds the laneOffset caveat."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/road_shape.png",
+  "viewed": true,
+  "figure": "Figure 45",
+  "chapter": "10 Roads",
+  "section": "10.5.3 Shape definition",
+  "caption": "Road shape definition",
+  "shows": "Cross-section with alpha = 0: grey shape area above the flat road line, higher on the left (+t) edge at t1 and decaying toward the right; h vertical through s.",
+  "lesson": "Shape adds a height h(t) on top of the flat (non-superelevated) cross-section, measured vertically; the defined t-range must cover the maximum t-expansion of the whole <road>. Shapes change the actual (surface) lane width but not the plan-view width.",
+  "right": [
+   "Use shape without superelevation"
+  ],
+  "wrong": [
+   "Leaving parts of the road without shape definition"
+  ],
+  "formula": "z = elev(s) + h_shape(s,t)",
+  "new_vs_1_7": "Split out of 1.7 Figure 42 (left panel); redrawn."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/combo_shape_superele.png",
+  "viewed": true,
+  "figure": "Figure 46",
+  "chapter": "10 Roads",
+  "section": "10.5.3 Shape definition",
+  "caption": "Road shape definition in combination with superelevation",
+  "shows": "Cross-section with alpha > 0: the road line rolled about s; the shape area is attached to the rolled surface (rotated with it); t1 along t_superelevation with projection t1*cos(alpha); h_superelevation tilted.",
+  "lesson": "When shape and superelevation are combined, the shape is rotated with the superelevation - but this combination is DEPRECATED in 1.9. A converter should use either superelevation or shape (or crossSectionSurface), not shape + superelevation.",
+  "right": [
+   "Choose one lateral-profile method per road"
+  ],
+  "wrong": [
+   "Writing both <superelevation> and <shape> for the same road in new output"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Split out of 1.7 Figure 42 (right panel); NEW: the combination is marked deprecated."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/cross_section_surface_strips.png",
+  "viewed": true,
+  "figure": "Figure 47",
+  "chapter": "10 Roads",
+  "section": "10.5.4 Cross section surface",
+  "caption": "Cross section surface strips on a road",
+  "shows": "3D sketch of a road with lanes and a median: strip @id=2 spans the wide left part (lanes with arrows), strip @id=1 the narrow darker median band, strip @id=-1 the right part; double arrows give the extents; s/t/h axes at the near edge, t pointing left.",
+  "lesson": "A crossSectionSurface splits each side into up to two strips: inner (id 1 / -1, with a width) and outer (id 2 / -2, valid to the outer edge of the last lane). Strip ids and widths are independent of lane ids/widths. The outer strip may be computed relative to the inner strip's edge or independently (@mode).",
+  "right": [
+   "Inner strip with <width> only if an outer strip exists on that side",
+   "Single strip per side uses id 1/-1 without width"
+  ],
+  "wrong": [
+   "Mapping strip ids to lane ids",
+   "Giving a width to a lone strip"
+  ],
+  "formula": null,
+  "new_vs_1_7": "NEW in 1.8 (crossSectionSurface)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/cross_section_surface.png",
+  "viewed": true,
+  "figure": "Figure 48",
+  "chapter": "10 Roads",
+  "section": "10.5.4 Cross section surface",
+  "caption": "Cross section surface",
+  "shows": "Plan view along s: road reference line in the middle. Labelled bands from top: strip 2 'outer left' up to 'end of outer left lane definition'; strip 1 with 'width inner left' up to 'end of inner left strip definition'; the 'start of inner strips (t_off)' line above the reference line; strip -1 'width inner right' down to 'end of inner right strip definition'; strip -2 'outer right' to 'end of outer right lane definition'. tOffset grows from 0 at the start, shifting the inner strips' origin off the reference line.",
+  "lesson": "Strip geometry: tOffset(s) shifts the split point between left and right strips; inner widths w(s) are cubics in s; outer strips run to the road's outer lane edge. Height = co(s) + li(s)*dt + qu(s)*dt^2 + cu(s)*dt^3 where each of co/li/qu/cu is its own piecewise cubic in s and dt is measured from tOffset (inner) or from the inner strip edge (outer). Must start at s=0 and cover the full road; lane @height is added on top; cannot be combined with shape or superelevation.",
+  "right": [
+   "First <coefficients> at s=0 for tOffset, width and each component",
+   "relative mode: h_outer = h_inner(edge) + h_outer(dt)"
+  ],
+  "wrong": [
+   "Combining with <shape>/<superelevation>",
+   "Starting coefficients at s>0"
+  ],
+  "formula": "t_eff = t - tOffset(s); inner: dt = t_eff; outer left: dt = t_eff - w_left; outer right: dt = t_eff + w_right; h = co(s) + li(s)dt + qu(s)dt^2 + cu(s)dt^3 (spec text writes the outer-left condition as t_eff < w_left - a typo for t_eff > w_left)",
+  "new_vs_1_7": "NEW in 1.8 (crossSectionSurface)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/road_surface.png",
+  "viewed": true,
+  "figure": "Figure 49",
+  "chapter": "10 Roads",
+  "section": "10.6 Road CRG surface",
+  "caption": "Road surface as defined in a CRG file",
+  "shows": "Rendered 3D patch of road with kerbs on both sides: cobblestone section at the far end, smooth asphalt in front with a pothole, dashed centre marking.",
+  "lesson": "OpenCRG provides detailed surface relief (and optionally friction) on a regular curved grid; it complements, not replaces, the lane model and carries no visual data.",
+  "right": [
+   "Reference CRG via <surface><CRG file=...> only when such data exists"
+  ],
+  "wrong": [
+   "Expecting CRG to define lanes or appearance"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 43."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/opencrg_introductory_example.png",
+  "viewed": true,
+  "figure": "Figure 50",
+  "chapter": "10 Roads",
+  "section": "10.6 Road CRG surface",
+  "caption": "ASAM OpenCRG road surface description using u/v coordinates and x/y coordinates",
+  "shows": "MATLAB output for belgian_block-txt-double.crg: CRG reference line in X/Y (226..234, 78..84), XYZ surface plot in the curved grid (heights 2.04-2.18 m), and UVZ map in the uncurved u/v grid (u 730-740, v -1.5..1.5) showing paving blocks.",
+  "lesson": "CRG has its own reference line and (u,v) coordinates analogous to (s,t); combining with OpenDRIVE needs a mapping between the two reference lines and a rule for heights.",
+  "right": [
+   "Map u = s - sOffset, v = t - tOffset in attached modes"
+  ],
+  "wrong": [
+   "Assuming CRG u starts at 0"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 44."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/crg_position_1.png",
+  "viewed": true,
+  "figure": "Figure 51",
+  "chapter": "10 Roads",
+  "section": "10.6 Road CRG surface",
+  "caption": "Positioning of an ASAM OpenCRG file along the reference line",
+  "shows": "s/t plane: road (left yellow, right blue) with the reference line along s; a CRG grid patch from s_Start to s_End whose own reference line (black arrow) is shifted to the right of the road reference line by t_Offset.",
+  "lesson": "The CRG patch is applied only between @sStart and @sEnd and may be shifted laterally by @tOffset; it may run in the same or opposite direction (@orientation).",
+  "right": [
+   "Set sStart/sEnd to the CRG data extent"
+  ],
+  "wrong": [
+   "Applying CRG data outside [sStart, sEnd]"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 45."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/crg_attached.png",
+  "viewed": true,
+  "figure": "Figure 52",
+  "chapter": "10 Roads",
+  "section": "10.6.1.1 @mode = attached",
+  "caption": "ASAM OpenCRG attachment mode, attached",
+  "shows": "s/t axes with the CRG u/v axes shifted by sOffset along s and tOffset along t; the coloured CRG height map is laid along s, label 'attached'.",
+  "lesson": "attached: the CRG reference line is replaced by the OpenDRIVE reference line; CRG geometry (position, heading, curvature, elevation, superelevation) is discarded; CRG heights (scaled, offset) are ADDED to the OpenDRIVE surface height.",
+  "right": [
+   "(u,v) = (s - sOffset, t - tOffset) for orientation=same"
+  ],
+  "wrong": [
+   "Using the CRG's own XY reference line in attached mode"
+  ],
+  "formula": "u = s - sOffset; v = t - tOffset",
+  "new_vs_1_7": "Same image as 1.7 Figure 46."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/crg_attached_2.png",
+  "viewed": true,
+  "figure": "Figure 53",
+  "chapter": "10 Roads",
+  "section": "10.6.1.1 @mode = attached",
+  "caption": "ASAM OpenCRG attached mode with elevation",
+  "shows": "Side view: blue road elevation profile rising; vertical bars at s_Start, s_Offset and s_End; the 'CRG Data' band (dark blue) rides on top of the rising elevation from s_Offset onward; 'OpenCRG projected on reference line'.",
+  "lesson": "In attached mode CRG relief is superimposed on the road's own height (elevation, lateral profile, lane height); outside the CRG data the plain OpenDRIVE height applies.",
+  "right": [
+   "totalHeight = crg(u,v)*zScale + zOffset + laneHeightNoCRG(s,t)"
+  ],
+  "wrong": [
+   "Replacing the elevation by CRG heights in attached mode"
+  ],
+  "formula": "totalHeight(s,t) = crgEvaluv2z(u,v)*zScale + zOffset + laneHeightNoCRG(road,s,t)",
+  "new_vs_1_7": "Same image as 1.7 Figure 47."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/crg_attached0.png",
+  "viewed": true,
+  "figure": "Figure 54",
+  "chapter": "10 Roads",
+  "section": "10.6.1.2 @mode = attached0",
+  "caption": "ASAM OpenCRG attached0 mode with elevated reference line",
+  "shows": "Same profile; the CRG data (wavy dark blue) replaces the height between s_Offset and the end of data; from the end of data to s_End a hatched red region shows the surface dropping to z = 0 because OpenDRIVE elevation is ignored; 'OpenCRG projected on x/y-plane'.",
+  "lesson": "attached0 uses only CRG heights (OpenDRIVE elevation treated as zero). If sStart/sEnd extend beyond the CRG data, the surface falls to z=0 there - set sStart/sEnd exactly to the data boundaries.",
+  "right": [
+   "sEnd = sOffset + CRG data length"
+  ],
+  "wrong": [
+   "sEnd beyond data in attached0/genuine modes"
+  ],
+  "formula": "totalHeight(s,t) = crgEvaluv2z(u,v)*zScale + zOffset",
+  "new_vs_1_7": "Same image as 1.7 Figure 48."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/crg_genuine.png",
+  "viewed": true,
+  "figure": "Figure 55",
+  "chapter": "10 Roads",
+  "section": "10.6.1.3 @mode = genuine",
+  "caption": "ASAM OpenCRG attachment mode, genuine",
+  "shows": "s/t axes; the CRG start placed at (sOffset, tOffset) and its u axis rotated by hOffset; the CRG reference line curves independently of s; label 'genuine'.",
+  "lesson": "genuine: CRG start point is positioned relative to the reference-line point given by sStart/sOffset/tOffset and rotated by hOffset; CRG geometry is used as-is (does not bend with the OpenDRIVE line) and CRG absolute heights replace OpenDRIVE heights. Geometries must match within tolerance.",
+  "right": [
+   "Use genuine only when CRG and OpenDRIVE geometries were measured together"
+  ],
+  "wrong": [
+   "Using genuine for synthetic roads whose geometry differs from the CRG track"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same image as 1.7 Figure 49."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/10_roads/crg_orientation.png",
+  "viewed": true,
+  "figure": "Figure 56",
+  "chapter": "10 Roads",
+  "section": "10.6.2 Switching orientation",
+  "caption": "ASAM OpenCRG orientation",
+  "shows": "Two panels. orientation=same: CRG grid with corners A (top-left), B, C, D, origin u=0,v=0 at s_Start shifted by t_Offset below the reference line, u along +s, v along +t. orientation=opposite: the same grid rotated 180 deg about its origin (letters drawn upside down, A bottom-right), extending toward -s from s_Start, u pointing -s and v pointing -t; t_Offset unchanged.",
+  "lesson": "orientation=opposite rotates the CRG by 180 deg about its u/v origin: both u and v reverse relative to s and t; tOffset is not affected. Note the printed matrix [[0,-1],[-1,0]] would swap u and v - it should be [[-1,0],[0,-1]] for a 180 deg rotation (same error as in 1.7).",
+  "right": [
+   "opposite: u = -(s - sOffset), v = -(t - tOffset)"
+  ],
+  "wrong": [
+   "Implementing the printed matrix literally (swaps u and v)"
+  ],
+  "formula": "(u,v) = -1 * (s - sOffset, t - tOffset) for orientation=opposite (printed matrix in spec is erroneous)",
+  "new_vs_1_7": "Same image as 1.7 Figure 50 (and same matrix text)."
+ }
+]

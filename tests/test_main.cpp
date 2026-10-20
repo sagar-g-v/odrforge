@@ -12,6 +12,7 @@ int failures = 0;
 }  // namespace odrtest
 
 int main() {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);  // a crash still shows the last case reached
   int failedCases = 0;
   for (const auto &c : odrtest::registry()) {
     const int before = odrtest::failures;

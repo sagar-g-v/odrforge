@@ -1,11 +1,13 @@
 // osm2xodr - OpenStreetMap (.osm XML) to ASAM OpenDRIVE (.xodr) with OdrForge.
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
+#include "odrforge/conform.hpp"
 #include "odrforge/network.hpp"
 #include "odrforge/validate.hpp"
 #include "odrforge/version.hpp"
@@ -18,15 +20,19 @@ static void usage() {
       "osm2xodr %s - OpenStreetMap to OpenDRIVE\n"
       "usage: osm2xodr <in.osm> <out.xodr> [options]\n"
       "  --country CC        ISO 3166-1 alpha-2 rules (driving side, widths, speeds, signs); default XX\n"
-      "  --target T          asam (1.6, default) | asam18 (1.8) | carla (1.4 + CARLA conventions) | esmini\n"
+      "  --target T          standard (OpenDRIVE 1.8, default) | carla (OpenDRIVE 1.4 + CARLA conventions)\n"
       "  --origin LAT,LON    projection origin (default: centre of the data)\n"
       "  --name NAME         header name\n"
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
+      "  --separate-sidewalks  extend roads to sidewalks mapped as their own ways (experimental)\n"
+      "  --no-kerb-edges     keep the carriageway edges at the tagged lane widths (do not follow barrier=kerb)\n"
       "  --no-furniture      no street lamps / trees\n"
       "  --viz OUT.html      also write an interactive HTML view of the result\n"
       "  --basemap DIR       offline HD map / imagery backgrounds for the view (tools/make_basemap.py)\n"
       "  --terrain G.odrz    ground surface grid (tools/make_terrain.py): real road elevation\n"
       "  --structures S.odrz bridge-deck surface grid (lidar class 17) for bridge=yes roads\n"
+      "  --ground-out C.odrz the --terrain ground conformed to the roads (road surface under the lanes, cut / fill\n"
+      "                      slopes beside them) for 3D scenes and viewers that drape terrain around the roads\n"
       "  --clip MINLAT,MINLON,MAXLAT,MAXLON  cut the network to this area (ways split at the boundary)\n"
       "  --no-superelevation flat cross sections and level junctions (for consumers that ignore\n"
       "                      <superelevation>, e.g. CARLA meshing the roads itself)\n"
@@ -44,7 +50,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "asam", name, vizPath, terrainPath, structuresPath, basemapDir;
+  std::string country = "XX", target = "standard", name, vizPath, terrainPath, structuresPath, basemapDir, groundOutPath;
   double lat0 = 1e9, lon0 = 1e9, clip[4] = {0, 0, 0, 0};
   bool haveClip = false, flat = false;
   BuildOptions opt;
@@ -58,11 +64,14 @@ int main(int argc, char **argv) {
       const std::string v = next();
       std::sscanf(v.c_str(), "%lf,%lf", &lat0, &lon0);
     } else if (a == "--no-sidewalks") opt.lanes.assumeSidewalks = false;
+    else if (a == "--separate-sidewalks") opt.separateSidewalks = true;
+    else if (a == "--no-kerb-edges") opt.followKerbs = false;
     else if (a == "--no-furniture") opt.streetFurniture = false;
     else if (a == "--viz") vizPath = next();
     else if (a == "--basemap") basemapDir = next();
     else if (a == "--terrain") terrainPath = next();
     else if (a == "--structures") structuresPath = next();
+    else if (a == "--ground-out") groundOutPath = next();
     else if (a == "--no-superelevation") flat = true;
     else if (a == "--no-gores") opt.laneLevelGores = false;
     else if (a == "--no-overlap-shift") opt.resolveOverlaps = false;
@@ -80,7 +89,16 @@ int main(int argc, char **argv) {
   }
   try {
     const auto t0 = std::chrono::steady_clock::now();
+    // ODRFORGE_VERBOSE: the time of each phase outside the network build too (the build prints its own stages)
+    const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
+    auto mark = t0;
+    auto phase = [&](const char *name) {
+      const auto now = std::chrono::steady_clock::now();
+      if (verbose) std::fprintf(stderr, "[odrforge] phase %-21s %8.0f ms\n", name, std::chrono::duration<double, std::milli>(now - mark).count());
+      mark = now;
+    };
     const OsmData osm = OsmData::readXml(in);
+    phase("read OSM");
     if (lat0 > 1e8) lat0 = 0.5 * (osm.minLat + osm.maxLat), lon0 = 0.5 * (osm.minLon + osm.maxLon);
     const Projection proj(lat0, lon0);
     opt.country = CountryProfile::load(country);
@@ -100,18 +118,46 @@ int main(int argc, char **argv) {
       opt.terrain = &terrain;
       opt.verticalDatum = !terrain.ground.datum.empty() ? terrain.ground.datum : terrain.structures.datum;
     }
+    phase("load terrain");
     BuildReport rep;
-    const odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
+    odr::OpenDrive od = buildOpenDrive(osm, proj, opt, &rep);
+    if (haveClip) {  // the box the ways were cut at, for checkers measuring OSM features wholly inside it (header userData)
+      char box[128];
+      std::snprintf(box, sizeof box, "%.6f,%.6f,%.6f,%.6f", clip[0], clip[1], clip[2], clip[3]);
+      od.header.userData["clip"] = box;
+    }
+    phase("build network");
+    if (!groundOutPath.empty() && terrain.ground.empty()) {
+      std::fprintf(stderr, "--ground-out needs --terrain\n");
+      return 2;
+    }
+    // on measured terrain the ground conformed to the roads (the grid --ground-out publishes) also seats the trees and
+    // street lamps: their base on that ground, not at the reference line's height
+    TerrainGrid conformed;
+    if (!terrain.ground.empty()) {
+      conformed = conformGround(od, terrain.ground);
+      const SeatReport seat = seatObjects(od, conformed);
+      std::printf("  objects on the ground: %d seated (up to %.2f m up, %.2f m down), %d left on bridge decks\n", seat.seated,
+                  seat.maxLift, seat.maxDrop, seat.onBridges);
+    }
+    phase("conform ground, objects");
     odr::WriteOptions wo;
     wo.revMinor = opt.target.revMinor;
     odr::write(od, out, wo);
+    if (!groundOutPath.empty()) {
+      conformed.save(groundOutPath);
+      std::printf("  conformed ground: %s\n", groundOutPath.c_str());
+    }
+    phase("write");
     const ValidationReport vr = validate(od, opt.target);
+    phase("validate");
     if (!vizPath.empty()) {
       VizOptions vo;
       vo.title = opt.name;
       vo.validation = &vr;
       vo.basemapDir = basemapDir;
       writeVizHtml(od, vizPath, vo);
+      phase("HTML view");
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("osm2xodr %s: %s -> %s in %.2f s\n", ODRFORGE_VERSION, in.c_str(), out.c_str(), secs);
@@ -131,12 +177,66 @@ int main(int argc, char **argv) {
       std::printf("  topology: %d OSM way ends joined to the road they stop short of, %d missing crossing nodes added, "
                   "%d parking-lot aisles connect streets\n",
                   rep.snappedEnds, rep.joinedCrossings, rep.parkingAisles);
-    if (rep.gores) std::printf("  gores: %d freeway splits / merges modelled at lane level\n", rep.gores);
+    if (rep.inheritedLinkLanes)
+      std::printf("  lanes: %d untagged link pieces take the lanes of the tagged piece they continue\n", rep.inheritedLinkLanes);
+    if (rep.gores)
+      std::printf("  gores: %d freeway splits / merges modelled at lane level, %d as direct junctions\n", rep.gores,
+                  rep.directJunctions);
+    if (rep.separateSidewalks)
+      std::printf("  cross-section: %d road sides extended to their separately mapped sidewalk\n", rep.separateSidewalks);
+    if (rep.kerbSides || rep.kerbSamplesIgnored)
+      std::printf("  kerb edges: %d road sides follow a mapped kerb (%d kerb positions used; left out: %d would leave a "
+                  "lane under 2 m, %d on another level or beyond another road's lanes)\n",
+                  rep.kerbSides, rep.kerbSamples, rep.kerbSamplesIgnored, rep.kerbSamplesOffLevel);
+    if (rep.parkingNoStoppingAtJunctions)
+      std::printf("  parking: %d roads' tagged parking lanes carry \"no stopping at any time\" near junctions (%.1f m, "
+                  "country rule)\n",
+                  rep.parkingNoStoppingAtJunctions, opt.country.parkingClearOfJunction);
+    if (rep.parkingDroppedOnShortRoads)
+      std::printf("  parking: %d roads too short to park on beside their junctions keep no tagged parking lane\n",
+                  rep.parkingDroppedOnShortRoads);
+    if (rep.streetSideParking || rep.streetSideParkingLeftOut)
+      std::printf("  street-side parking: %d mapped areas drawn as parking lanes, %d left out; %d tag parking lanes "
+                  "gave way to them\n",
+                  rep.streetSideParking, rep.streetSideParkingLeftOut, rep.parkingTagsOverruled);
+    if (rep.cornerSidewalks || rep.cornerSidewalksTooTight)
+      std::printf("  corner sidewalks: %d continued, %d corners too tight for their sidewalk, %d acute (nose)\n",
+                  rep.cornerSidewalks, rep.cornerSidewalksTooTight, rep.cornerNoses);
+    if (rep.crossPaths)
+      std::printf("  cross paths: %d (%d inside junctions, %d of those with pedestrian lights)\n", rep.crossPaths,
+                  rep.junctionCrossPaths, rep.pedestrianSignals);
+    if (rep.junctionGrids || rep.junctionBoundaries || rep.boundariesLeftOut)
+      std::printf("  junction surfaces: %d elevation grids, %d boundaries (%d helper roads, %d traced along the lanes' "
+                  "contour), %d left without a boundary\n",
+                  rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesTraced,
+                  rep.boundariesLeftOut);
+    if (rep.junctionRoadsUnderCover)
+      std::printf("  junction roads under cover: %d (in a tunnel, or the part under the terrain at a portal)\n",
+                  rep.junctionRoadsUnderCover);
+    if (rep.barrierSamples)
+      std::printf("  barriers: %d objects, %.0f m; of %d samples (1 m) %d without a road alongside, %d on a lane in use, "
+                  "%d in pieces < 2 m\n",
+                  rep.barriers, rep.barrierLength, rep.barrierSamples, rep.barrierSamplesUnmatched,
+                  rep.barrierSamplesOnLane, rep.barrierSamplesShort);
     std::printf("  validation: %d errors, %d warnings\n", vr.errors, vr.warnings);
     for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
     if (std::getenv("ODRFORGE_VERBOSE"))
       for (const auto &m : vr.messages) std::printf("    %s\n", m.c_str());
-    for (size_t i = 0; i < rep.warnings.size() && i < 10; ++i) std::printf("  warn: %s\n", rep.warnings[i].c_str());
+    // warnings by kind (the message without its numbers): the first few of each, then a count, so a
+    // rare kind is not hidden behind many of a common one
+    std::vector<std::pair<std::string, std::vector<const std::string *>>> kinds;
+    for (const std::string &w : rep.warnings) {
+      std::string kind;
+      for (char ch : w)
+        if (!std::isdigit(static_cast<unsigned char>(ch)) && ch != '.' && ch != '-') kind += ch;
+      auto it = std::find_if(kinds.begin(), kinds.end(), [&](const auto &k) { return k.first == kind; });
+      if (it == kinds.end()) it = kinds.insert(kinds.end(), {kind, {}});
+      it->second.push_back(&w);
+    }
+    for (const auto &[kind, ws] : kinds) {
+      for (size_t i = 0; i < ws.size() && i < 3; ++i) std::printf("  warn: %s\n", ws[i]->c_str());
+      if (ws.size() > 3) std::printf("  warn: ... %zu more like this\n", ws.size() - 3);
+    }
     return vr.errors ? 1 : 0;
   } catch (const std::exception &e) {
     std::fprintf(stderr, "osm2xodr: %s\n", e.what());

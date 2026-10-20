@@ -83,6 +83,610 @@ bool allows(const std::vector<std::string> &turns, Turn t) {
 
 }  // namespace
 
+namespace {
+
+// Pose on a road's reference line at one end, heading in the direction of travel through the
+// junction: along s when arriving at the end or leaving from the start, against s otherwise.
+Pose travelPose(const odr::Road &r, bool atEnd, bool arriving) {
+  Pose p = r.planView.eval(atEnd ? r.length() : 0.0);
+  if (atEnd != arriving) {
+    p.hdg = normalizeAngle(p.hdg + kPi);
+    p.kappa = -p.kappa;
+  }
+  return p;
+}
+
+// Centre pose of a lane at a road end, heading in the direction of travel.
+Pose laneTravelPose(const odr::Road &r, bool atEnd, bool arriving, int laneId) {
+  Pose p;
+  odr::laneCenter(r, atEnd ? r.length() : 0.0, laneId, p);
+  if (atEnd != arriving) p.hdg = normalizeAngle(p.hdg + kPi);
+  return p;
+}
+
+struct TravelSpan {
+  double inner, outer;  ///< lane borders, t to the left of the direction of travel
+  double width() const { return std::abs(outer - inner); }
+  double center() const { return 0.5 * (inner + outer); }
+};
+
+// Lane borders at s seen in the direction of travel (t mirrored when travelling against s).
+TravelSpan travelSpanAt(const odr::Road &r, double s, bool alongS, int laneId) {
+  double inner = 0.0, outer = 0.0;
+  odr::laneBorders(r, s, laneId, inner, outer);
+  return alongS ? TravelSpan{inner, outer} : TravelSpan{-inner, -outer};
+}
+
+// Lane borders at a road end seen in the direction of travel.
+TravelSpan travelSpan(const odr::Road &r, bool atEnd, bool alongS, int laneId) {
+  return travelSpanAt(r, atEnd ? r.length() : 0.0, alongS, laneId);
+}
+
+// How fast the lane borders move sideways at a road end, per metre travelled through the junction
+// (arriving: towards the end; leaving: away from it). Matching it keeps lane edges heading-continuous
+// across the link (OpenDRIVE 1.9 Annex D).
+TravelSpan travelSpanSlope(const odr::Road &r, bool atEnd, bool alongS, bool arriving, int laneId) {
+  const double step = std::min(0.001, 0.5 * r.length());  // m: short enough for the slope at the very end
+  const double sEnd = atEnd ? r.length() : 0.0, sInside = atEnd ? sEnd - step : sEnd + step;
+  const TravelSpan atJunction = travelSpanAt(r, sEnd, alongS, laneId), inside = travelSpanAt(r, sInside, alongS, laneId);
+  const double sign = arriving ? 1.0 : -1.0;
+  return {sign * (atJunction.inner - inside.inner) / step, sign * (atJunction.outer - inside.outer) / step};
+}
+
+// OpenDRIVE 1.9 §12.4 (lane_change_one_con_road): the lane pairs of one relation that share a
+// connecting road - adjacent incoming lanes into adjacent outgoing lanes, inner to outer.
+std::vector<std::vector<std::pair<int, int>>> adjacentRuns(std::vector<std::pair<int, int>> pairs) {
+  auto rank = [](const std::pair<int, int> &p) { return std::make_pair(std::abs(p.first), std::abs(p.second)); };
+  std::sort(pairs.begin(), pairs.end(), [&](const auto &a, const auto &b) { return rank(a) < rank(b); });
+  std::vector<std::vector<std::pair<int, int>>> runs;
+  for (const auto &p : pairs) {
+    const bool continuesRun = !runs.empty() && std::abs(p.first) == std::abs(runs.back().back().first) + 1 &&
+                              std::abs(p.second) == std::abs(runs.back().back().second) + 1;
+    if (continuesRun) runs.back().push_back(p);
+    else runs.push_back({p});
+  }
+  return runs;
+}
+
+// The smoothest standard-geometry path between two poses that a vehicle can drive: it turns no
+// more than the headings differ (plus a quarter turn) and is not much longer than the gap. Else
+// the chord, when its bends stand for turns no tighter than kMinTurnRadius; else no path.
+ReferenceLine drivablePath(const Pose &a, const Pose &b) {
+  constexpr double kMinTurnRadius = 5.0;
+  ReferenceLine line = connectionPath(a, b);
+  double turning = 0.0;
+  for (const auto &e : line.elements) turning += 0.5 * (e.k0 + e.k1) * e.length;
+  const double chord = (b.pos() - a.pos()).norm(), dh = std::abs(normalizeAngle(b.hdg - a.hdg));
+  const bool plausible =
+      !line.elements.empty() && std::abs(turning) <= dh + 0.5 * kPi && line.length() <= 4.0 * chord + 10.0;
+  if (plausible) return line;
+  ReferenceLine chordLine;
+  const double hc = std::atan2(b.y - a.y, b.x - a.x);
+  const double bend = std::max(std::abs(normalizeAngle(hc - a.hdg)), std::abs(normalizeAngle(hc - b.hdg)));
+  if (chord > 1e-3 && bend < 0.5 * kPi && 2.0 * kMinTurnRadius * std::sin(bend) <= chord) {
+    GeomElement e;
+    e.x = a.x, e.y = a.y, e.hdg = hc, e.length = chord;
+    chordLine.elements.push_back(e);
+    chordLine.finalize();
+  }
+  return chordLine;
+}
+
+// OpenDRIVE 1.9 §8.3 reference line coordinate system: a lane at offset t from a reference line of
+// curvature kappa runs (1 - kappa t) times as fast as the line - squeezed on the inside of a bend,
+// folded where kappa t >= 1, stretched on the outside. A frame is fit for the lanes only while
+// every lane border stays within half the radius of the line (|kappa t| <= 0.5): the lane path is
+// then the line's own shape, neither folded nor drawn out (LibCarla steps lanes by s).
+bool frameDistortsLanes(const ReferenceLine &line, const odr::Poly3 &laneOffset, double blockWidth0,
+                        double blockWidth1, bool lanesOnRight, double kMaxRelativeOffset) {
+  const double L = line.length();
+  for (double s = 0.0; s <= L; s += 0.25) {
+    const double u = s / std::max(L, 1e-9);
+    const double inner = laneOffset.eval(s), width = blockWidth0 + (blockWidth1 - blockWidth0) * u;
+    const double outer = lanesOnRight ? inner - width : inner + width;
+    const double kappa = line.eval(s).kappa;
+    if (std::abs(kappa * inner) > kMaxRelativeOffset || std::abs(kappa * outer) > kMaxRelativeOffset) return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+// OpenDRIVE 1.9 §12.4 connecting roads, ASAM Junction Guideline §6: one connecting road per run of
+// adjacent lanes, its reference line continuing the arm reference lines in position and heading
+// at both ends, in the direction of travel; the lanes sit beside it through laneOffset (§11.5) and
+// widths (§11.7) blending from the incoming to the outgoing lanes. Where that frame would distort
+// the lanes (a tight turn far from the arm reference lines; the Guideline then moves the reference
+// line) each lane follows its own lane-centred road; a lane whose own road would fold takes the arm
+// frame if that one does not fold; failing all, its lane-centred road all the same.
+void Builder::connectLanes(const ConnectionEnds &ends, const std::vector<std::pair<int, int>> &pairs,
+                           const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId) {
+  const ReferenceLine armToArm =
+      drivablePath(travelPose(*ends.in, ends.inAtEnd, true), travelPose(*ends.out, ends.outAtEnd, false));
+  const bool armPathUsable = !armToArm.elements.empty() && armToArm.length() >= 0.05;
+  auto onArms = [&](const std::vector<std::pair<int, int>> &lanes, Frame frame) {
+    return armPathUsable &&
+           addConnectingRoad(ends, armToArm, {0.0, 0.0}, {0.0, 0.0}, lanes, frame, cl, junction, out, nextRoadId);
+  };
+  for (const auto &run : adjacentRuns(pairs)) {
+    if (onArms(run, Frame::RefuseDistortion)) continue;
+    for (const auto &[from, to] : run) {
+      // the reference line starts on the lane centre, parallel to the arm reference line (Annex D:
+      // lane borders meet in position only across parallel cross sections); the lane's sideways
+      // drift is carried by laneOffset
+      const LaneCentre in{travelSpan(*ends.in, ends.inAtEnd, ends.inAtEnd, from).center(), 0.0};
+      const LaneCentre outC{travelSpan(*ends.out, ends.outAtEnd, !ends.outAtEnd, to).center(), 0.0};
+      const Pose a = laneTravelPose(*ends.in, ends.inAtEnd, true, from);
+      const Pose b = laneTravelPose(*ends.out, ends.outAtEnd, false, to);
+      const ReferenceLine laneCentred = drivablePath(a, b);
+      const bool laneCentredUsable = !laneCentred.elements.empty() && laneCentred.length() >= 0.05;
+      auto alongLane = [&](Frame frame) {
+        return laneCentredUsable &&
+               addConnectingRoad(ends, laneCentred, in, outC, {{from, to}}, frame, cl, junction, out, nextRoadId);
+      };
+      if (alongLane(Frame::RefuseFolding) || onArms({{from, to}}, Frame::RefuseFolding)) continue;
+      alongLane(Frame::AlwaysBuild);
+    }
+  }
+}
+
+// One connecting road along `line`, whose ends lie at travel-frame offsets refIn / refOut from the
+// incoming / outgoing arm reference lines (drifting sideways at refIn.slope / refOut.slope).
+// Frame::RefuseDistortion / RefuseFolding add nothing (false) where the frame would distort / fold
+// the lanes; Frame::AlwaysBuild adds the road regardless.
+bool Builder::addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, LaneCentre refIn,
+                                LaneCentre refOut, const std::vector<std::pair<int, int>> &lanes, Frame frame,
+                                const Cluster &cl,
+                                odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId) {
+  const bool LHT = opt.country.leftHandTraffic;
+  const odr::Road &ri = *ends.in, &ro = *ends.out;
+  const double L = line.length();
+  // the lane borders leave and meet the arms with the arms' own sideways slope (Annex D: lane
+  // edges heading-continuous), measured from this road's reference line
+  std::vector<TravelSpan> spanIn, spanOut, slopeIn, slopeOut;
+  for (const auto &[from, to] : lanes) {
+    spanIn.push_back(travelSpan(ri, ends.inAtEnd, ends.inAtEnd, from));
+    spanOut.push_back(travelSpan(ro, ends.outAtEnd, !ends.outAtEnd, to));
+    slopeIn.push_back(travelSpanSlope(ri, ends.inAtEnd, ends.inAtEnd, true, from));
+    slopeOut.push_back(travelSpanSlope(ro, ends.outAtEnd, !ends.outAtEnd, false, to));
+  }
+  const odr::Poly3 laneOffset =
+      odr::Poly3::hermite(0.0, L, spanIn.front().inner - refIn.t, slopeIn.front().inner - refIn.slope,
+                          spanOut.front().inner - refOut.t, slopeOut.front().inner - refOut.slope);
+  if (frame != Frame::AlwaysBuild) {
+    const double block0 = std::abs(spanIn.back().outer - spanIn.front().inner);
+    const double block1 = std::abs(spanOut.back().outer - spanOut.front().inner);
+    const double limit = frame == Frame::RefuseDistortion ? 0.5 : 0.9;  // |kappa t|: distorted / about to fold
+    if (frameDistortsLanes(line, laneOffset, block0, block1, !LHT, limit)) return false;
+  }
+
+  odr::Road c;
+  c.id = std::to_string(nextRoadId++);
+  c.junction = junction.id;
+  if (!ri.rule.empty()) c.rule = ri.rule;
+  c.planView = line;
+  c.predecessor = odr::LinkTarget{"road", ri.id, ends.inAtEnd ? "end" : "start"};
+  c.successor = odr::LinkTarget{"road", ro.id, ends.outAtEnd ? "end" : "start"};
+  const odr::Road::Type *type = ri.types.empty() ? nullptr : &ri.types.back();
+  c.types.push_back({0.0, type ? type->type : "town", type ? type->country : "", type ? type->speedMax : std::nullopt,
+                     type ? type->speedUnit : "km/h"});
+  c.laneOffset.push_back(laneOffset);
+  odr::LaneSection sec;
+  sec.center.id = 0;
+  sec.center.type = "none";
+  const odr::RoadMark none;
+  sec.center.roadMarks.push_back(none);
+  odr::Connection cn;
+  cn.id = std::to_string(junction.connections.size());
+  cn.incomingRoad = ri.id;
+  cn.connectingRoad = c.id;
+  cn.contactPoint = "start";
+  for (size_t k = 0; k < lanes.size(); ++k) {
+    odr::Lane l;
+    l.id = (LHT ? 1 : -1) * static_cast<int>(k + 1);  // the connecting lanes travel along +s
+    l.type = "driving";
+    const double sideIn = spanIn[k].outer < spanIn[k].inner ? -1.0 : 1.0;  // the side the width grows to
+    const double sideOut = spanOut[k].outer < spanOut[k].inner ? -1.0 : 1.0;
+    const double widthSlopeIn = sideIn * (slopeIn[k].outer - slopeIn[k].inner);
+    const double widthSlopeOut = sideOut * (slopeOut[k].outer - slopeOut[k].inner);
+    l.widths.push_back(
+        odr::Poly3::hermite(0.0, L, spanIn[k].width(), widthSlopeIn, spanOut[k].width(), widthSlopeOut));
+    l.link.predecessor = lanes[k].first;
+    l.link.successor = lanes[k].second;
+    l.roadMarks.push_back(none);
+    if (const auto *source = odr::findLane(odr::sectionAt(ri, ends.sIn()), lanes[k].first))
+      l.speedMax = source->speedMax;
+    (LHT ? sec.left : sec.right).push_back(l);
+    cn.laneLinks.push_back({lanes[k].first, l.id});
+  }
+  c.lanes.push_back(sec);
+  connectingRoadHeight(c, ends, refIn.t, refOut.t, cl);
+  junction.connections.push_back(cn);
+  out.push_back(std::move(c));
+  ++rep.connectingRoads;
+  return true;
+}
+
+// Height of a connecting road (OpenDRIVE 1.9 §10.5; Annex D: height continuous at both links).
+// On a junction surface it follows the plane; otherwise a C1 Hermite between the arm heights at the
+// reference line ends, with the arms' banking carried across so every lane edge meets its arm.
+void Builder::connectingRoadHeight(odr::Road &c, const ConnectionEnds &ends, double tRefIn, double tRefOut,
+                                   const Cluster &cl) const {
+  const odr::Road &ri = *ends.in, &ro = *ends.out;
+  const double sIn = ends.sIn(), sOut = ends.sOut(), L = c.length();
+  const double armTIn = ends.inAtEnd ? tRefIn : -tRefIn;  // travel-frame offsets back in the arms' own t
+  const double armTOut = ends.outAtEnd ? -tRefOut : tRefOut;
+  const double z0 = odr::surfaceZ(ri, sIn, armTIn), z1 = odr::surfaceZ(ro, sOut, armTOut);
+  if (cl.hasPlane) {
+    connectingElevation(c, cl,
+                        opt.target.superelevation ? std::nullopt : std::optional<std::pair<double, double>>({z0, z1}));
+    return;
+  }
+  const double m0 = odr::elevationSlopeAt(ri, sIn) * (ends.inAtEnd ? 1.0 : -1.0);
+  const double m1 = odr::elevationSlopeAt(ro, sOut) * (ends.outAtEnd ? -1.0 : 1.0);
+  c.elevation.push_back(odr::Poly3::hermite(0.0, L, z0, m0, z1, m1));
+  const double bank0 = odr::superelevationAt(ri, sIn) * (ends.inAtEnd ? 1.0 : -1.0);
+  const double bank1 = odr::superelevationAt(ro, sOut) * (ends.outAtEnd ? -1.0 : 1.0);
+  if (bank0 != 0.0 || bank1 != 0.0) c.superelevation.push_back(odr::Poly3::hermite(0.0, L, bank0, 0.0, bank1, 0.0));
+}
+
+// The OSM node where a road end meets its junction.
+OsmId Builder::attachNode(const RoadEnd &e) const {
+  const Chain &ch = chains[metas[e.road].chain];
+  return e.atEnd ? ch.n1 : ch.n0;
+}
+
+namespace {
+
+// The outermost lane on the right of someone travelling along (alongS) or against s at a road end,
+// if it is a sidewalk.
+std::optional<int> sidewalkOnRight(const odr::Road &r, bool atEnd, bool alongS) {
+  const odr::LaneSection &sec = atEnd ? r.lanes.back() : r.lanes.front();
+  const std::vector<odr::Lane> &side = alongS ? sec.right : sec.left;
+  if (side.empty() || side.back().type != "sidewalk") return std::nullopt;
+  return side.back().id;
+}
+
+// OpenDRIVE 1.9 §11.7 lane width; ASAM Junction Guideline §6 (no negative radius on the inner
+// sidewalk edge): round a corner the sidewalk lies on the inside of the curb line, so where the curb
+// line bends tighter than the sidewalk is wide the sidewalk narrows towards the middle of the
+// corner, keeping its building-side edge short of the centre of curvature (kappa t <= 0.8). At its
+// ends it keeps the arms' widths; a corner too tight for that, or narrower than kMinWalk in the
+// middle, gets no corner sidewalk (empty): its arm cuts leave no room for a curb return.
+std::vector<odr::Poly3> cornerSidewalkWidths(const ReferenceLine &curb, double w0, double w1, double slope0,
+                                             double slope1) {
+  constexpr double kMaxBend = 0.8, kMinWalk = 1.0;
+  const double L = curb.length(), q = 0.25 * L;
+  auto tightestOn = [&](double from, double to) {  // largest curvature towards the sidewalk (right bends)
+    double k = 0.0;
+    for (double s = from; s <= to + 1e-9; s += std::min(0.25, 0.1 * L)) k = std::max(k, -curb.eval(s).kappa);
+    return k;
+  };
+  const bool endsFit = tightestOn(0.0, q) * w0 <= kMaxBend && tightestOn(L - q, L) * w1 <= kMaxBend;
+  if (!endsFit) return {};
+  const double tightest = tightestOn(0.0, L), widest = tightest > 0.0 ? kMaxBend / tightest : 1e9;
+  if (std::max(w0, w1) <= widest) return {odr::Poly3::hermite(0.0, L, w0, slope0, w1, slope1)};
+  const double wm = std::min({w0, w1, widest});
+  if (wm < kMinWalk) return {};
+  return {odr::Poly3::hermite(0.0, q, w0, slope0, wm, 0.0), odr::Poly3::hermite(q, L - 2.0 * q, wm, 0.0, wm, 0.0),
+          odr::Poly3::hermite(L - q, q, wm, 0.0, w1, slope1)};
+}
+
+// The curb return of a corner (ASAM Junction Guideline §6): straight along the first curb, a
+// circular arc tangent to both curbs, straight along the second - the largest radius up to
+// `wanted` that fits between the two curb ends (OpenDRIVE 1.9 §9.3 line, §9.5 arc). Where the two
+// curbs do not meet ahead of both ends (no corner point), the smoothest drivable path instead.
+ReferenceLine curbReturn(const Pose &a, const Pose &b, double wanted) {
+  const double turn = normalizeAngle(b.hdg - a.hdg);
+  const Vec2 da = a.dir(), db = b.dir(), d = b.pos() - a.pos();
+  const double den = da.cross(db);
+  if (std::abs(turn) < 1e-3 || std::abs(den) < 1e-9) return drivablePath(a, b);
+  const double alongA = d.cross(db) / den, backB = -d.cross(da) / den;  // corner point: a + da alongA = b - db backB
+  if (alongA <= 0.0 || backB <= 0.0) return drivablePath(a, b);
+  // a corner point far beyond a short gap (curbs nearly parallel, offset sideways) is no corner
+  if (alongA + backB > 3.0 * d.norm() + 10.0) return drivablePath(a, b);
+  constexpr double kMinGeometry = 0.01;  // m: no geometry element shorter (validator spec2.min_geometry_length)
+  const double t = std::tan(0.5 * std::abs(turn));
+  double radius = std::min({wanted, alongA / t, backB / t});
+  if (alongA - radius * t < kMinGeometry || backB - radius * t < kMinGeometry) radius = std::min(alongA, backB) / t;
+  const double tangent = radius * t;
+  auto tooShort = [&](double piece) { return piece > 1e-9 && piece < kMinGeometry; };
+  if (tooShort(alongA - tangent) || tooShort(backB - tangent) || radius * std::abs(turn) < kMinGeometry)
+    return drivablePath(a, b);
+  ReferenceLine line;
+  auto add = [&](double length, double curvature) {
+    if (length <= 1e-9) return;
+    GeomElement e;
+    e.length = length;
+    e.k0 = e.k1 = curvature;
+    line.elements.push_back(e);
+  };
+  add(alongA - tangent, 0.0);
+  add(radius * std::abs(turn), turn > 0.0 ? 1.0 / radius : -1.0 / radius);
+  add(backB - tangent, 0.0);
+  line.elements.front().x = a.x, line.elements.front().y = a.y, line.elements.front().hdg = normalizeAngle(a.hdg);
+  line.finalize();
+  return line;
+}
+
+}  // namespace
+
+// ASAM Junction Guideline §6, OpenDRIVE 1.9 §12.4: sidewalks continue round every corner of a
+// junction. Going round the arms by direction, each pair of neighbours whose facing sides both end
+// in a sidewalk is joined by a connecting road along the curb line (reference line at the
+// sidewalk's curb-side edge, parallel to both arms where it meets them) carrying the sidewalk,
+// raised by the curb, lane-linked to the arms' sidewalks.
+namespace {
+
+// The curb of a corner along the outer edge of the junction's driving lanes there. The sidewalk round a corner borders
+// the carriageway: where a connecting road joins the same two arms and its outermost lane on the corner side starts and
+// ends at the arms' curb points, the curb follows that lane edge (review flag 7, Munich: a curb fitted between the curb
+// points on its own left a wedge between sidewalk and lane and, at a fork, a kink). The edge is sampled every 0.5 m and
+// refitted as a clothoid spline with the arms' headings at its ends; empty when no such lane edge exists within 1 m of
+// both curb points or the fit strays more than 0.1 m from it.
+ReferenceLine curbAlongLanes(const std::vector<odr::Road> &roads, const odr::Road &rp, const odr::Road &rq, const Pose &a,
+                             const Pose &b) {
+  constexpr double kEndTolerance = 1.0, kFitTolerance = 0.1;
+  std::vector<Vec2> best;
+  double bestEnd = kEndTolerance;
+  for (const odr::Road &c : roads) {
+    if (c.lanes.size() != 1 || !c.predecessor || !c.successor) continue;
+    const bool forward = c.predecessor->elementId == rp.id && c.successor->elementId == rq.id;
+    const bool backward = c.predecessor->elementId == rq.id && c.successor->elementId == rp.id;
+    if (!forward && !backward) continue;
+    // the corner lies right of travel from P to Q: the right side of a forward road, the left side of a backward one
+    const std::vector<odr::Lane> &side = forward ? c.lanes.front().right : c.lanes.front().left;
+    if (side.empty()) continue;
+    const int outer = side.back().id;
+    const double L = c.length();
+    const int n = std::max(2, static_cast<int>(std::ceil(L / 0.5)) + 1);
+    std::vector<Vec2> pts;
+    for (int i = 0; i < n; ++i) {
+      const double s = L * i / (n - 1);
+      double tIn, tOut;
+      if (!odr::laneBorders(c, s, outer, tIn, tOut)) break;
+      pts.push_back(c.planView.eval(s).offset(tOut));
+    }
+    if (static_cast<int>(pts.size()) != n) continue;
+    if (backward) std::reverse(pts.begin(), pts.end());
+    const double end = std::max((pts.front() - a.pos()).norm(), (pts.back() - b.pos()).norm());
+    if (end < bestEnd) bestEnd = end, best = pts;
+  }
+  if (best.size() < 2) return {};
+  best.front() = a.pos(), best.back() = b.pos();
+  PolylineFitOptions fo;
+  fo.noiseTolerance = 0.02;
+  fo.minCornerRadius = 0.5;
+  fo.startHeading = a.hdg;
+  fo.endHeading = b.hdg;
+  ReferenceLine curb = fitPolyline(best, fo);
+  if (curb.elements.empty()) return {};
+  // the curb must meet both arms exactly (OpenDRIVE 1.9 Annex D: lane borders position- and heading-continuous across
+  // links): the spline is chained from its start pose, so its end is checked against the arm's curb point and heading
+  const Pose start = curb.eval(0.0), end = curb.eval(curb.length());
+  if ((start.pos() - a.pos()).norm() > 5e-4 || std::abs(normalizeAngle(start.hdg - a.hdg)) > 2e-4 ||
+      (end.pos() - b.pos()).norm() > 5e-4 || std::abs(normalizeAngle(end.hdg - b.hdg)) > 2e-4)
+    return {};
+  for (const Vec2 &pt : best) {
+    double s, t;
+    curb.project(pt, s, t);
+    if (std::abs(t) > kFitTolerance) return {};
+  }
+  return curb;
+}
+
+/// records of a piecewise cubic f on [0, L] (Poly3::s = record start) giving g(s) = sign * f(L - s):
+/// the record p over [s0, s0 + h] becomes q(u) = sign * p(h - u) starting at L - s0 - h
+std::vector<odr::Poly3> reflectRecords(const std::vector<odr::Poly3> &f, double L, double sign) {
+  std::vector<odr::Poly3> g;
+  for (size_t i = f.size(); i-- > 0;) {
+    const odr::Poly3 &p = f[i];
+    const double h = (i + 1 < f.size() ? f[i + 1].s : L) - p.s;
+    odr::Poly3 q;
+    q.s = L - p.s - h;
+    q.a = sign * p.eval(h);
+    q.b = -sign * p.deriv(h);
+    q.c = sign * (p.c + 3.0 * p.d * h);
+    q.d = -sign * p.d;
+    g.push_back(q);
+  }
+  return g;
+}
+
+/// the same corner sidewalk (one lane section, lanes on the right) traversed the other way: the reference line
+/// reversed, the lanes on its left (id -k -> +k), laneOffset, widths and links mirrored. Same surface.
+void reverseToLeft(odr::Road &c) {
+  const double L = c.length();
+  c.planView = c.planView.reversed();
+  std::swap(c.predecessor, c.successor);
+  c.laneOffset = reflectRecords(c.laneOffset, L, -1.0);  // t on the reversed line is -t
+  for (odr::LaneSection &sec : c.lanes) {
+    for (odr::Lane l : sec.right) {
+      l.id = -l.id;
+      l.widths = reflectRecords(l.widths, L, 1.0);
+      std::swap(l.link.predecessor, l.link.successor);
+      sec.left.push_back(std::move(l));
+    }
+    sec.right.clear();
+  }
+}
+
+}  // namespace
+
+void Builder::buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out,
+                                   int &nextRoadId) {
+  struct Arm {
+    const RoadEnd *end;
+    double outward;  ///< heading leaving the junction along the arm
+  };
+  std::vector<Arm> arms;
+  for (const RoadEnd &e : cl.ends) {
+    const odr::Road &r = od.roads[metas[e.road].roadIndex];
+    arms.push_back({&e, travelPose(r, e.atEnd, false).hdg});
+  }
+  if (arms.size() < 2) return;
+  std::sort(arms.begin(), arms.end(), [](const Arm &a, const Arm &b) { return a.outward < b.outward; });
+  for (size_t i = 0; i < arms.size(); ++i) {
+    // arriving along P and leaving along its anticlockwise neighbour Q, the corner lies on the right
+    const RoadEnd &p = *arms[i].end, &q = *arms[(i + 1) % arms.size()].end;
+    if (p.road == q.road && p.atEnd == q.atEnd) continue;
+    const odr::Road &rp = od.roads[metas[p.road].roadIndex], &rq = od.roads[metas[q.road].roadIndex];
+    const auto walkP = sidewalkOnRight(rp, p.atEnd, p.atEnd), walkQ = sidewalkOnRight(rq, q.atEnd, !q.atEnd);
+    if (!walkP || !walkQ) continue;
+    const TravelSpan spanP = travelSpan(rp, p.atEnd, p.atEnd, *walkP), spanQ = travelSpan(rq, q.atEnd, !q.atEnd, *walkQ);
+    Pose a = travelPose(rp, p.atEnd, true), b = travelPose(rq, q.atEnd, false);
+    const Vec2 curbP = a.offset(spanP.inner), curbQ = b.offset(spanQ.inner);
+    a.x = curbP.x, a.y = curbP.y, b.x = curbQ.x, b.y = curbQ.y;
+    // an acute corner (a fork, turning more than 120 degrees) ends in a nose: the sidewalk does not
+    // wrap round it
+    if (normalizeAngle(b.hdg - a.hdg) < -2.0 * kPi / 3.0) {
+      ++rep.cornerNoses;
+      continue;
+    }
+    const double rankFactor = std::max(metas[p.road].rank, metas[q.road].rank) >= 7 ? 1.5 : 1.0;
+    // beside a straight-on movement (headings within classify()'s 35 degrees: a fork, the road bending through the
+    // junction) the curb follows the driving lanes' outer edge; corners keep the curb return (Junction Guideline §6)
+    // (no such lane edge: the smoothest path between the curb points where it bends less than the curb return, as the
+    // carriageway's connecting roads do - a fixed-radius return would put the whole turn into a few metres)
+    const bool straightOn = classify(normalizeAngle(b.hdg - a.hdg)) == Turn::Straight;
+    // the curb runs along the outer driving-lane border of the connecting road that turns round this corner (the right
+    // turn P -> Q in right-hand traffic, the left turn Q -> P in left-hand traffic): Junction Guideline 1.0.0 §6.3 T
+    // junction - the connecting road round the corner carries the curb and walking lanes beside its driving lane (road
+    // 45: -1 driving, -2 curb, -3 walking), so they share its border. A fixed curb return where that turn bends tighter
+    // put the turning lane over the sidewalk (Munich review flags 4 / 5: 9.85 m2; JCT-8 sidewalk_on_driving)
+    ReferenceLine curb = straightOn || opt.cornerCurbAlongTurns ? curbAlongLanes(out, rp, rq, a, b) : ReferenceLine{};
+    const bool laneEdge = !curb.elements.empty();
+    if (curb.elements.empty()) {
+      curb = curbReturn(a, b, opt.cornerRadius * rankFactor);
+      if (straightOn)
+        if (ReferenceLine smooth = drivablePath(a, b);
+            !smooth.elements.empty() && (curb.elements.empty() || maxCurvature(smooth) < maxCurvature(curb) - 1e-9))
+          curb = smooth;
+    }
+    if (curb.elements.empty() || curb.length() < 0.05) continue;
+    // the sidewalk leaves and meets the arms drifting sideways as they do (Annex D: lane edges
+    // heading-continuous): laneOffset carries the curb-side edge, the width the other edge
+    const TravelSpan slopeP = travelSpanSlope(rp, p.atEnd, p.atEnd, true, *walkP);
+    const TravelSpan slopeQ = travelSpanSlope(rq, q.atEnd, !q.atEnd, false, *walkQ);
+    std::vector<odr::Poly3> widths = cornerSidewalkWidths(curb, spanP.width(), spanQ.width(),
+                                                          slopeP.inner - slopeP.outer, slopeQ.inner - slopeQ.outer);
+    // a lane-edge or smooth curb that leaves the sidewalk no room (it bends tighter than the sidewalk is wide) falls back
+    // to the curb return, which may still fit (Frankfurt Kreuz junction 107: 29 deg over 3.3 m)
+    if (widths.empty() && (straightOn || laneEdge)) {
+      const ReferenceLine ret = curbReturn(a, b, opt.cornerRadius * rankFactor);
+      if (!ret.elements.empty() && ret.length() >= 0.05) {
+        std::vector<odr::Poly3> w2 = cornerSidewalkWidths(ret, spanP.width(), spanQ.width(), slopeP.inner - slopeP.outer,
+                                                          slopeQ.inner - slopeQ.outer);
+        if (!w2.empty()) curb = ret, widths = std::move(w2);
+      }
+    }
+    if (widths.empty()) {
+      ++rep.cornerSidewalksTooTight;
+      if (std::getenv("ODRFORGE_DEBUG_CORNER")) {
+        double kMax = 0.0;
+        for (double s = 0.0; s <= curb.length(); s += 0.1) kMax = std::max(kMax, -curb.eval(s).kappa);
+        std::fprintf(stderr, "tight corner J%s %s->%s turn %.0f deg chord %.2f curb %.2f kmax %.3f widths %.2f %.2f at (%.0f %.0f)\n",
+                     junction.id.c_str(), rp.id.c_str(), rq.id.c_str(), normalizeAngle(b.hdg - a.hdg) * 180.0 / kPi,
+                     (b.pos() - a.pos()).norm(), curb.length(), kMax, spanP.width(), spanQ.width(), a.x, a.y);
+      }
+      continue;
+    }
+
+    odr::Road c;
+    c.id = std::to_string(nextRoadId++);
+    c.junction = junction.id;
+    if (!rp.rule.empty()) c.rule = rp.rule;
+    c.planView = curb;
+    c.predecessor = odr::LinkTarget{"road", rp.id, p.atEnd ? "end" : "start"};
+    c.successor = odr::LinkTarget{"road", rq.id, q.atEnd ? "end" : "start"};
+    if (slopeP.inner != 0.0 || slopeQ.inner != 0.0)
+      c.laneOffset.push_back(odr::Poly3::hermite(0.0, curb.length(), 0.0, slopeP.inner, 0.0, slopeQ.inner));
+    c.types.push_back({0.0, rp.types.empty() ? "town" : rp.types.back().type,
+                       rp.types.empty() ? "" : rp.types.back().country, std::nullopt, "km/h"});
+    odr::LaneSection sec;
+    sec.center.id = 0;
+    sec.center.type = "none";
+    const odr::RoadMark none;
+    sec.center.roadMarks.push_back(none);
+    odr::Lane walk;
+    walk.id = -1;
+    walk.type = "sidewalk";
+    walk.widths = std::move(widths);
+    walk.heightInner = opt.country.curbHeight;
+    walk.heightOuter = opt.country.curbHeight;
+    walk.link.predecessor = *walkP;
+    walk.link.successor = *walkQ;
+    walk.roadMarks.push_back(none);
+    sec.right.push_back(walk);
+    c.lanes.push_back(sec);
+    // OpenDRIVE 1.9.0 Annex F.4.6.6 junctions.connection.one_link_to_incoming (1.8.0): laneLinks only for lanes
+    // that lead into the junction. Built from P's sidewalk on P's right, the corner starts at a lane leading in
+    // under right-hand traffic; under left-hand traffic the lanes leading in are on the other side of the id
+    // (1.8.0 §11.2: direction from the id sign and road@rule), so the corner is traversed from Q instead, with its
+    // lanes on the left - the mirror image, same surface.
+    const bool lht = rp.rule == "LHT";
+    if (lht) {
+      reverseToLeft(c);
+      connectingRoadHeight(c, ConnectionEnds{&rq, q.atEnd, &rp, p.atEnd}, -spanQ.inner, -spanP.inner, cl);
+    } else {
+      connectingRoadHeight(c, ConnectionEnds{&rp, p.atEnd, &rq, q.atEnd}, spanP.inner, spanQ.inner, cl);
+    }
+    odr::Connection cn;
+    cn.id = std::to_string(junction.connections.size());
+    cn.incomingRoad = lht ? rq.id : rp.id;
+    cn.connectingRoad = c.id;
+    cn.contactPoint = "start";
+    cn.laneLinks.push_back({lht ? *walkQ : *walkP, lht ? -walk.id : walk.id});
+    junction.connections.push_back(cn);
+    out.push_back(std::move(c));
+    ++rep.cornerSidewalks;
+  }
+}
+
+// A junction boundary corner curve (junction_surface.cpp): the curb return (Junction Guideline §6), or beside a
+// straight-on movement (headings within classify()'s 35 degrees) the smoothest path between the edges where that bends
+// less - the same rule as the corner sidewalks' fallback (a fixed-radius return puts the whole turn into a few metres)
+ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted) {
+  ReferenceLine curve = curbReturn(a, b, wanted);
+  if (classify(normalizeAngle(b.hdg - a.hdg)) != Turn::Straight) return curve;
+  ReferenceLine smooth = drivablePath(a, b);
+  if (!smooth.elements.empty() && (curve.elements.empty() || maxCurvature(smooth) < maxCurvature(curve) - 1e-9))
+    return smooth;
+  return curve;
+}
+
+// OSM turn restriction (from, via node, to) inside a junction: does it name the movement into
+// `exit`? Its "to" way is either an arm of the junction, or - where nearby intersections were built
+// as one junction - a way absorbed into it. Entering an absorbed way leads to the arms at its far
+// node and, with `onwards` (an only_* restriction, which binds just that first step), to every arm
+// reached on through further absorbed ways. A restriction whose "to" way is neither an arm nor an
+// absorbed way does not apply here (nullopt).
+std::optional<bool> Builder::restrictionLeadsTo(const Cluster &cl, OsmId via, OsmId toWay, const RoadEnd &exit,
+                                                bool onwards) const {
+  const RoadMeta &m = metas[exit.road];
+  if ((exit.atEnd ? m.wayEnd : m.wayStart) == toWay) return true;
+  bool armWay = false;
+  for (const RoadEnd &e : cl.ends) {
+    const RoadMeta &n = metas[e.road];
+    armWay |= (e.atEnd ? n.wayEnd : n.wayStart) == toWay;
+  }
+  if (armWay) return false;
+  auto inJunction = [&](const Chain &ch) { return ch.internal && std::count(cl.nodes.begin(), cl.nodes.end(), ch.n0); };
+  std::vector<OsmId> reached;  // nodes reached after entering the "to" way at the via node
+  for (const Chain &ch : chains) {
+    const bool onWay = std::any_of(ch.parts.begin(), ch.parts.end(), [&](const Part &p) { return segs[p.seg].way == toWay; });
+    if (inJunction(ch) && onWay && (ch.n0 == via || ch.n1 == via)) reached.push_back(ch.n0 == via ? ch.n1 : ch.n0);
+  }
+  if (reached.empty()) return std::nullopt;
+  for (size_t k = 0; onwards && k < reached.size(); ++k)
+    for (const Chain &ch : chains) {
+      if (!inJunction(ch) || (ch.n0 != reached[k] && ch.n1 != reached[k])) continue;
+      const OsmId next = ch.n0 == reached[k] ? ch.n1 : ch.n0;
+      if (next != via && !std::count(reached.begin(), reached.end(), next)) reached.push_back(next);
+    }
+  return std::count(reached.begin(), reached.end(), attachNode(exit)) > 0;
+}
+
 void Builder::buildJunctions() {
   const bool LHT = opt.country.leftHandTraffic;
   // turn restrictions: (fromWay, viaNode, toWay) -> allowed?
@@ -117,7 +721,6 @@ void Builder::buildJunctions() {
       odr::LinkTarget t{"junction", J.id, ""};
       (e.atEnd ? r.successor : r.predecessor) = t;
     }
-    int connIdx = 0;
     // a movement sharper than 150 degrees is a U-turn and is not built - unless it is the only way
     // out of (or into) a road end and leads to another road: a driveway drawn alongside the street
     // and hooking into it at the last node still connects (as a tight turn), it is not a dead end
@@ -163,6 +766,7 @@ void Builder::buildJunctions() {
         const RoadEnd *end;
         Turn turn;
         std::vector<int> lanes;  // left -> right in its driving direction
+        double angle;            // heading change into it, + to the left
       };
       std::vector<Target> targets;
       for (const RoadEnd &out : cl.ends) {
@@ -177,21 +781,33 @@ void Builder::buildJunctions() {
         const double hOut = out.atEnd ? po.hdg + kPi : po.hdg;
         Turn t = classify(normalizeAngle(hOut - hIn));
         if (t == Turn::UTurn) {
-          if (out.road == in.road || (regularPartner(in, true) && regularPartner(out, false))) continue;
-          t = normalizeAngle(hOut - hIn) > 0 ? Turn::Left : Turn::Right;  // the only connection: a tight turn
+          // a U-turn between arms at different OSM nodes of the junction is made of the turns OSM
+          // allows along the ways absorbed into it (a median opening) - where the two carriageways
+          // lie far enough apart to turn between them; at one node it is built only when it is the
+          // only way on
+          constexpr double kMinUTurnWidth = 8.0;  // m: a passenger car's turning circle
+          const double armGap = (pin.pos() - po.pos()).norm();
+          const bool alongAbsorbedWays = attachNode(in) != attachNode(out) && armGap >= kMinUTurnWidth;
+          const bool onlyWayOn = !regularPartner(in, true) || !regularPartner(out, false);
+          if (out.road == in.road || !(alongAbsorbedWays || onlyWayOn)) continue;
+          t = normalizeAngle(hOut - hIn) > 0 ? Turn::Left : Turn::Right;  // built as a tight turn
         }
         // turn restrictions on the OSM ways adjacent to the junction
         const OsmId fromWay = in.atEnd ? mi.wayEnd : mi.wayStart;
-        const OsmId toWay = out.atEnd ? mo.wayEnd : mo.wayStart;
         bool forbidden = false;
         for (const auto &x : restr) {
           if (x.from != fromWay || !std::count(cl.nodes.begin(), cl.nodes.end(), x.via)) continue;
-          if (x.only ? x.to != toWay : x.to == toWay) forbidden = true;
+          // in a junction of several OSM nodes a restriction binds only the movements that pass its
+          // via node: those arriving there, or leaving their own node for another one
+          const OsmId inNode = attachNode(in), outNode = attachNode(out);
+          if (inNode != x.via && outNode == inNode) continue;
+          const std::optional<bool> leads = restrictionLeadsTo(cl, x.via, x.to, out, x.only);
+          if (leads && (x.only ? !*leads : *leads)) forbidden = true;
         }
         if (forbidden) continue;
         std::sort(ol.begin(), ol.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
         if (LHT) std::reverse(ol.begin(), ol.end());
-        targets.push_back({&out, t, ol});
+        targets.push_back({&out, t, ol, normalizeAngle(hOut - hIn)});
       }
       if (targets.empty()) continue;
       bool anyStraight = false, anyLeft = false, anyRight = false;
@@ -221,9 +837,11 @@ void Builder::buildJunctions() {
       }
       (void)anyLeft;
       (void)anyRight;
-      for (const Target &tg : targets) {
+      std::vector<std::vector<std::pair<int, int>>> pairsOf(targets.size());  // (incoming, outgoing lane id)
+      for (size_t ti = 0; ti < targets.size(); ++ti) {
+        const Target &tg = targets[ti];
         const int nOut = static_cast<int>(tg.lanes.size());
-        std::vector<std::pair<int, int>> pairs;  // (incoming lane id, outgoing lane id)
+        std::vector<std::pair<int, int>> &pairs = pairsOf[ti];
         if (cl.gore) {
           // lane-level gore: main lanes continue 1:1, the trunk's branch-side lanes are the branch
           const Cluster::Gore &g = *cl.gore;
@@ -259,6 +877,23 @@ void Builder::buildJunctions() {
             const double d = std::min(10.0, r.length());
             return r.planView.eval(e.atEnd ? r.length() - d : d).pos();
           };
+          // a single lane going straight on across a short gap (less than a taper: no room to move
+          // over) continues in the outgoing lane its centre lies in - the lanes added beside it begin
+          // there, on whichever side; otherwise (a wide junction, ends that do not face each other)
+          // the lanes keep their order
+          auto lineUp = [&](int li, int fallback) {
+            const odr::Road &ro0 = od.roads[metas[tg.end->road].roadIndex];
+            const double s0 = tg.end->atEnd ? ro0.length() : 0.0;
+            const Pose p0 = ro0.planView.eval(s0);
+            Pose a;
+            if (!odr::laneCenter(ri, sIn, li, a) || (a.pos() - p0.pos()).norm() > opt.taperLength) return fallback;
+            const double t = Vec2(-std::sin(p0.hdg), std::cos(p0.hdg)).dot(a.pos() - p0.pos());
+            for (int o = 0; o < nOut; ++o) {
+              double ta, tb;
+              if (odr::laneBorders(ro0, s0, tg.lanes[o], ta, tb) && t > std::min(ta, tb) && t < std::max(ta, tb)) return o;
+            }
+            return fallback;
+          };
           // lane split: one road continuing straight on as several roads - its lanes are divided
           // left to right in the order the roads leave (no crossing connecting lanes)
           std::vector<const Target *> straight;
@@ -283,8 +918,14 @@ void Builder::buildJunctions() {
               if (q >= c && q < c + nOut) mine.push_back(src[k]);
             }
             if (mine.empty()) mine.push_back(src[std::clamp(static_cast<int>((c + 0.5 * nOut) * ns / total), 0, ns - 1)]);
-            for (int k = 0; k < static_cast<int>(mine.size()); ++k)
-              pairs.push_back({byLeft[mine[k]], tg.lanes[prop(k, static_cast<int>(mine.size()), nOut)]});
+            // fewer lanes than the road takes stay side by side (spread, two lanes into three skipped the middle one:
+            // Munich junction 5, road 602 -> 440): from the outgoing lane the first of them lines up with, else the left
+            // road of the split keeps them on its left, the right road on its right, a road between centres them
+            const int nm = static_cast<int>(mine.size());
+            const int side = straight.front() == &tg ? 0 : straight.back() == &tg ? nOut - nm : (nOut - nm) / 2;
+            const int start = nm >= nOut ? 0 : std::clamp(lineUp(byLeft[mine[0]], side), 0, nOut - nm);
+            for (int k = 0; k < nm; ++k)
+              pairs.push_back({byLeft[mine[k]], tg.lanes[nm >= nOut ? prop(k, nm, nOut) : start + k]});
             partitioned = true;
           }
           // lane merge: several roads continuing straight on into one - each takes the outgoing
@@ -322,111 +963,66 @@ void Builder::buildJunctions() {
             }
           }
           const int ns = partitioned ? 0 : static_cast<int>(src.size());
+          // several lanes straight on into a road with more lanes stay side by side: spread over all of them, two lanes
+          // into three took the outer two and left the middle lane without a feeder (Junction Guideline §6: lanes
+          // continue in order; the LLM review's "lane skip", e.g. Munich junction 5, roads 602 -> 440). The block
+          // starts at the outgoing lane the leftmost one lines up with, else on the inner side (the lanes added
+          // beside it begin there); with more lanes than room they merge, spread over all outgoing lanes
+          const int inner = LHT ? std::max(0, nOut - ns) : 0;
+          const int block = ns >= 2 && ns < nOut ? std::clamp(lineUp(byLeft[src[0]], inner), 0, nOut - ns) : 0;
           for (int k = 0; k < ns; ++k) {
             int o;
             if (tg.turn == Turn::Right) o = nOut - ns + k;            // align on the right
             else if (tg.turn == Turn::Left) o = k;                    // align on the left
-            else o = ns == 1 ? std::min(nOut - 1, src[k] * nOut / std::max(1, nIn))
-                             : static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
+            else if (ns == 1) o = lineUp(byLeft[src[k]], std::min(nOut - 1, src[k] * nOut / std::max(1, nIn)));
+            else if (ns < nOut) o = block + k;
+            else o = static_cast<int>(std::lround(k * (nOut - 1) / double(ns - 1)));
             o = std::clamp(o, 0, nOut - 1);
             pairs.push_back({byLeft[src[k]], tg.lanes[o]});
           }
         }
+      }
+      // OpenDRIVE 1.9 §12.3 incoming roads, Junction Guideline §6: every lane entering a junction
+      // has a path through it. A lane left without one (its tagged turn has no road to take, or a
+      // lane split gave it none) takes the target on its own side of the approach: lanes ordered
+      // from the driver's left meet the targets ordered from the left by turn angle.
+      std::map<size_t, std::vector<int>> orphans;  // target -> its lanes without a path (left to right)
+      for (int i = 0; i < nIn; ++i) {
+        const bool hasPath = std::any_of(pairsOf.begin(), pairsOf.end(), [&](const auto &ps) {
+          return std::any_of(ps.begin(), ps.end(), [&](const auto &p) { return p.first == byLeft[i]; });
+        });
+        if (hasPath) continue;
+        std::vector<size_t> candidates;
+        for (size_t ti = 0; ti < targets.size(); ++ti)
+          if (perm[i].count(targets[ti].turn)) candidates.push_back(ti);
+        if (candidates.empty())
+          for (size_t ti = 0; ti < targets.size(); ++ti) candidates.push_back(ti);
+        std::sort(candidates.begin(), candidates.end(),
+                  [&](size_t a, size_t b) { return targets[a].angle > targets[b].angle; });
+        const double side = nIn > 1 ? i / double(nIn - 1) : 0.5;  // 0 = leftmost lane
+        orphans[candidates[static_cast<size_t>(std::lround(side * (candidates.size() - 1)))]].push_back(i);
+      }
+      // the lanes that fall back to one target stay side by side, placed where the first of them lies on its approach
+      // (each placed alone, two right-turn lanes into a road the junction counts as straight on took its outer lanes:
+      // Munich junction 37, road 404 -> 405)
+      for (const auto &[pick, idx] : orphans) {
+        const Target &tg = targets[pick];
+        const int nOut = static_cast<int>(tg.lanes.size()), n = static_cast<int>(idx.size());
+        const double side0 = nIn > 1 ? idx.front() / double(nIn - 1) : 0.5;
+        const int room = std::max(0, nOut - n);
+        const int start = tg.turn == Turn::Left ? 0 : tg.turn == Turn::Right ? room : static_cast<int>(std::lround(side0 * room));
+        for (int k = 0; k < n; ++k) pairsOf[pick].push_back({byLeft[idx[k]], tg.lanes[std::min(nOut - 1, start + k)]});
+      }
+      for (size_t ti = 0; ti < targets.size(); ++ti) {
+        const Target &tg = targets[ti];
+        const auto &pairs = pairsOf[ti];
         if (pairs.empty()) continue;
-        const RoadMeta &mo = metas[tg.end->road];
-        const odr::Road &ro = od.roads[mo.roadIndex];
-        const double sOut = tg.end->atEnd ? ro.length() : 0.0;
-        for (const auto &[li, lo] : pairs) {
-          Pose a, b;
-          odr::laneCenter(ri, sIn, li, a);
-          odr::laneCenter(ro, sOut, lo, b);
-          a.hdg = (li < 0) != LHT ? a.hdg : a.hdg + kPi;  // travel direction
-          b.hdg = (lo < 0) != LHT ? b.hdg : b.hdg + kPi;
-          double ta, tb, ua, ub;
-          odr::laneBorders(ri, sIn, li, ta, tb);
-          odr::laneBorders(ro, sOut, lo, ua, ub);
-          const double w0 = std::abs(tb - ta), w1 = std::abs(ub - ua);
-          // geometry: single clothoid when it is a reasonable curve, else a G2 two-piece curve
-          ReferenceLine line = connectionPath(a, b);
-          if (const char *dc = std::getenv("ODRFORGE_DEBUG_CONN"); dc && ri.id == dc) {
-            std::fprintf(stderr, "conn %s->%s a (%.3f %.3f %.3f) b (%.3f %.3f %.3f)\n", ri.id.c_str(), ro.id.c_str(), a.x, a.y, a.hdg, b.x, b.y, b.hdg);
-            for (const auto &e : line.elements) std::fprintf(stderr, "   el L %.4f k0 %.4f k1 %.4f\n", e.length, e.k0, e.k1);
-          }
-          {
-            // sanity: a connecting path never turns much more than its end headings differ, nor
-            // runs much longer than the gap it bridges (a looping clothoid root slipped through);
-            // otherwise the simplest path: the chord (a few cm between nearly touching road ends)
-            double turning = 0;
-            for (const auto &e : line.elements) turning += 0.5 * (e.k0 + e.k1) * e.length;
-            const double chord = (b.pos() - a.pos()).norm(), dh = std::abs(normalizeAngle(b.hdg - a.hdg));
-            if (line.elements.empty() || std::abs(turning) > dh + 0.5 * kPi || line.length() > 4.0 * chord + 10.0) {
-              if (std::getenv("ODRFORGE_DEBUG_CONN"))
-                std::fprintf(stderr, "connecting %s->%s lanes %d->%d: path turning %.2f rad over %.2f m for gap %.2f m, dh %.2f\n",
-                             ri.id.c_str(), ro.id.c_str(), li, lo, turning, line.length(), chord, dh);
-              line = ReferenceLine{};
-              if (chord > 1e-3) {
-                GeomElement e;
-                e.x = a.x, e.y = a.y, e.hdg = std::atan2(b.y - a.y, b.x - a.x), e.length = chord;
-                line.elements.push_back(e);
-                line.finalize();
-              }
-            }
-          }
-          if (line.elements.empty() || line.length() < 0.05) continue;
-          odr::Road c;
-          c.id = std::to_string(nextConnId++);
-          c.junction = J.id;
-          if (!ri.rule.empty()) c.rule = ri.rule;
-          c.planView = line;
-          c.predecessor = odr::LinkTarget{"road", ri.id, in.atEnd ? "end" : "start"};
-          c.successor = odr::LinkTarget{"road", ro.id, tg.end->atEnd ? "end" : "start"};
-          c.types.push_back({0.0, ri.types.empty() ? "town" : ri.types.back().type, ri.types.empty() ? "" : ri.types.back().country,
-                             ri.types.empty() ? std::nullopt : ri.types.back().speedMax,
-                             ri.types.empty() ? "km/h" : ri.types.back().speedUnit});
-          const double L = line.length();
-          const int cid = LHT ? 1 : -1;  // the connecting lane travels along +s
-          const double sgn = LHT ? -1.0 : 1.0;
-          c.laneOffset.push_back(odr::Poly3::hermite(0.0, L, sgn * 0.5 * w0, 0.0, sgn * 0.5 * w1, 0.0));
-          odr::LaneSection sec;
-          sec.center.id = 0;
-          sec.center.type = "none";
-          odr::RoadMark none;
-          sec.center.roadMarks.push_back(none);
-          odr::Lane l;
-          l.id = cid;
-          l.type = "driving";
-          l.widths.push_back(odr::Poly3::hermite(0.0, L, w0, 0.0, w1, 0.0));
-          l.link.predecessor = li;
-          l.link.successor = lo;
-          l.roadMarks.push_back(none);
-          if (const auto *srcLane = odr::findLane(odr::sectionAt(ri, sIn), li)) l.speedMax = srcLane->speedMax;
-          (LHT ? sec.left : sec.right).push_back(l);
-          c.lanes.push_back(sec);
-          // elevation and banking from the junction surface (shared by every connecting road)
-          if (cl.hasPlane) {
-            // flat cross sections (no superelevation): the plane plus a C1 correction that meets the
-            // two road surfaces exactly at the lane centres
-            const double z0 = odr::surfaceZ(ri, sIn, 0.5 * (ta + tb)), z1 = odr::surfaceZ(ro, sOut, 0.5 * (ua + ub));
-            connectingElevation(c, cl, opt.target.superelevation ? std::nullopt : std::optional<std::pair<double, double>>({z0, z1}));
-          } else {  // no junction surface: Hermite between the two road ends (C1)
-            const double z0 = odr::surfaceZ(ri, sIn, 0.5 * (ta + tb)), z1 = odr::surfaceZ(ro, sOut, 0.5 * (ua + ub));
-            const double m0 = odr::elevationSlopeAt(ri, sIn) * (in.atEnd ? 1.0 : -1.0);
-            const double m1 = odr::elevationSlopeAt(ro, sOut) * (tg.end->atEnd ? -1.0 : 1.0);
-            c.elevation.push_back(odr::Poly3::hermite(0.0, L, z0, m0, z1, m1));
-          }
-          odr::Connection cn;
-          cn.id = std::to_string(connIdx++);
-          cn.incomingRoad = ri.id;
-          cn.connectingRoad = c.id;
-          cn.contactPoint = "start";
-          cn.laneLinks.push_back({li, cid});
-          J.connections.push_back(cn);
-          connecting.push_back(std::move(c));
-          ++rep.connectingRoads;
-        }
+        const ConnectionEnds ends{&ri, in.atEnd, &od.roads[metas[tg.end->road].roadIndex], tg.end->atEnd};
+        connectLanes(ends, pairs, cl, J, connecting, nextConnId);
       }
     }
-    // spec 5 (road.linkage.both_sides_consistency): a road links to the junction only if the
+    buildCornerSidewalks(cl, J, connecting, nextConnId);
+    // OpenDRIVE 1.8.0 §10.3 (1.9.0 rule road.linkage.both_sides_consistency): a road links to the junction only if the
     // junction connects it (as incoming road or as the target of a connecting road)
     std::set<std::string> used;
     for (const auto &cn : J.connections) used.insert(cn.incomingRoad);
@@ -439,6 +1035,35 @@ void Builder::buildJunctions() {
     od.junctions.push_back(std::move(J));
   }
   for (auto &c : connecting) od.roads.push_back(std::move(c));
+}
+
+namespace {
+constexpr double kStopLineGap = 1.0;       // stop line before the crosswalk
+}  // namespace
+
+// OSM maps traffic signals either as one node in the junction (every approach signalised) or as a
+// node per approach at its stop line. A light node on an approach within kControlReach of a junction
+// signalises it; the approaches that carry their own light are remembered. Run before the direct
+// junctions: OpenDRIVE 1.8.0 §12.1 Table 54 - junctions with traffic lights are common junctions.
+void Builder::markSignalControl() {
+  constexpr double kControlReach = 40.0;
+  lightInJunction.assign(clusters.size(), 0);
+  for (size_t k = 0; k < clusters.size(); ++k) lightInJunction[k] = clusters[k].signalised;
+  litApproach.clear();
+  for (int ci = 0; ci < static_cast<int>(chains.size()); ++ci) {
+    const Chain &ch = chains[ci];
+    if (ch.internal) continue;
+    for (const RoadMeta &m : metas) {
+      if (m.chain != ci) continue;
+      for (const auto &[nid, s] : m.nodeS) {
+        const OsmNode *nd = osm.node(nid);
+        if (!nd || !tagIs(nd->tags, "highway", "traffic_signals")) continue;
+        if (ch.c1 >= 0 && m.full.length() - s < kControlReach) litApproach.insert({ci, ch.c1});
+        if (ch.c0 >= 0 && s < kControlReach) litApproach.insert({ci, ch.c0});
+      }
+    }
+  }
+  for (const auto &[chain, cluster] : litApproach) clusters[cluster].signalised = true;
 }
 
 void Builder::buildSignals() {
@@ -475,30 +1100,88 @@ void Builder::buildSignals() {
     sg.t = to + (outer > 0 ? 0.6 : -0.6);
     const bool plus = (outer < 0) != LHT;
     sg.orientation = plus ? "+" : "-";
-    // spec 7.1: <validity fromLane toLane> with fromLane <= toLane (numerically)
+    // OpenDRIVE 1.8.0 §14.2: "The value of the @fromLane attribute shall be lower than or equal to the value
+    // of the @toLane attribute."
     const auto [mn, mx] = std::minmax_element(lanes.begin(), lanes.end());
     sg.validity.push_back({*mn, *mx});
   };
 
-  // traffic lights near (within 40 m of) a cluster also signalise it
-  for (int ci = 0; ci < static_cast<int>(chains.size()); ++ci) {
-    const Chain &ch = chains[ci];
-    if (ch.internal) continue;
-    for (const RoadMeta &m : metas) {
-      if (m.chain != ci) continue;
-      for (const auto &[nid, s] : m.nodeS) {
-        const OsmNode *nd = osm.node(nid);
-        if (!nd || !tagIs(nd->tags, "highway", "traffic_signals")) continue;
-        if (ch.c1 >= 0 && m.full.length() - s < 40.0) clusters[ch.c1].signalised = true;
-        if (ch.c0 >= 0 && s < 40.0) clusters[ch.c0].signalised = true;
+  // a stop / give-way sign placed at a road end (OSM highway=stop | give_way)
+  auto placeSign = [&](const std::string &hw, int mi, bool atEnd) {
+    odr::Road &r = od.roads[metas[mi].roadIndex];
+    auto lanes = endLanes(r, atEnd, true);
+    if (lanes.empty()) return;
+    const SignCode code = signCode(hw);
+    odr::Signal sg;
+    sg.id = std::to_string(nextSignalId++);
+    sg.name = hw == "stop" ? "Stop" : "GiveWay";
+    sg.country = code.country;
+    sg.type = code.type;
+    sg.subtype = code.subtype;
+    sg.width = code.width;
+    sg.height = code.height;
+    sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
+    sg.semanticsPriority = hw == "stop" ? "stop" : "yield";  // OpenDRIVE 1.8.0 §14.8
+    placeAtEnd(r, atEnd, lanes, 0.5, sg);
+    r.signals.push_back(sg);
+    ++rep.signals;
+  };
+
+  // the road ends a stop / give-way node applies to: in a junction its minor approaches (all of them
+  // for an all-way stop); on a road the junction its direction tag points to, else the nearest
+  auto signTargets = [&](OsmId nid, const OsmNode &nd) {
+    std::vector<std::pair<int, bool>> targets;  // (meta index, atEnd)
+    if (auto it = clusterOf.find(nid); it != clusterOf.end()) {
+      const Cluster &cl = clusters[it->second];
+      const bool allWay = tagIs(nd.tags, "stop", "all");
+      int minRank = 99;
+      for (const RoadEnd &e : cl.ends) minRank = std::min(minRank, metas[e.road].rank);
+      for (const RoadEnd &e : cl.ends)
+        if (allWay || metas[e.road].rank == minRank) targets.push_back({e.road, e.atEnd});
+      return targets;
+    }
+    for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
+      const RoadMeta &m = metas[mi];
+      for (const auto &[n2, s] : m.nodeS) {
+        if (n2 != nid) continue;
+        const Chain &ch = chains[m.chain];
+        const std::string dir = tag(nd.tags, "direction").value_or("");
+        bool toEnd;
+        if (dir == "forward" || dir == "backward") {
+          // direction is relative to the OSM way; find whether this part runs along it
+          bool partFwd = true;
+          for (const Part &p : ch.parts)
+            if (std::count(segs[p.seg].nodes.begin(), segs[p.seg].nodes.end(), nid)) partFwd = p.fwd;
+          toEnd = (dir == "forward") == partFwd;
+        } else {
+          toEnd = (m.full.length() - s) < s;  // nearest junction
+        }
+        if ((toEnd ? ch.c1 : ch.c0) >= 0) targets.push_back({mi, toEnd});
       }
     }
-  }
+    return targets;
+  };
+  std::set<std::pair<int, bool>> signedEnd;  // road ends that get a stop / give-way sign
+  for (const auto &[nid, nd] : osm.nodes)
+    if (tagIs(nd.tags, "highway", "stop") || tagIs(nd.tags, "highway", "give_way"))
+      for (const auto &t : signTargets(nid, nd)) signedEnd.insert(t);
+
+  // a junction signalised through some of its approaches: an approach without a light of its own is
+  // controlled by the stop / give-way sign OSM gives it (placed below), a service road or
+  // living street (a driveway, a car park exit) by a give-way sign; other streets get a light (OSM
+  // leaves many signalised approaches unmapped). Decided with Jev (0.86).
+  enum class Control { Light, OwnSign, GiveWay };
+  auto controlOf = [&](int cluster, const RoadEnd &e) {
+    const std::pair<int, int> key{metas[e.road].chain, cluster};
+    if (lightInJunction[cluster] || litApproach.count(key)) return Control::Light;
+    if (signedEnd.count({e.road, e.atEnd})) return Control::OwnSign;
+    return metas[e.road].rank <= classRank("living_street") ? Control::GiveWay : Control::Light;
+  };
 
   for (Cluster &cl : clusters) {
     if (!cl.signalised || cl.junction < 0) continue;
     odr::Junction &J = od.junctions[cl.junction];
-    // phases: opposite approaches share a controller
+    // phases: the approaches of one traffic axis share a controller
     struct Approach {
       const RoadEnd *end;
       double heading;
@@ -506,22 +1189,34 @@ void Builder::buildSignals() {
       int group = -1;
     };
     std::vector<Approach> ap;
+    const int clusterIndex = static_cast<int>(&cl - clusters.data());
     for (const RoadEnd &e : cl.ends) {
       odr::Road &r = od.roads[metas[e.road].roadIndex];
       auto lanes = endLanes(r, e.atEnd, true);
       if (lanes.empty()) continue;
+      const Control control = controlOf(clusterIndex, e);
+      if (control == Control::GiveWay) placeSign("give_way", e.road, e.atEnd);
+      if (control != Control::Light) continue;
       const Pose p = r.planView.eval(e.atEnd ? r.length() : 0.0);
       ap.push_back({&e, e.atEnd ? p.hdg : p.hdg + kPi, lanes, -1});
     }
+    // a phase is one traffic axis: an approach, the one arriving opposite it (within 0.6 rad), and the
+    // approaches running beside either of them (a parallel carriageway or slip road, within 0.35 rad).
+    // Two approaches from the same side at different angles are not one phase: their paths cross.
+    auto parallel = [](double h0, double h1) { return std::abs(normalizeAngle(h1 - h0)) < 0.35; };
+    auto opposite = [](double h0, double h1) { return std::abs(std::abs(normalizeAngle(h1 - h0)) - kPi) < 0.6; };
     int groups = 0;
     for (size_t i = 0; i < ap.size(); ++i) {
       if (ap[i].group >= 0) continue;
       ap[i].group = groups;
-      for (size_t j = i + 1; j < ap.size(); ++j)
-        if (ap[j].group < 0 && std::abs(std::abs(normalizeAngle(ap[j].heading - ap[i].heading)) - kPi) < 0.6) {
-          ap[j].group = groups;
-          break;
-        }
+      std::vector<size_t> members{i};
+      bool oppositeTaken = false;
+      for (size_t j = i + 1; j < ap.size(); ++j) {
+        if (ap[j].group >= 0) continue;
+        bool joins = std::any_of(members.begin(), members.end(), [&](size_t m) { return parallel(ap[m].heading, ap[j].heading); });
+        if (!joins && !oppositeTaken && opposite(ap[i].heading, ap[j].heading)) joins = oppositeTaken = true;
+        if (joins) ap[j].group = groups, members.push_back(j);
+      }
       ++groups;
     }
     std::vector<odr::Controller> ctrls(groups);
@@ -542,9 +1237,50 @@ void Builder::buildSignals() {
       sg.subtype = code.subtype;
       sg.width = code.width;
       sg.height = code.height;
-      sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 4.5;
+      // OpenDRIVE 1.8.0 §14.1 zOffset: the signal origin above the reference-line elevation. On its pole beside
+      // the road, as in the Junction Guideline 1.0.0 §6.3.3 / §9 examples for type 1000001 (zOffset 2.42)
+      sg.zOffset = T.trafficLightZeroOffset ? 0.0 : 2.42;
+      sg.semanticsPriority = "trafficLight";  // OpenDRIVE 1.8.0 §14.8; Junction Guideline §6.3.3 Code 14
       placeAtEnd(r, a.end->atEnd, a.lanes, 0.2, sg);
       ctrls[a.group].signalIds.push_back(sg.id);
+      // Stop line: OpenDRIVE catalogue type 1100001 (invisible stop line, Signal reference 1.0.0
+      // Table 5), before the pedestrian crossings (Junction Guideline §6.3.3): pushed upstream,
+      // kStopLineGap clear, past every crosswalk that reaches from the junction side up to it - the
+      // approach's own and mapped ones; crosswalks wholly upstream of it are left behind it.
+      double back = 0.2;
+      for (bool moved = true; moved;) {
+        moved = false;
+        for (const odr::Object &o : r.objects) {
+          if (o.type != "crosswalk") continue;
+          const double d = a.end->atEnd ? r.length() - o.s : o.s;  // crosswalk centre from the junction end
+          const double far = d + 0.5 * o.length + kStopLineGap;
+          if (d - 0.5 * o.length < back && back < far) back = far, moved = true;
+        }
+      }
+      // an approach too short to stop before its crosswalk gets no stop line: the light keeps the lane
+      // validity itself (OpenDRIVE 1.8.0 §14.2; the §14.4 example light carries <validity>)
+      if (T.spec().hasSignalReferenceElement() && back < r.length()) {
+        // ASAM Junction Guideline §9.2: traffic stops at a stop line, valid for the approach lanes and
+        // dependent on the light; the light references it and carries no lane validity itself.
+        odr::Signal stop;
+        stop.id = std::to_string(nextSignalId++);
+        stop.name = "StopLine";
+        stop.country = "OpenDRIVE";
+        stop.type = "1100001";
+        stop.height = 0.03;
+        stop.semanticsPriority = "stopLine";  // OpenDRIVE 1.8.0 §14.8; Junction Guideline §6.3.3 Code 13
+        placeAtEnd(r, a.end->atEnd, a.lanes, back, stop);
+        double t0, t1, u0, u1;  // across the approach lanes: the line's centre and width
+        odr::laneBorders(r, stop.s, stop.validity.front().fromLane, t0, t1);
+        odr::laneBorders(r, stop.s, stop.validity.front().toLane, u0, u1);
+        const double lo = std::min({t0, t1, u0, u1}), hi = std::max({t0, t1, u0, u1});
+        stop.t = 0.5 * (lo + hi);
+        stop.width = hi - lo;
+        stop.dependencies.push_back({sg.id, "trafficLight"});
+        sg.references.push_back({stop.id, "signal", "stopLine"});
+        sg.validity.clear();
+        r.signals.push_back(stop);
+      }
       r.signals.push_back(sg);
       ++rep.signals;
     }
@@ -556,53 +1292,7 @@ void Builder::buildSignals() {
   for (const auto &[nid, nd] : osm.nodes) {
     const std::string hw = tag(nd.tags, "highway").value_or("");
     if (hw != "stop" && hw != "give_way") continue;
-    const SignCode code = signCode(hw);
-    std::vector<std::pair<int, bool>> targets;  // (meta index, atEnd)
-    if (auto it = clusterOf.find(nid); it != clusterOf.end()) {
-      const Cluster &cl = clusters[it->second];
-      const bool allWay = tagIs(nd.tags, "stop", "all");
-      int minRank = 99;
-      for (const RoadEnd &e : cl.ends) minRank = std::min(minRank, metas[e.road].rank);
-      for (const RoadEnd &e : cl.ends)
-        if (allWay || metas[e.road].rank == minRank) targets.push_back({e.road, e.atEnd});
-    } else {
-      for (int mi = 0; mi < static_cast<int>(metas.size()); ++mi) {
-        const RoadMeta &m = metas[mi];
-        for (const auto &[n2, s] : m.nodeS) {
-          if (n2 != nid) continue;
-          const Chain &ch = chains[m.chain];
-          const std::string dir = tag(nd.tags, "direction").value_or("");
-          bool toEnd;
-          if (dir == "forward" || dir == "backward") {
-            // direction is relative to the OSM way; find whether this part runs along it
-            bool partFwd = true;
-            for (const Part &p : ch.parts)
-              if (std::count(segs[p.seg].nodes.begin(), segs[p.seg].nodes.end(), nid)) partFwd = p.fwd;
-            toEnd = (dir == "forward") == partFwd;
-          } else {
-            toEnd = (m.full.length() - s) < s;  // nearest junction
-          }
-          if ((toEnd ? ch.c1 : ch.c0) >= 0) targets.push_back({mi, toEnd});
-        }
-      }
-    }
-    for (const auto &[mi, atEnd] : targets) {
-      odr::Road &r = od.roads[metas[mi].roadIndex];
-      auto lanes = endLanes(r, atEnd, true);
-      if (lanes.empty()) continue;
-      odr::Signal sg;
-      sg.id = std::to_string(nextSignalId++);
-      sg.name = hw == "stop" ? "Stop" : "GiveWay";
-      sg.country = code.country;
-      sg.type = code.type;
-      sg.subtype = code.subtype;
-      sg.width = code.width;
-      sg.height = code.height;
-      sg.zOffset = T.openDriveSignCatalog ? 0.0 : 2.0;
-      placeAtEnd(r, atEnd, lanes, 0.5, sg);
-      r.signals.push_back(sg);
-      ++rep.signals;
-    }
+    for (const auto &[mi, atEnd] : signTargets(nid, nd)) placeSign(hw, mi, atEnd);
   }
 
   // speed-limit signs where the limit changes along the direction of travel (or a road starts)
@@ -662,7 +1352,7 @@ void Builder::buildSignals() {
 }
 
 void Builder::buildObjects() {
-  const int rev = opt.target.revMinor;
+  const SpecRevision spec = opt.target.spec();
   // spatial index of road reference lines (5 m samples)
   struct Sample {
     int road;
@@ -714,13 +1404,21 @@ void Builder::buildObjects() {
     o.type = "crosswalk";
     o.s = s;
     o.t = 0.0;
-    o.length = 3.0;
+    o.length = kCrosswalkLength;
     o.width = hi - lo;
     o.orientation = "none";
-    o.outline = {{-1.5, lo, 0, 0}, {1.5, lo, 0, 0}, {1.5, hi, 0, 0}, {-1.5, hi, 0, 0}};
+    const double h = 0.5 * kCrosswalkLength;
+    o.outline = {{-h, lo, 0, 0}, {h, lo, 0, 0}, {h, hi, 0, 0}, {-h, hi, 0, 0}};
     r.objects.push_back(o);
     ++rep.objects;
   };
+  // a crosswalk inside the junction (standard) needs a corner sidewalk on each side for its cross path to
+  // link (cross_paths.cpp); where the corner builder made fewer, the crosswalk stays on the approach
+  for (const Cluster &cl : clusters)
+    for (const RoadEnd &e : cl.ends) {
+      bool &inJunction = e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart;
+      if (inJunction && !(cl.junction >= 0 && cornerSidewalksAt(od.junctions[cl.junction], e).size() == 2)) inJunction = false;
+    }
   // mapped crossings on roads
   for (const auto &[nid, nd] : osm.nodes) {
     if (!tagIs(nd.tags, "highway", "crossing") || clusterOf.count(nid)) continue;
@@ -728,8 +1426,14 @@ void Builder::buildObjects() {
       for (const auto &[n2, sf] : m.nodeS)
         if (n2 == nid) {
           odr::Road &r = od.roads[m.roadIndex];
-          const double s = std::clamp(sf - m.trimStart, 1.5, std::max(1.5, r.length() - 1.5));
+          // a crossing at the mouth of a junction whose crosswalk is a cross path inside it: that cross path is
+          // this crossing (no second marking on the approach)
+          const double raw = sf - m.trimStart;
+          if ((m.crosswalkInJunctionStart && raw < kCrosswalkLength) || (m.crosswalkInJunctionEnd && raw > r.length() - kCrosswalkLength))
+            continue;
+          const double s = std::clamp(raw, 1.5, std::max(1.5, r.length() - 1.5));
           crosswalk(r, s);
+          midBlockCrosswalks.push_back({static_cast<size_t>(m.roadIndex), r.objects.back().id});
         }
   }
   // crosswalks on every approach of signalised / crossing junctions
@@ -738,8 +1442,10 @@ void Builder::buildObjects() {
       if (!(cl.signalised || cl.crossing)) continue;
       for (const RoadEnd &e : cl.ends) {
         odr::Road &r = od.roads[metas[e.road].roadIndex];
-        if (r.length() < 6.0) continue;
-        crosswalk(r, e.atEnd ? r.length() - 1.6 : 1.6);
+        if (r.length() < kCrosswalkMinRoad) continue;
+        // inside the junction (standard): the cross path's crossing road carries it (cross_paths.cpp)
+        if (e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart) continue;
+        crosswalk(r, e.atEnd ? r.length() - kCrosswalkCentreBack : kCrosswalkCentreBack);
       }
     }
   if (!opt.streetFurniture) return;
@@ -757,8 +1463,8 @@ void Builder::buildObjects() {
     o.t = t;
     if (lamp) {
       o.name = "StreetLamp";
-      o.type = rev >= 8 ? "pole" : "streetLamp";
-      o.subtype = rev >= 8 ? "streetLamp" : "";
+      o.type = spec.hasStreetLampAsPoleSubtype() ? "pole" : "streetLamp";
+      o.subtype = spec.hasStreetLampAsPoleSubtype() ? "streetLamp" : "";
       o.height = 9.0;
       o.radius = 0.15;
     } else {
@@ -772,7 +1478,57 @@ void Builder::buildObjects() {
   }
 }
 
+namespace {
+
+// OpenDRIVE 1.9 §12.2: a junction exists to connect roads; one whose movements were all dropped
+// is removed (XSD 1.4 also requires at least one <connection>). Nothing references such a
+// junction: its connecting roads went with its movements. A virtual junction holding only cross
+// paths (§12.5, 1.8) connects its sidewalks and stays.
+void dropJunctionsWithoutConnections(odr::OpenDrive &od) {
+  od.junctions.erase(std::remove_if(od.junctions.begin(), od.junctions.end(),
+                                    [](const odr::Junction &j) { return j.connections.empty() && j.crossPaths.empty(); }),
+                     od.junctions.end());
+}
+
+}  // namespace
+
+// OpenDRIVE 1.9 §12.13, ASAM Junction Guideline: a roundabout is one junction per arm, the ring
+// built from roads between them, and the junctions grouped as a junctionGroup of type roundabout.
+// Junctions joined by ring roads (OSM junction=roundabout / circular) form one group.
+void Builder::groupRoundabouts() {
+  std::map<std::string, std::string> parent;
+  std::function<std::string(const std::string &)> find = [&](const std::string &x) {
+    auto it = parent.find(x);
+    if (it == parent.end() || it->second == x) return x;
+    return it->second = find(it->second);
+  };
+  for (const RoadMeta &m : metas) {
+    if (m.roadIndex < 0 || m.sections.empty() || !m.sections.front().xs.roundabout) continue;
+    const odr::Road &r = od.roads[m.roadIndex];
+    if (!r.predecessor || !r.successor || r.predecessor->elementType != "junction" ||
+        r.successor->elementType != "junction")
+      continue;
+    const std::string a = find(r.predecessor->elementId), b = find(r.successor->elementId);
+    parent[a] = a;
+    parent[b] = b;
+    parent[a] = b;
+  }
+  std::map<std::string, std::vector<std::string>> rings;
+  for (const auto &j : od.junctions)
+    if (parent.count(j.id)) rings[find(j.id)].push_back(j.id);
+  for (auto &[root, ids] : rings) {
+    if (ids.size() < 2) continue;
+    odr::JunctionGroup g;
+    g.id = std::to_string(od.junctionGroups.size() + 1);
+    g.name = "Roundabout";
+    g.junctionIds = ids;
+    od.junctionGroups.push_back(std::move(g));
+  }
+}
+
 void Builder::finish() {
+  dropJunctionsWithoutConnections(od);
+  groupRoundabouts();
   // header: extent, georeference, date
   double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
   for (const auto &r : od.roads)
@@ -788,7 +1544,37 @@ void Builder::finish() {
   od.header.east = maxX;
   od.header.west = minX;
   od.header.geoReference = proj.projString();
+  // the heights' vertical datum in the spatial reference itself: OpenDRIVE 1.9.0 §8.5 describes the reference system
+  // by a PROJ string (zWorld = zODR + zOffset); PROJ ties ellipsoidal to orthometric heights through a geoid model,
+  // +geoidgrids (the grid of the PROJ database's transformation to that vertical CRS, cdn.proj.org) +vunits=m. Kept
+  // in the header userData too (verticalDatum, and verticalCRS: the vertical CRS's EPSG code) for readers that do not
+  // parse it. A datum whose geoid grid is not open (Genova 1942: PROJ's transformation needs IGM's geo_igm_mar06.grd)
+  // gets no +geoidgrids - a missing grid would be read as ellipsoidal heights - only the userData. Unknown names: the
+  // verticalDatum name alone
+  struct VerticalDatum {
+    const char *epsg, *grid;
+  };
+  static const std::map<std::string, VerticalDatum> kVertical = {
+      {"DHHN2016", {"EPSG:7837", "de_bkg_gcg2016.tif"}},           // GCG2016 quasigeoid
+      {"ODN", {"EPSG:5701", "uk_os_OSGM15_GB.tif"}},               // OSGM15
+      {"EGM2008", {"EPSG:3855", "us_nga_egm08_25.tif"}},
+      {"JGD2011 (T.P.)", {"EPSG:6695", "jp_gsi_gsigeo2011.tif"}},  // GSIGEO2011
+      {"NAVD88", {"EPSG:5703", "us_noaa_g2018u0.tif"}},            // GEOID18 (CONUS)
+      {"Genova1942", {"EPSG:5214", nullptr}},                      // Genoa 1942 height (Italy, IGM)
+  };
+  const auto vd = kVertical.find(opt.verticalDatum);
+  if (vd != kVertical.end() && vd->second.grid)
+    od.header.geoReference += std::string(" +geoidgrids=") + vd->second.grid + " +vunits=m";
+  // the road network is derived from OpenStreetMap data, licensed under the ODbL 1.0 (OpenDRIVE 1.8.0 \u00a76.4.2
+  // <license>: name, resource, spdxid; @text would be "The full license text" - left out, the resource links
+  // it). ODbL asks for the attribution "(c) OpenStreetMap contributors"
+  // (osmfoundation.org/wiki/Licence/Attribution_Guidelines): header <userData> (1.8.0 \u00a77, 1.4H \u00a75.2), both
+  // profiles
+  od.header.license = odr::License{"Open Data Commons Open Database License 1.0",
+                                   "https://opendatacommons.org/licenses/odbl/1-0/", "ODbL-1.0", ""};
+  od.header.userData["attribution"] = u8"Contains data \u00a9 OpenStreetMap contributors, available under the ODbL 1.0.";
   if (!opt.verticalDatum.empty()) od.header.userData["verticalDatum"] = opt.verticalDatum;
+  if (vd != kVertical.end()) od.header.userData["verticalCRS"] = vd->second.epsg;
   od.header.revMinor = opt.target.revMinor;
   char buf[64];
   const std::time_t now = std::time(nullptr);

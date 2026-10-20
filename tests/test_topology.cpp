@@ -2,6 +2,7 @@
 // rule for sharp turns. Spec basis: spec 4.4 lane sections / 4.5 widths (branch lanes on the trunk),
 // spec 5 linkage (every lane of a connecting road links to existing lanes on both sides), plus the
 // visual quality rule quality.road_overlap.
+#include <algorithm>
 #include <cstdio>
 
 #include "odrforge/network.hpp"
@@ -60,14 +61,40 @@ const odr::Road *roadNear(const odr::OpenDrive &od, double x, double y, bool con
   return best;
 }
 
+/// lanes cars drive in: driving and the motorway entry / exit lane types (OpenDRIVE 1.9 §11.8)
 int drivingLanes(const odr::LaneSection &sec) {
   int n = 0;
   for (const auto *side : {&sec.left, &sec.right})
-    for (const auto &l : *side) n += l.type == "driving";
+    for (const auto &l : *side)
+      n += l.type == "driving" || l.type == "entry" || l.type == "exit" || l.type == "onRamp" || l.type == "offRamp" ||
+           l.type == "connectingRamp";
   return n;
 }
 
 }  // namespace
+
+TEST_CASE("gore: a split of an urban street keeps driving lanes (motorway lane types only at motorways)") {
+  // OpenDRIVE 1.8.0 §11.7.1 onRamp / offRamp / connectingRamp are ramps to and from motorways; Junction
+  // Guideline 1.0.0 §7.1: entry and exit lanes are typical for motorways and rural junctions
+  OsmB b;
+  const OsmId n = b.node(0, 0);
+  const Tags street{{"highway", "tertiary"}, {"lanes", "3"}, {"oneway", "yes"}, {"sidewalk", "no"}};
+  b.way({b.node(-400, 0), b.node(-200, 0), n}, street);
+  b.way({n, b.node(200, 0), b.node(400, 0)}, street);
+  b.way({n, b.node(80, -3), b.node(160, -9), b.node(240, -20), b.node(330, -42)},
+        {{"highway", "tertiary"}, {"lanes", "1"}, {"oneway", "yes"}, {"sidewalk", "no"}});
+  BuildOptions o = opts();
+  o.target = TargetProfile::byName("standard");
+  BuildReport rep;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+  CHECK(validate(od, o.target).errors == 0);
+  CHECK(rep.directJunctions == 1);  // the split is a direct junction all the same
+  for (const auto &r : od.roads)
+    for (const auto &sec : r.lanes)
+      for (const auto *side : {&sec.left, &sec.right})
+        for (const auto &l : *side)
+          CHECK(l.type != "entry" && l.type != "exit" && l.type != "onRamp" && l.type != "offRamp" && l.type != "connectingRamp");
+}
 
 TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfaces") {
   OsmB b;
@@ -78,33 +105,71 @@ TEST_CASE("gore: a freeway exit is a lane-level split, no overlapping road surfa
   // the exit leaves on the right at a shallow angle (OSM draws it from the same node)
   b.way({n, b.node(80, -3), b.node(160, -9), b.node(240, -20), b.node(330, -42)},
         {{"highway", "motorway_link"}, {"lanes", "1"}, {"oneway", "yes"}});
-  BuildOptions o = opts();
-  BuildReport rep;
-  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
-  const ValidationReport v = validate(od, o.target);
-  printErrors(v);
-  CHECK(rep.gores == 1);
-  CHECK(v.errors == 0);
-  CHECK(v.count("quality.road_overlap") == 0);
-  // the trunk carries 3 + 1 lanes before the junction; the junction is short
-  const odr::Road *trunk = roadNear(od, -300, 0);
-  CHECK(trunk && drivingLanes(trunk->lanes.back()) == 4 && drivingLanes(trunk->lanes.front()) == 3);
-  int conn = 0, toRamp = 0;
-  const odr::Road *ramp = roadNear(od, 300, -35);
-  for (const auto &r : od.roads) {
-    if (r.junction == "-1") continue;
-    ++conn;
-    CHECK(r.length() < 10.0);
-    if (r.successor && ramp && r.successor->elementId == ramp->id) ++toRamp;
-  }
-  CHECK(conn == 4);   // 3 main lanes straight on, 1 branch lane into the ramp
-  CHECK(toRamp == 1);
-  // the branch lane is the outermost (right) lane of the trunk
-  for (const auto &r : od.roads)
-    if (r.junction != "-1" && ramp && r.successor && r.successor->elementId == ramp->id) {
-      const auto &l = r.lanes.front().right.empty() ? r.lanes.front().left.front() : r.lanes.front().right.front();
-      CHECK(l.link.predecessor && std::abs(*l.link.predecessor) == 4);
+  for (const char *target : {"carla", "standard"}) {
+    BuildOptions o = opts();
+    o.target = TargetProfile::byName(target);
+    BuildReport rep;
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o, &rep);
+    const ValidationReport v = validate(od, o.target);
+    printErrors(v);
+    CHECK(rep.gores == 1);
+    CHECK(v.errors == 0 && v.warnings == 0);
+    CHECK(v.count("quality.road_overlap") == 0);
+    // the trunk carries 3 + 1 lanes before the junction
+    const odr::Road *trunk = roadNear(od, -300, 0);
+    CHECK(trunk && drivingLanes(trunk->lanes.back()) == 4 && drivingLanes(trunk->lanes.front()) == 3);
+    const odr::Road *ramp = roadNear(od, 300, -35);
+    CHECK(ramp && od.junctions.size() == 1);
+    if (!trunk || !ramp || od.junctions.size() != 1) continue;
+    const odr::Junction &J = od.junctions.front();
+    if (std::string(target) == "standard") {
+      // OpenDRIVE 1.9 §12.6 / Junction Guideline §7.2: a direct junction - no connecting roads, the
+      // trunk linked to the main road (3 lanes on) and to the ramp (its outermost lane)
+      CHECK(rep.directJunctions == 1 && J.type == "direct" && J.connections.size() == 2);
+      // Junction Guideline §7.2.2.3 lane types: the trunk's branch lane is an exit lane, the ramp's lane offRamp
+      CHECK(trunk->lanes.back().right.size() >= 4 && trunk->lanes.back().right[3].type == "exit");
+      // OpenDRIVE 1.8.0 §11.7.1: "offRamp: Ramp leading away from a motorway"
+      for (const auto &sec : ramp->lanes)
+        for (const auto &l : sec.right) CHECK(l.type == "offRamp");
+      CHECK(std::none_of(od.roads.begin(), od.roads.end(), [](const odr::Road &r) { return r.junction != "-1"; }));
+      for (const auto &cn : J.connections) {
+        CHECK(cn.incomingRoad == trunk->id);
+        if (cn.connectingRoad == ramp->id) CHECK(cn.laneLinks.size() == 1 && std::abs(cn.laneLinks[0].from) == 4);
+        else CHECK(cn.laneLinks.size() == 3);
+      }
+      // one cut: the ramp starts at the trunk's end in its heading (rule junctions.direct.road_ramp_heading)
+      // and the linked lanes meet edge to edge (junctions.direct.linked_lane_smoothness)
+      const Pose a = trunk->planView.eval(trunk->length()), z = ramp->planView.eval(0.0);
+      CHECK(std::abs(normalizeAngle(a.hdg - z.hdg)) < 1e-3);
+      for (const auto &cn : J.connections)
+        for (const auto &ll : cn.laneLinks) {
+          const odr::Road *to = cn.connectingRoad == ramp->id ? ramp : roadNear(od, 300, 0);
+          if (!to) continue;
+          double t0, t1, u0, u1;
+          CHECK(odr::laneBorders(*trunk, trunk->length(), ll.from, t0, t1));
+          CHECK(odr::laneBorders(*to, 0.0, ll.to, u0, u1));
+          const Pose b0 = to->planView.eval(0.0);
+          CHECK((a.offset(t0) - b0.offset(u0)).norm() < 0.05 && (a.offset(t1) - b0.offset(u1)).norm() < 0.05);
+        }
+      continue;
     }
+    // carla (1.4, no direct junctions): a short common junction with the same lane mapping
+    int connectingLanes = 0, toRamp = 0;
+    for (const auto &r : od.roads) {
+      if (r.junction == "-1") continue;
+      connectingLanes += drivingLanes(r.lanes.front());
+      CHECK(r.length() < 10.0);
+      if (r.successor && r.successor->elementId == ramp->id) toRamp += drivingLanes(r.lanes.front());
+    }
+    CHECK(connectingLanes == 4);  // 3 main lanes straight on, 1 branch lane into the ramp
+    CHECK(toRamp == 1);
+    // the branch lane is the outermost (right) lane of the trunk
+    for (const auto &r : od.roads)
+      if (r.junction != "-1" && r.successor && r.successor->elementId == ramp->id) {
+        const auto &l = r.lanes.front().right.empty() ? r.lanes.front().left.front() : r.lanes.front().right.front();
+        CHECK(l.link.predecessor && std::abs(*l.link.predecessor) == 4);
+      }
+  }
 }
 
 TEST_CASE("gore: a freeway entrance is a lane-level merge") {
@@ -224,6 +289,74 @@ TEST_CASE("gore: a short branch that splits again right away - both splits at la
   CHECK(v.errors == 0);
 }
 
+TEST_CASE("junction: connecting-road reference lines continue the arm reference lines (Junction Guideline 6)") {
+  OsmB b;
+  const OsmId n = b.node(0, 0);
+  const Tags street{{"highway", "secondary"}, {"lanes", "4"}};
+  for (const auto &[x, y] : {std::pair<double, double>{-200, 0}, {200, 0}, {0, -200}, {0, 200}})
+    b.way({b.node(x, y), n}, street);
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.errors == 0);
+  auto roadById = [&](const std::string &id) -> const odr::Road * {
+    for (const auto &q : od.roads)
+      if (q.id == id) return &q;
+    return nullptr;
+  };
+  int connecting = 0, continuing = 0, laneCentred = 0, multiLane = 0;
+  for (const auto &r : od.roads) {
+    const bool sidewalkOnly = !r.lanes.front().right.empty() &&
+                              (r.lanes.front().right.front().type == "sidewalk" || r.lanes.front().right.front().type == "curb");
+    if (r.junction == "-1" || sidewalkOnly) continue;  // vehicle connecting roads (corner sidewalks follow the curb)
+    ++connecting;
+    multiLane += r.lanes.front().right.size() + r.lanes.front().left.size() > 1;
+    const odr::Road *from = roadById(r.predecessor->elementId), *to = roadById(r.successor->elementId);
+    const Pose a = from->planView.eval(r.predecessor->contactPoint == "end" ? from->length() : 0.0);
+    const Pose b0 = to->planView.eval(r.successor->contactPoint == "end" ? to->length() : 0.0);
+    const Pose s0 = r.planView.eval(0.0), s1 = r.planView.eval(r.length());
+    const bool samePlaces = (s0.pos() - a.pos()).norm() < 1e-6 && (s1.pos() - b0.pos()).norm() < 1e-6;
+    const bool parallel = std::abs(std::sin(s0.hdg - a.hdg)) < 1e-6 && std::abs(std::sin(s1.hdg - b0.hdg)) < 1e-6;
+    continuing += samePlaces && parallel;
+    // otherwise (a tight turn far from the arm reference lines) the road is centred on its one lane
+    const auto &lanes = r.lanes.front();
+    const double halfWidth = 0.5 * (lanes.right.empty() ? lanes.left : lanes.right).front().widths.front().a;
+    laneCentred += !(samePlaces && parallel) && lanes.right.size() + lanes.left.size() == 1 &&
+                   std::abs(std::abs(r.laneOffset.front().a) - halfWidth) < 1e-6;
+  }
+  CHECK(connecting > 0);
+  CHECK(continuing > 0);
+  CHECK(continuing + laneCentred == connecting);
+  CHECK(multiLane > 0);  // two lanes straight on share one connecting road
+}
+
+TEST_CASE("junction: a dual carriageway crossing is one junction, no stub road between its halves (Guideline 6)") {
+  // two one-way carriageways 14.8 m apart (a wide median), crossed by a two-way street: OSM has two
+  // intersection nodes too far apart to be one node cluster, but the arm cuts squeeze the road
+  // between them out
+  OsmB b;
+  const OsmId north = b.node(0, 7.4), south = b.node(0, -7.4);
+  const Tags carriageway{{"highway", "primary"}, {"lanes", "3"}, {"oneway", "yes"}};
+  b.way({b.node(-300, 7.4), north, b.node(300, 7.4)}, carriageway);
+  b.way({b.node(300, -7.4), south, b.node(-300, -7.4)}, carriageway);
+  const Tags street{{"highway", "secondary"}, {"lanes", "2"}};
+  b.way({b.node(0, 300), north}, street);
+  b.way({north, south}, street);
+  b.way({south, b.node(0, -300)}, street);
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.errors == 0);
+  CHECK(od.junctions.size() == 1);
+  for (const auto &r : od.roads) CHECK(r.junction != "-1" || r.length() > 50.0);  // only the arms remain roads
+  // the street crosses the median in both directions and the carriageways connect to it
+  int connecting = 0;
+  for (const auto &r : od.roads) connecting += r.junction != "-1";
+  CHECK(connecting >= 6);
+}
+
 TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes never cross") {
   OsmB b;
   const OsmId n = b.node(0, 0);
@@ -243,9 +376,13 @@ TEST_CASE("junction: a lane split divides the lanes by side - connecting lanes n
     const odr::Road *to = nullptr;
     for (const auto &q : od.roads)
       if (q.id == r.successor->elementId) to = &q;
-    const double y0 = r.planView.eval(0).y;
-    if (to && to->planView.eval(to->length()).y > 0) minLeft = std::min(minLeft, y0);
-    else maxRight = std::max(maxRight, y0);
+    for (const auto &lane : r.lanes.front().right) {
+      if (lane.type != "driving") continue;  // the corner sidewalk in the fork is not a connecting lane
+      Pose start;
+      odr::laneCenter(r, 0.0, lane.id, start);
+      if (to && to->planView.eval(to->length()).y > 0) minLeft = std::min(minLeft, start.y);
+      else maxRight = std::max(maxRight, start.y);
+    }
   }
   CHECK(minLeft > maxRight);
 }
@@ -320,4 +457,93 @@ TEST_CASE("geometry: no near-straight arcs anywhere (LibCarla evaluates arcs in 
   for (const auto &r : od.roads)
     for (const auto &e : r.planView.elements)
       if (e.type() == GeomType::Arc) CHECK(std::abs(e.k0) >= 1e-5);  // radius at most 100 km: float error under 6 mm
+}
+
+TEST_CASE("junction: a side road ending inside the junction gets no connection that turns within centimetres") {
+  OsmB b;
+  // a junction on the edge of the clip box: the street on and the side street keep only half a
+  // metre beyond the junction node, so their trimmed ends lie a metre apart at a right angle
+  const OsmId c = b.node(0, 0);
+  const Tags street{{"highway", "secondary"}, {"lanes", "2"}};
+  b.way({b.node(-120, 0), b.node(-60, 0), c}, street);
+  b.way({c, b.node(0.6, 0)}, street);
+  b.way({c, b.node(0, 0.5)}, {{"highway", "residential"}});
+  BuildOptions o = opts();
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  const ValidationReport v = validate(od, o.target);
+  printErrors(v);
+  CHECK(v.count("junctions.connection.smooth_fit") == 0);
+  CHECK(v.errors == 0);
+  // the long street still reaches both stubs
+  int fromStreet = 0;
+  for (const auto &r : od.roads)
+    if (r.junction != "-1" && r.predecessor)
+      for (const auto &q : od.roads) fromStreet += q.id == r.predecessor->elementId && q.length() > 20.0;
+  CHECK(fromStreet >= 2);
+}
+
+TEST_CASE("junction: lanes going straight on into a wider road stay side by side, no lane skipped") {
+  // Junction Guideline §6: lanes continue in order. Two lanes going straight on into three were spread over all
+  // three and fed the outer two, leaving the middle lane with no feeder while it lies between fed lanes (the LLM
+  // review's "lane skip": Munich junction 5, roads 602 -> 440)
+  for (const char *country : {"US", "GB"}) {
+    OsmB b;
+    const OsmId c = b.node(0, 0);
+    b.way({b.node(-200, 0), b.node(-100, 0), c}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "2"}});
+    b.way({c, b.node(100, 0), b.node(200, 0)}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "3"}});
+    b.way({c, b.node(0, -100), b.node(0, -200)}, {{"highway", "residential"}});
+    BuildOptions o = opts();
+    o.country = CountryProfile::load(country);
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    const odr::Road *in = roadNear(od, -50, 0), *out = roadNear(od, 50, 0);
+    CHECK(in && out);
+    if (!in || !out) continue;
+    std::set<int> fed;  // outgoing lanes reached from the incoming road's driving lanes
+    for (const auto &r : od.roads) {
+      if (r.junction == "-1" || !r.predecessor || !r.successor || r.predecessor->elementId != in->id || r.successor->elementId != out->id)
+        continue;
+      for (const auto *side : {&r.lanes.back().left, &r.lanes.back().right})
+        for (const odr::Lane &l : *side)
+          if (l.type == "driving" && l.link.successor) fed.insert(*l.link.successor);
+    }
+    CHECK(fed.size() == 2);
+    if (fed.size() == 2) CHECK(std::abs(std::abs(*fed.begin()) - std::abs(*fed.rbegin())) == 1);  // adjacent lanes
+  }
+}
+
+TEST_CASE("junction: a single lane going straight on continues in the lane it lines up with") {
+  // a one-lane oneway becomes a three-lane oneway at a side street; both ways are centred on the OSM
+  // line, so the lane continues in the middle lane (the added lanes begin on either side of it)
+  for (const char *country : {"US", "GB"}) {
+    OsmB b;
+    const OsmId c = b.node(0, 0);
+    b.way({b.node(-200, 0), b.node(-100, 0), c}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "1"}});
+    b.way({c, b.node(100, 0), b.node(200, 0)}, {{"highway", "secondary"}, {"oneway", "yes"}, {"lanes", "3"}});
+    b.way({c, b.node(0, -100), b.node(0, -200)}, {{"highway", "residential"}});
+    BuildOptions o = opts();
+    o.country = CountryProfile::load(country);
+    const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+    const ValidationReport v = validate(od, o.target);
+    printErrors(v);
+    CHECK(v.errors == 0);
+    const odr::Road *in = roadNear(od, -50, 0), *out = roadNear(od, 50, 0);
+    CHECK(in && out);
+    if (!in || !out) continue;
+    int straight = 0;
+    for (const auto &r : od.roads) {
+      if (r.junction == "-1" || !r.predecessor || !r.successor || r.predecessor->elementId != in->id || r.successor->elementId != out->id)
+        continue;
+      // driving connecting roads only: a corner sidewalk also runs in -> out (under left-hand traffic, mirrored)
+      const auto &sec = r.lanes.front();
+      if (std::none_of(sec.left.begin(), sec.left.end(), [](const odr::Lane &l) { return l.type == "driving"; }) &&
+          std::none_of(sec.right.begin(), sec.right.end(), [](const odr::Lane &l) { return l.type == "driving"; }))
+        continue;
+      ++straight;
+      const int lane = r.lanes.front().left.empty() ? r.lanes.front().right.front().id : r.lanes.front().left.front().id;
+      Pose p0, p1;
+      CHECK(odr::laneCenter(r, 0.0, lane, p0) && odr::laneCenter(r, r.length(), lane, p1));
+      CHECK(std::abs(p1.y - p0.y) < 0.5);  // no jog sideways into the outer lane
+    }
+    CHECK(straight == 1);
+  }
 }

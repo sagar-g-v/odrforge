@@ -44,7 +44,10 @@ Lane readLane(const pugi::xml_node &n) {
     l.speedMax = num(sp, "max");
     l.speedUnit = sp.attribute("unit").value();
   }
-  if (auto h = n.child("height")) l.heightInner = num(h, "inner"), l.heightOuter = num(h, "outer");
+  for (auto h : n.children("height")) {
+    if (!l.heightInner && !l.heightOuter) l.heightInner = num(h, "inner"), l.heightOuter = num(h, "outer");
+    else l.heightChanges.push_back({num(h, "sOffset"), num(h, "inner"), num(h, "outer")});
+  }
   return l;
 }
 
@@ -148,6 +151,10 @@ OpenDrive read(const std::string &path) {
       ob.width = num(o, "width");
       ob.radius = num(o, "radius");
       ob.height = num(o, "height");
+      for (auto rp : o.children("repeat"))
+        ob.repeats.push_back({num(rp, "s"), num(rp, "length"), num(rp, "distance"), num(rp, "tStart"), num(rp, "tEnd"),
+                              num(rp, "zOffsetStart"), num(rp, "zOffsetEnd"), num(rp, "heightStart"),
+                              num(rp, "heightEnd"), num(rp, "widthStart"), num(rp, "widthEnd")});
       auto outline = o.child("outlines").child("outline");
       if (!outline) outline = o.child("outline");
       for (auto c : outline.children("cornerLocal"))

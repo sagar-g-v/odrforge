@@ -1,7 +1,11 @@
 // OdrForge - internal state shared by the network builder stages (not installed).
 #pragma once
 
+#include <functional>
 #include <map>
+#include <optional>
+#include <set>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -17,6 +21,7 @@ struct Seg {
   int travel = 0;  ///< +1 oneway along the way, -1 oneway against, 0 two-way
   bool bridge = false, tunnel = false;
   bool covered = false;  ///< covered=yes: under a building or hillside, the surface above is not the road
+  bool passage = false;  ///< tunnel=building_passage: through a building at ground level (OSM wiki Key:tunnel)
 };
 
 struct Part {
@@ -42,17 +47,30 @@ struct RoadEnd {
   bool atEnd = true;  ///< contact point "end" (else "start")
 };
 
+// crosswalks put on every approach of a signalised / crossing junction (BuildOptions::crosswalksAtSignals)
+constexpr double kCrosswalkCentreBack = 1.6;  // m from the road end
+constexpr double kCrosswalkLength = 3.0;
+constexpr double kCrosswalkMinRoad = 6.0;  // shorter approaches get none
+/// how much further an approach ends when its crosswalk lies inside the junction (the crosswalk's far edge)
+constexpr double kCrosswalkJunctionDepth = kCrosswalkCentreBack + 0.5 * kCrosswalkLength;
+
+/// a corner curve from pose a to pose b: arc tangent to both, radius up to `wanted`; beside a straight-on movement the
+/// smoothest path when that bends less (network_junctions.cpp)
+ReferenceLine cornerCurve(const Pose &a, const Pose &b, double wanted);
+
 struct RoadMeta {
   int chain = -1;
   ReferenceLine full;  ///< untrimmed reference line
   std::vector<SectionInfo> sections;  ///< s on the full line
   std::vector<std::pair<double, double>> bridges, tunnels;  ///< s ranges on the full line
   std::vector<std::pair<double, double>> covered;           ///< covered=yes s ranges (no height observations)
+  std::vector<std::pair<double, double>> passages;          ///< tunnel=building_passage s ranges (on the ground)
   struct LayerRange {
     double s0, s1;
     int layer;
+    double maxHeight = 0.0;  ///< signed headroom (OSM maxheight), 0: not tagged
   };
-  std::vector<LayerRange> layers;  ///< OSM layer (bridge without layer = 1, tunnel = -1) per s range
+  std::vector<LayerRange> layers;  ///< OSM layer (bridge without layer = 1, tunnel = -1, building passage = 0) per s range
   std::vector<std::pair<OsmId, double>> nodeS;  ///< OSM nodes of the chain with their s on the full line
   OsmId wayStart = 0, wayEnd = 0;
   double trimStart = 0.0, trimEnd = 0.0;
@@ -60,12 +78,27 @@ struct RoadMeta {
   std::vector<double> zs, zz;  ///< elevation samples (s on the trimmed road) and smoothed heights
   std::vector<double> xs;      ///< smoothed cross slope (tan of the superelevation) per sample
   bool hasData = true;         ///< false: no measurement anywhere on the road
+  std::vector<double> zRel;    ///< terrain mode: the relative-mode levels per sample (OSM layer storeys, 0 = ground)
+  std::vector<double> zGround; ///< terrain mode: the measured ground at the carriageway centre per sample (NaN: none)
   std::optional<double> fixedTrimStart, fixedTrimEnd;  ///< set by the gore stage: not re-trimmed
   std::vector<double> zy, zw, ztc;  ///< observed centre heights (NaN: none), robust weights, carriageway centre t
+  std::vector<char> zMeasured;      ///< per sample: a terrain measurement (not a guess between / beyond measurements)
   double zLambda = 0.0;             ///< Whittaker smoothing weight used for the profile
   double obs0 = 1e9, obs1 = 1e9;    ///< distance from the start / end to the nearest observed sample
   std::string highway;
   int rank = 0;        ///< road class priority (higher = more important)
+  /// the crosswalk at this end lies inside the junction (standard profile: a cross path of the junction)
+  bool crosswalkInJunctionStart = false, crosswalkInJunctionEnd = false;
+  /// street-side parking areas mapped beside the road, as parking lanes (parking.cpp); s on the full line
+  struct ParkingBay {
+    double s0 = 0.0, s1 = 0.0;
+    bool left = false;
+    double width = 0.0;   ///< parking lane
+    double filler = 0.0;  ///< road-level border lane between the carriageway and the area (0: none)
+    double taperIn = 0.0, taperOut = 0.0;  ///< growth / fall of the area's depth at its ends
+    std::vector<OsmId> ways;  ///< the OSM areas joined into this bay
+  };
+  std::vector<ParkingBay> bays;
 };
 
 struct Cluster {
@@ -88,6 +121,10 @@ struct Cluster {
   double plane[3] = {0, 0, 0};  ///< z = a + b (x - cx) + c (y - cy)
 };
 
+/// OSM layer of a road at s on its trimmed reference line (overlap.cpp)
+int layerAt(const RoadMeta &m, double s);
+/// the level a way lies on: layer=*, else +1 for a bridge and -1 for a tunnel (sidewalk.cpp)
+int wayLevel(const Tags &t);
 /// minimum fillet radius of a road class (m)
 double classMinRadius(const std::string &hw);
 /// carriageway extents (left, right) of a cross section relative to the reference line (no sidewalks)
@@ -101,6 +138,57 @@ std::set<OsmId> throughParkingAisles(const OsmData &osm, const BuildOptions &opt
 /// ... and inserts the missing node where minor roads cross on the same level (crossings: count)
 OsmData snapDanglingEnds(const OsmData &in, const Projection &proj, const BuildOptions &opt, int &snapped,
                          int *crossings = nullptr);
+
+/// The two road ends a connecting road joins: the incoming arm (traffic arriving at its end or start)
+/// and the outgoing arm (traffic leaving from its start or end).
+struct ConnectionEnds {
+  const odr::Road *in;
+  bool inAtEnd;
+  const odr::Road *out;
+  bool outAtEnd;
+  double sIn() const { return inAtEnd ? in->length() : 0.0; }
+  double sOut() const { return outAtEnd ? out->length() : 0.0; }
+};
+
+/// Separately mapped sidewalks (footway=sidewalk) and kerb lines (barrier=kerb), indexed for the
+/// sideways look-up that measures where a road's sidewalk lies: sidewalk.cpp
+class SidewalkIndex {
+ public:
+  struct Leg {
+    Vec2 a, b;
+    double width;
+    int level;  ///< OSM layer, bridges / tunnels one level apart from the ground when untagged
+    bool kerb;  ///< a kerb line: the sidewalk's curb-side edge
+    int road = -1;                       ///< a road's reference line (index into OpenDrive::roads): its carriageway
+    double reachLeft = 0.0, reachRight = 0.0;  ///< ... reaching this far left / right of the line
+  };
+  /// a point on the road and its unit direction of travel
+  struct Sample {
+    Vec2 p, dir;
+    int level;
+  };
+  struct Measured {
+    double centre, width;  ///< sidewalk centre distance from the line sampled, and its width
+  };
+  void add(const Leg &g);
+  bool empty() const { return legs_.empty(); }
+  /// median sidewalk on one side of the samples; none when fewer than half the samples (or < 2) see one
+  std::optional<Measured> measure(const std::vector<Sample> &samples, bool left) const;
+  /// every leg on the sample's level running parallel to it (within 25 deg) whose segment the sample's normal meets
+  /// within `reach`: where, as a signed distance along the left normal
+  std::vector<double> across(const Sample &q, double reach) const;
+  /// the carriageways of road legs (road >= 0) other than `road`, on any level, whose line the sample's normal meets
+  /// within `reach` running parallel to it (within 25 deg): each as its t interval across the sample
+  std::vector<std::pair<double, double>> carriageways(const Sample &q, double reach, int road) const;
+
+ private:
+  std::vector<Leg> legs_;
+  std::map<std::pair<long, long>, std::vector<size_t>> grid_;
+};
+
+/// A verge + sidewalk side (attached separate sidewalk) on the inside of a bend tighter than its
+/// reach narrows so it cannot fold: sidewalk.cpp
+void keepVergeFoldSafe(CrossSection &x, const ReferenceLine &line, double s0, double s1);
 
 struct Builder {
   const OsmData &osm;
@@ -118,6 +206,11 @@ struct Builder {
   odr::OpenDrive od;
   int nextSignalId = 1, nextObjectId = 1, nextControllerId = 1;
   std::vector<double> fitDev;  ///< per OSM node: distance to its fitted reference line
+  /// junction node pairs built as one junction because the road between them was squeezed out
+  std::vector<std::pair<OsmId, OsmId>> forcedJoins;
+  SidewalkIndex sidewalks;  ///< filled by attachSeparateSidewalks
+  SidewalkIndex kerbs;      ///< open barrier=kerb lines not ringing a traffic island: filled by collectKerbs
+  SidewalkIndex carriageways;  ///< every road's reference line with its carriageway's reach: filled by kerbEdges
 
   Builder(const OsmData &o, const Projection &p, const BuildOptions &b) : osm(o), proj(p), opt(b) {}
 
@@ -128,12 +221,49 @@ struct Builder {
 
   // stages (network.cpp)
   void collectSegments();
+  void attachSeparateSidewalks();  // sidewalk.cpp
+  void collectKerbs();             // kerbs.cpp
+  /// the carriageway edges of a built road follow the mapped kerbs (kerbs.cpp)
+  void followKerbs(const RoadMeta &m, odr::Road &r);
+  /// followKerbs on every road, once the overlaps between roads are resolved (kerbs.cpp)
+  void kerbEdges();
+  /// a kerb at t across pose p stands on the level of the edge at `edge`: measured ground within 0.3 m (kerbs.cpp)
+  bool kerbOnLevel(const Pose &p, double edge, double t) const;
+  /// a shoulder (width 0, widened by followKerbs) on the sides whose kerb lies beyond a kMaxLane lane (kerbs.cpp)
+  void kerbShoulders(const RoadMeta &m, const ReferenceLine &line, double len, std::vector<SectionInfo> &secs) const;
+  /// re-measures attached sidewalks from the fitted, trimmed reference line (sidewalk.cpp)
+  void remeasureSidewalks(const RoadMeta &m, const ReferenceLine &line, std::vector<SectionInfo> &secs) const;
+  /// street-side parking areas (OSM parking=street_side|lane|layby) measured beside the roads (parking.cpp)
+  void measureStreetSideParking();
+  std::set<OsmId> parkingAreas, parkingAreasDrawn;  ///< street-side parking areas measured / drawn on some road
+  /// the measured areas as parking lanes in the trimmed road's sections (parking.cpp)
+  void applyParkingBays(const RoadMeta &m, double sTrim, double len, std::vector<SectionInfo> &secs);
+  /// parking lanes from tags carry "no stopping at any time" within the country's legal distance of a junction (parking.cpp)
+  void keepTagParkingClearOfJunctions(const RoadMeta &m, double len, std::vector<SectionInfo> &secs);
   void findJunctionNodes();
   void buildChains();
   void clusterJunctions();
   void buildRoadGeometry();
   void buildGores();         // gore.cpp
+  void directJunctions();    // direct_junctions.cpp
+  void curbLanes();          // curbs.cpp
+  void lowerCurbsAtCrosswalks();  // curbs.cpp
+  void crossPaths();         // cross_paths.cpp
+  /// the corner sidewalks (connecting roads of curb / walking lanes) leaving road end e of a junction:
+  /// indices into od.roads, with whether each leaves from it (else arrives at it) (cross_paths.cpp)
+  std::vector<std::pair<size_t, bool>> cornerSidewalksAt(const odr::Junction &J, const RoadEnd &e) const;
+  void junctionBoundaries(); // junction_surface.cpp
+  void junctionGrids();      // junction_surface.cpp
+  void roadBarriers();       // barriers.cpp
+  /// crosswalks at OSM crossing nodes on a road (not in a junction): (road index, object id)
+  std::vector<std::pair<size_t, std::string>> midBlockCrosswalks;
+  /// s ranges of sidewalks lowered for a crossing that is not a crosswalk object of that road (a cross path
+  /// inside a junction): (road index, s0, s1)
+  std::vector<std::tuple<size_t, double, double>> loweredSpans;
   void trimRoads();
+  bool joinSqueezedJunctions();
+  void makeRoomForCurbReturns(const Cluster &c, const std::function<double(const RoadMeta &)> &trimCap);
+  void forgetJunctionLayout(const std::vector<Chain> &chainsBefore);
   void buildRoads();
   void resolveOverlaps();    // overlap.cpp
   void resolveLevelOverlaps();  // overlap.cpp: second pass once heights are known
@@ -141,14 +271,41 @@ struct Builder {
   void sampleElevation();    // elevation.cpp
   void junctionSurfaces();
   void fitRoadElevation();
+  void coveredUnderpasses();  // elevation.cpp: covered stretches below the terrain as <tunnel type="underpass">
+  void junctionsUnderCover();  // elevation.cpp: connecting roads between tunnel ends get a tunnel record
   void connectingElevation(odr::Road &c, const Cluster &cl,
                            std::optional<std::pair<double, double>> flatEnds = std::nullopt) const;
   double planeZ(const Cluster &c, const Vec2 &p) const;
   // stages (network_junctions.cpp)
   void buildJunctions();
+  OsmId attachNode(const RoadEnd &e) const;
+  std::optional<bool> restrictionLeadsTo(const Cluster &cl, OsmId via, OsmId toWay, const RoadEnd &exit,
+                                         bool onwards) const;
+  /// connecting roads for lane pairs (incoming lane id, outgoing lane id) of one relation
+  void connectLanes(const ConnectionEnds &ends, const std::vector<std::pair<int, int>> &pairs, const Cluster &cl,
+                    odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId);
+  enum class Frame { RefuseDistortion, RefuseFolding, AlwaysBuild };
+  /// a reference line end beside an arm: its offset t from the arm reference line (travel frame)
+  /// and how fast that offset changes per metre travelled
+  struct LaneCentre {
+    double t = 0.0, slope = 0.0;
+  };
+  bool addConnectingRoad(const ConnectionEnds &ends, const ReferenceLine &line, LaneCentre refIn, LaneCentre refOut,
+                         const std::vector<std::pair<int, int>> &lanes, Frame frame, const Cluster &cl,
+                         odr::Junction &junction,
+                         std::vector<odr::Road> &out, int &nextRoadId);
+  void buildCornerSidewalks(const Cluster &cl, odr::Junction &junction, std::vector<odr::Road> &out, int &nextRoadId);
+  void connectingRoadHeight(odr::Road &c, const ConnectionEnds &ends, double tRefIn, double tRefOut,
+                            const Cluster &cl) const;
+  void markSignalControl();  // network_junctions.cpp, before direct junctions
   void buildSignals();
+  /// junctions with an OSM traffic_signals node in them, and the (chain, cluster) approaches that carry
+  /// a light node of their own within kControlReach of the junction (markSignalControl)
+  std::vector<char> lightInJunction;
+  std::set<std::pair<int, int>> litApproach;
   void buildObjects();
   void finish();
+  void groupRoundabouts();
 
   // helpers
   static int classRank(const std::string &hw);

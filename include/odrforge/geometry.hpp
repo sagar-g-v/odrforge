@@ -76,7 +76,8 @@ class ReferenceLine {
   ReferenceLine slice(double s0, double s1) const;
   /// Merge nearly-straight / nearly-constant-curvature elements, drop zero-length ones.
   void simplify(double kTol = 1e-5);
-  /// Fold elements shorter than minLen into a neighbour (spec 2: avoid geometries below ~1 mm).
+  /// Fold elements shorter than minLen into a neighbour. OpenDRIVE 1.8.0 §9.2 only requires @length > 0
+  /// (XSD t_grZero); the minLen floor (1 cm) is our own guard against degenerate elements, not a spec value.
   void dropTiny(double minLen = 0.01);  // elements under 1 cm are folded into a neighbour (validator rule spec2.min_geometry_length)
 };
 

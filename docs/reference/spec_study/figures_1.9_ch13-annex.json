@@ -1,0 +1,1812 @@
+[
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_1.png",
+  "viewed": true,
+  "figure": "Figure 111",
+  "chapter": "13. Objects",
+  "section": "13.1 Introduction to objects",
+  "caption": "Figure 111. Circular and angular object",
+  "shows": "Road with reference line on top (s to the right, t up) and right lanes -1,-2,-3 below. A circular object with centre M at (s1, t1) beside lane -3, radius r. A rectangular object at (s2, t2) inside lane -3 with local u axis along s and v axis along t; 'length' is dimensioned along u, 'width' along v. t values are measured from the reference line (negative, to the right).",
+  "lesson": "An object is placed by the (s, t, zOffset) of its origin, which is the centre of its bounding volume. Shape is EITHER radius (+height, cylinder) OR length+width (+height, box). In 1.9 the attribute table now agrees with the drawing: @length is along local u (road direction when hdg=0), @width along local v (lateral).",
+  "right": [
+   "Write s,t,zOffset of the bounding-volume centre, not of a corner",
+   "Use length along u (s direction at hdg=0) and width along v (t direction)",
+   "Use radius only for round items (trees, poles, bollards); never combine radius with length/width",
+   "Make every point of the real object lie inside the bounding volume, and each face of the box touch the object"
+  ],
+  "wrong": [
+   "Swapping length and width (the 1.7 table had them reversed)",
+   "Giving both radius and width/length",
+   "Placing the origin at the object footprint edge"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same drawing as 1.7 Figure 88, but 1.9 fixes the text inconsistency: length=u-axis, width=v-axis, height along z of the local frame. New object attributes @temporary and @invalidated (1.9)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_18.png",
+  "viewed": true,
+  "figure": "Figure 112",
+  "chapter": "13. Objects",
+  "section": "13.1 Introduction to objects",
+  "caption": "Figure 112. Placing objects on roads",
+  "shows": "Side view z over s: road elevation (blue) is flat then rises in an S-shape. A long grey slab is inserted with its origin on the curve: its rear end dips below the flat road start, its front end cuts into the rising road while the middle floats above the dip.",
+  "lesson": "Objects are rigid: they do not bend with elevation or superelevation. Objects placed on the road surface must be small enough that they neither cut into nor float noticeably above the road, nor cause skewed CRG surfaces.",
+  "right": [
+   "Split long on-road features (painted areas, long islands) into short objects or use a repeat (which follows the road)",
+   "Use cornerRoad outlines with per-corner dz/height so the outline follows the surface",
+   "Use perpToRoad only for objects smaller than the vertical curvature radius"
+  ],
+  "wrong": [
+   "One long rigid object over a crest or sag",
+   "Relying on pitch/roll to fix a long object on a curved profile"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same idea as 1.7 Figure 90; 1.9 adds the explicit warning about skewed OpenCRG surfaces and the 1.9 rule avoid_skewed_crg_surfaces tied to @perpToRoad."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_981EF40C_984C_4522_BBD4_7466215BCDE0.png",
+  "viewed": true,
+  "figure": "Figure 113",
+  "chapter": "13. Objects",
+  "section": "13.1 Introduction to objects",
+  "caption": "Figure 113. UML class diagram of the Objects class",
+  "shows": "t_road_objects contains object 0..*, objectReference 0..*, tunnel 0..*, bridge 0..*. t_road_objects_object: required s (grEqZero), t, zOffset, id; optional type (e_objectType), subtype, name, dynamic (yes/no), validLength, orientation, hdg, pitch, roll, height (>=0), length (>0), width, radius (>0), perpToRoad, invalidated=false, temporary=false. Children: repeat 0..*, material 0..*, laneValidity 0..* (fromLane, toLane, layer=permanent), parkingSpace 0..1 (access, restrictions), markings 0..1 -> marking 1..* (side, weight, width, color, zOffset, spaceLength, lineLength, startOffset, stopOffset) -> cornerReference 0..* (id), borders 0..1 -> border 1..* (width, type, outlineId, useCompleteOutline), surface 0..1 -> CRG 0..1 (file, hideRoadSurfaceCRG, zScale), skeleton 0..1 -> polyline 1..* (id) -> choice vertexRoad 2..* (s,t,dz,radius,intersectionPoint,id) xor vertexLocal 2..* (u,v,z,radius,intersectionPoint,id), outlines 0..1 -> outline 1..* (id, fillType, outer=true, closed, laneType) and legacy outline 0..1; outline geometry xor: cornerRoad 2..* (s,t,dz,height,id) | curveLocal 1..* (u,v,z,height,length,hdg,id; one of line / arc(curvature) / paramPoly3(aU..dV,pRange)) | cornerLocal 2..* (u,v,z,height,id). tunnel: s,length,name,id,type,lighting,daylight. bridge: s,length,name,id,type. objectReference: s,t,id,zOffset,validLength,orientation. Constraint block lists per-type forbidden children (e.g. crosswalk: no skeleton/border/radius, repeat only distance 0; pole: no border/parking/material/marking, repeat only distance>0; tree/vegetation/building analogous) and the xor of radius vs width+length. markings constraint: markings directly under object only when no outline; marking with side cannot have cornerReference, otherwise >=2 cornerReference.",
+  "lesson": "This is the authoritative data model for <objects>. Key rules for a writer: shape xor (radius | width+length), outline geometry xor (cornerRoad | cornerLocal | curveLocal), markings live under <object> only without outline and under <outline> when an outline exists, laneValidity is the same class used by signals and carries a layer.",
+  "right": [
+   "Model objects as a struct with required s,t,zOffset,id and optional everything else",
+   "Emit <outlines><outline> (not the legacy single <outline>) for new files",
+   "Keep corner ids starting at 0 and incrementing by 1 when markings reference them",
+   "Respect per-type forbidden children (e.g. no <borders> except on trafficIsland)",
+   "Add @temporary/@invalidated only when true (defaults false)"
+  ],
+  "wrong": [
+   "Mixing cornerRoad and cornerLocal in one outline",
+   "Putting <markings> under <object> while the object also has an outline",
+   "Giving a pole/tree a continuous repeat (distance=0)",
+   "Using <borders> on non-trafficIsland objects"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Much larger than 1.7 Figure 89: adds skeleton/polyline/vertexRoad/vertexLocal (1.8), curveLocal with line/arc/paramPoly3 (1.9), outline.outer/closed/laneType, surface/CRG, laneValidity.layer (1.9), object.invalidated/temporary (1.9), repeat.detachFromReferenceLine and bT/cT/dT (1.9), and an explicit per-type constraint list."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_5.png",
+  "viewed": true,
+  "figure": "Figure 114",
+  "chapter": "13. Objects",
+  "section": "13.2 Object outline",
+  "caption": "Figure 114. Traffic island as object",
+  "shows": "Road with outer lanes 3 and -3 (dark red, non-driving), lanes 2 (traffic to the left) and -2 (traffic to the right). Around the reference line the boundary between lanes 2 and -2 opens into a lens; the lens is filled with orange hatched chevron area and in its middle sits a green rounded island with a dark-red pedestrian refuge strip crossing it.",
+  "lesson": "A traffic island inside a road is an object (type trafficIsland) described by several outlines: one outer outline (the whole lens) and inner outlines (green body, refuge) fully inside it, each with its own fillType/laneType. The surrounding lanes widen around it rather than the island cutting the lanes.",
+  "right": [
+   "Exactly one outline with outer=true; all inner outlines fully inside it",
+   "Where an inner outline touches the outer one, share the identical point",
+   "Use fillType (grass, paint, pavement...) and laneType per outline",
+   "Use cornerRoad or curveLocal for smooth island shapes"
+  ],
+  "wrong": [
+   "Several outer outlines on one object",
+   "Inner outline sticking out of the outer outline",
+   "Modelling the island as a lane with no width transition around it"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same drawing as 1.7 Figure 94; 1.9 adds the rules exactly_one_outer and inner_outline_touches_outer and the explanation of multiple outlines (pedestrian refuge, curb)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_6.png",
+  "viewed": true,
+  "figure": "Figure 115",
+  "chapter": "13. Objects",
+  "section": "13.2.1 <cornerRoad> element",
+  "caption": "Figure 115. Object described by corner road coordinates",
+  "shows": "Inertial X/Y grid; S-shaped road from about (10,10) to (45,55) with perpendicular s ticks every 10 m (s=0..80) and the local s/t axes at s=0. Beside it a 9-corner concave polygon with corners [s1,t1]..[s9,t9] listed counter-clockwise.",
+  "lesson": "cornerRoad corners are given in road coordinates (s, t, dz, height), but in 1.9 the edges between consecutive corners are straight lines in the INERTIAL system (corners are first converted to x,y,z, then linearly interpolated). The outline does not bend between corners; to follow a curved road, add more corners.",
+  "right": [
+   "Convert each corner (s,t,dz) to x,y,z first, then connect linearly",
+   "Densify corners along curved roads",
+   "List area corners counter-clockwise",
+   "Use id 0,1,2,... when markings reference corners"
+  ],
+  "wrong": [
+   "Interpolating the edge in s/t space (that would bend the edge with the road)",
+   "Fewer than 2 cornerRoad points",
+   "Mixing cornerRoad with cornerLocal/curveLocal in one outline"
+  ],
+  "formula": "e(p) = P_i + (P_{i+1} - P_i) * p, with P = (x,y,z) of corner after road->inertial transform, p in [0,1]",
+  "new_vs_1_7": "The 1.7 lesson 'outline bends with the road' is replaced: 1.9 states edges are straight in inertial coordinates. New 1.9 rules: first_id_zero, sequential_id_values, mandatory id when markings exist."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_7.png",
+  "viewed": true,
+  "figure": "Figure 116",
+  "chapter": "13. Objects",
+  "section": "13.2.2 <cornerLocal> element",
+  "caption": "Figure 116. An object described by <cornerLocal> coordinates",
+  "shows": "Curved road from about (15,70); s ticks 0..50. A green arrow goes from the reference line at s=20 to the object origin P (s=20, t=-30, zOffset=0, hdg=7pi/4 rad). At P a local u/v frame rotated by hdg; the same 9-corner polygon is given as [u1,v1]..[u9,v9].",
+  "lesson": "cornerLocal corners are in the object's local u/v/z frame: origin = (s,t,zOffset) of the object, rotated by hdg relative to the road heading at s. The shape is rigid and independent of road curvature; ideal for buildings and islands defined from polygons.",
+  "right": [
+   "Compute origin from s,t; heading = road heading(s) + hdg; transform polygon into u/v",
+   "Store z per corner relative to the origin",
+   "Use for OSM building/area polygons (convert x,y to u,v around a chosen centroid)"
+  ],
+  "wrong": [
+   "Treating hdg as an inertial heading (it is relative to the road)",
+   "Using cornerLocal for long features that must follow the road"
+  ],
+  "formula": "x = x0 + u*cos(H) - v*sin(H), y = y0 + u*sin(H) + v*cos(H), H = roadHdg(s) + hdg",
+  "new_vs_1_7": "Same as 1.7 Figure 96; 1.9 adds id rules and the exclusivity rule including curveLocal."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_19.png",
+  "viewed": true,
+  "figure": "Figure 117",
+  "chapter": "13. Objects",
+  "section": "13.2.3 <curveLocal> element",
+  "caption": "Figure 117. An object described by <cornerLocal> coordinates using <paramPoly3> elements",
+  "shows": "Same road and origin P (s=20, t=-30, zOffset=0, hdg=7pi/4) as Figure 116, but the outline is a smooth blob: straight segments [u1,v1]->[u2,v2]->[u3,v3]->[u4,v4], then a large smooth curve from [u4,v4] round to [u5,v5] and a concave curve to [u6,v6] before a straight edge back.",
+  "lesson": "New 1.9 curveLocal: each outline vertex starts a curve (line, arc with constant curvature, or paramPoly3 in u/v) with @hdg and optional @length; the curve must end exactly at the next vertex (continuity). This gives smooth traffic islands and painted shapes without dense polygons.",
+  "right": [
+   "Use curveLocal with arc for round island noses, paramPoly3 for measured shapes",
+   "Ensure each curve ends at the next vertex (continuous_curve_local)",
+   "Set pRange (arcLength or normalized) consistently with coefficients",
+   "Make @length match the integrated curve length"
+  ],
+  "wrong": [
+   "Mixing curveLocal with cornerLocal/cornerRoad in one outline",
+   "Leaving gaps between successive curves",
+   "Using normalized coefficients with p up to length"
+  ],
+  "formula": "u(p)=aU+bU p+cU p^2+dU p^3, v(p)=aV+bV p+cV p^2+dV p^3; arc: constant curvature (positive = left/CCW)",
+  "new_vs_1_7": "Entirely new in 1.9 (no 1.7 counterpart). Caption wording says cornerLocal but the section is curveLocal."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_skeleton_pole.png",
+  "viewed": true,
+  "figure": "Figure 118",
+  "chapter": "13. Objects",
+  "section": "13.3.1 <vertexRoad> element",
+  "caption": "Figure 118. Example of the bounding volume and skeleton of a traffic light pole",
+  "shows": "Perspective road (s up the image, t to the left). A traffic-light pole object at @s=25, @t=1.5 with bounding box width=3 (along t), length=0.3 (along s), height=4. Inside the box: polyline id=1 is the vertical pole whose bottom vertex is marked 'intersection point' (touches ground); polyline id=2 is the arm, kinking from the pole and running horizontally across over the road.",
+  "lesson": "Skeleton (1.8+) refines a bounding box with polylines of vertices that each carry radius (or width/length) giving cylinders/frustums. One vertex can be flagged intersectionPoint=true where the object meets the ground. Mast arms are separate polylines.",
+  "right": [
+   "Model mast-arm traffic light poles as pole/trafficLight with a skeleton: polyline for mast (first vertex intersectionPoint) and polyline for arm",
+   "Keep all vertices and their radius boundaries inside the bounding box",
+   "Use the same parameter style (radius OR width+length) for all vertices of one polyline"
+  ],
+  "wrong": [
+   "Bounding box that does not cover the arm",
+   "Mixing vertexRoad and vertexLocal in one polyline",
+   "Using radius and width/length on the same vertex"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8 (skeleton absent in 1.7). Also illustrates that width is along t and length along s for objects."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_skeleton_tree.png",
+  "viewed": true,
+  "figure": "Figure 119",
+  "chapter": "13. Objects",
+  "section": "13.3.2 <vertexLocal> element",
+  "caption": "Figure 119. Example of the skeleton of a tree",
+  "shows": "Road on the left (s up, t left). A tree at @s=9, @t=-5, @zOffset=-1 to the right of the road. Large grey bounding box; inside, polyline id=1 is the thin trunk (cylinder) whose lower vertex is the intersection point with the ground (zOffset below road level), polyline id=2 is the crown drawn as a wide cylinder on top.",
+  "lesson": "A tree can be described by two vertexLocal polylines (trunk and crown) with radius per vertex, letting a simulator know vehicles can pass under the crown. zOffset can be negative when the terrain is below the road reference.",
+  "right": [
+   "Use type=tree with radius bounding cylinder or box, plus optional skeleton trunk+crown",
+   "Mark the ground contact vertex with intersectionPoint=true"
+  ],
+  "wrong": [
+   "Single opaque bounding box only, when clearance under the crown matters",
+   "Vertices outside the bounding box"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8. Replaces the 1.7 suggestion of two outlines for trunk/crown with the more natural skeleton (outlines also remain possible)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_2.png",
+  "viewed": true,
+  "figure": "Figure 120",
+  "chapter": "13. Objects",
+  "section": "13.4 Repeating objects",
+  "caption": "Figure 120. Large angular continuous object with changing shape using a single <repeat> element",
+  "shows": "Top view: curved two-lane road (lanes -1, -2). A blue continuous band starts at s (tStart, widthStart) and runs 'length' along the reference line to tEnd/widthEnd, following the curve and narrowing; its centre dash-dot line moves closer to the road. Side view: band height shrinks from heightStart to heightEnd while zOffset rises from zOffsetStart to zOffsetEnd.",
+  "lesson": "repeat with distance=0 extrudes the object profile into one continuous feature (guard rail, wall). t, width, height, zOffset are interpolated from *Start to *End over the length; lengthStart/End are ignored for continuous objects. By default it follows the reference line curvature.",
+  "right": [
+   "Use distance=0 for guard rails, walls, fences, hedges",
+   "Set tStart/tEnd, widthStart/End, heightStart/End, zOffsetStart/End",
+   "Set detachFromReferenceLine=true only for a straight segment that should not follow the road"
+  ],
+  "wrong": [
+   "Continuous repeat for objects with outline or skeleton changing dimensions",
+   "Using widthStart/End on a radius-defined object"
+  ],
+  "formula": "a(ds) = aStart + (aEnd - aStart) * ds/length",
+  "new_vs_1_7": "Same picture as 1.7 Figure 91; 1.9 adds detachFromReferenceLine semantics and cubic t (bT,cT,dT)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_3.png",
+  "viewed": true,
+  "figure": "Figure 121",
+  "chapter": "13. Objects",
+  "section": "13.4 Repeating objects",
+  "caption": "Figure 121. Repeated small angular objects with changing shape using a single <repeat> element",
+  "shows": "Top view: discrete blue rectangles every 'distance' starting at s, each rotated to the local road heading; centres follow a dash-dot line from tStart to tEnd; size shrinks from widthStart/lengthStart to widthEnd/lengthEnd. Side view: heights shrink, zOffset rises. The final position at s+length has no instance because length/distance is not an integer.",
+  "lesson": "repeat with distance>0 places floor(length/distance)+... instances: only instances whose origin lies inside [s, s+length] are created; no partial instance; instance extents may overhang the section and are not clipped.",
+  "right": [
+   "Instance origins at s + k*distance while <= s+length",
+   "Rotate each instance with road heading",
+   "Interpolate dimensions linearly unless polynomial t given"
+  ],
+  "wrong": [
+   "Adding a final instance at s+length when length is not a multiple of distance",
+   "Clipping instance geometry at section ends"
+  ],
+  "formula": "count = floor(length/distance) + 1 (origins at ds = 0, distance, 2*distance, ... <= length)",
+  "new_vs_1_7": "Same as 1.7 Figure 92 but 1.9 text explicitly states the rounding-down rule and no-clipping rule."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_4.png",
+  "viewed": true,
+  "figure": "Figure 122",
+  "chapter": "13. Objects",
+  "section": "13.4 Repeating objects",
+  "caption": "Figure 122. Repeated small circular objects with changing shape using a single <repeat> element",
+  "shows": "Same layout with circles shrinking from radiusStart to radiusEnd, centres along tStart->tEnd; side view heights shrink and zOffset grows to zOffsetEnd.",
+  "lesson": "Circular objects repeat with radiusStart/radiusEnd; width/length overrides are not applicable when radius is set.",
+  "right": [
+   "Use radiusStart/End for poles, bollards, trees in a row",
+   "distance>0 for discrete posts/lamps"
+  ],
+  "wrong": [
+   "widthStart/widthEnd on radius objects (rule no_widthstart_end_with_radius)"
+  ],
+  "formula": "a(ds) = aStart + (aEnd - aStart) * ds/length",
+  "new_vs_1_7": "Same as 1.7 Figure 93; new 1.9 rule forbids width interpolation on radius objects."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_8.png",
+  "viewed": true,
+  "figure": "Figure 123",
+  "chapter": "13. Objects",
+  "section": "13.7 Access rules to parking spaces",
+  "caption": "Figure 123. Parking spaces rectangular (left figure) and rhomboid (right figure)",
+  "shows": "Left: road with reference line on top, lanes -1, -2, and a parking strip below; three axis-aligned orange rectangles with origins (s1,t1),(s2,t2),(s3,t3). Right: same, but the rectangles are rotated about their origins (angled bays, rotation arrow shown).",
+  "lesson": "Each bay is one object of type parkingSpace placed by s/t; angled bays use hdg (rotation around the origin). Access restrictions go in the <parkingSpace access restrictions> child.",
+  "right": [
+   "One parkingSpace object per bay with width/length bounding box",
+   "Use hdg for angled parking",
+   "Use object markings with side for bay lines when there is no outline",
+   "Parking bays are on a parking lane (lane type parking) or in a lot"
+  ],
+  "wrong": [
+   "One large object for a whole row of bays without repeat",
+   "Using radius for parking spaces (not allowed)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 97; 1.9 type table says width/length bounding box mandatory, outline optional, repeat with distance>0 optional."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_9.png",
+  "viewed": true,
+  "figure": "Figure 124",
+  "chapter": "13. Objects",
+  "section": "13.8.3 Example referencing outline points",
+  "caption": "Figure 124. Crosswalk in ASAM OpenDRIVE",
+  "shows": "Two-lane road: lane 1 above and lane -1 below the reference line, each 3.50 m wide. A trapezoid crosswalk area: top corners at s1=5.00 and s4=15.00 (outer edge of lane 1), bottom corners at s2=8.00 and s3=12.00 (outer edge of lane -1). The two slanted sides carry dashed white/grey edge markings.",
+  "lesson": "A crosswalk is an object (type crosswalk) with a cornerRoad outline spanning both lanes; its edge lines are <marking> elements placed INSIDE the <outline> and referencing corner ids (cornerReference). Crosswalk objects alone are not used for pedestrian simulation; pedestrian paths should be crossPaths in a junction.",
+  "right": [
+   "Outline corners with ids 0..3 in road coordinates",
+   "markings inside the outline referencing two corner ids each",
+   "orientation=none for both directions",
+   "Also model a crossPath/junction if pedestrians must be simulated"
+  ],
+  "wrong": [
+   "markings directly under <object> while an outline exists (1.9 rule markings_with_outline)",
+   "Referencing non-consecutive corners without listing the points in between"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same drawing as 1.7 Figure 98, but 1.9 moves markings inside <outline> when outlines exist (1.7 placed them under the object), and the type table recommends crossPath in junctions for pedestrian simulation."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_10.png",
+  "viewed": true,
+  "figure": "Figure 125",
+  "chapter": "13. Objects",
+  "section": "13.11 Tunnels",
+  "caption": "Figure 125. Tunnel",
+  "shows": "Top view: road with lanes 3,2,1 (traffic to the left) and -1,-2 (traffic to the right); a grey box labelled tunnel covers the full width over an s range. Side view below: a truck and car on a road passing under a green earth mound.",
+  "lesson": "A tunnel is a <tunnel s length type> under <objects>, valid for the whole cross-section unless restricted by laneValidity; the road carrying it is the part that is in the tunnel/underpass.",
+  "right": [
+   "Emit <tunnel> on the road that runs inside (OSM tunnel=yes / layer<0)",
+   "Use type standard/underpass, lighting/daylight 0..1 if known"
+  ],
+  "wrong": [
+   "Modelling tunnels as generic <object>",
+   "Putting the tunnel on the road above"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same concept as 1.7 Figure 99; 1.9 drawing adds a side view."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_11.png",
+  "viewed": true,
+  "figure": "Figure 126",
+  "chapter": "13. Objects",
+  "section": "13.12 Bridges",
+  "caption": "Figure 126. Bridge",
+  "shows": "Top view: same road with a grey box labelled bridge covering the full width over a shorter s range. Side view: bus and car on a road deck carried over an opening by abutments.",
+  "lesson": "A bridge is a <bridge s length type> on the road that leads over the bridge, valid for the whole cross-section unless restricted.",
+  "right": [
+   "Emit <bridge> on the road on top (OSM bridge=yes)",
+   "type concrete/steel/brick/wood"
+  ],
+  "wrong": [
+   "Putting the bridge on the road passing underneath"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 100 with a side view added."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_12.png",
+  "viewed": true,
+  "figure": "Figure 127",
+  "chapter": "13. Objects",
+  "section": "13.13 Object CRG surface",
+  "caption": "Figure 127. CRG for objects",
+  "shows": "Curved reference line s. A green t vector from the line to the centre of a rotated chequered CRG patch; CRG axes u (along object heading) and v drawn at the patch centre labelled (0|0)CRG.",
+  "lesson": "Object CRG uses the object's local u/v frame with origin at the object centre (u/v positive and negative); the CRG file's own reference line, heading and position are ignored; the patch rotates with the object.",
+  "right": [
+   "Only angular (box) objects may carry surface CRG",
+   "Reference the object on every road it overlaps (objectReference)",
+   "Bounding volumes of CRG objects must not overlap"
+  ],
+  "wrong": [
+   "CRG on circular objects or objects with outlines",
+   "More than one CRG file per object",
+   "Continuous repeat of CRG objects"
+  ],
+  "formula": "objectSurfaceHeight(u,v) = crgEvaluv2z(crg,u,v) * zScale",
+  "new_vs_1_7": "Same as 1.7 Figure 101; 1.9 adds rule avoid_skewed_crg_surfaces and says @height/@zOffset are ignored for surface elevation."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_14.png",
+  "viewed": true,
+  "figure": "Table 109 illustration (object_14)",
+  "chapter": "13. Objects",
+  "section": "13.13 Object CRG surface, Table 109",
+  "caption": "(no caption) road surface CRG mode=attached, hideRoadSurfaceCRG=true",
+  "shows": "Side view z over s: road elevation (blue) flat then rising; a stepped road-surface CRG profile rides on it between sStart and sEnd; inside the object extent the steps are replaced by one smooth flat-topped block following the OpenDRIVE elevation.",
+  "lesson": "With an attached road CRG and hideRoadSurfaceCRG=true the object CRG replaces the road CRG: height = OpenDRIVE + object CRG.",
+  "right": [
+   "Default hideRoadSurfaceCRG=true is only valid for attached road CRG or no road CRG"
+  ],
+  "wrong": [
+   "Ignoring the mode of the underlying road CRG"
+  ],
+  "formula": "z = zOpenDRIVE + objectCRG",
+  "new_vs_1_7": "In 1.7 this was img101; 1.9 file numbering differs (object_14 = attached/hide=true)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_13.png",
+  "viewed": true,
+  "figure": "Table 109 illustration (object_13)",
+  "chapter": "13. Objects",
+  "section": "13.13 Object CRG surface, Table 109",
+  "caption": "(no caption) road surface CRG mode=attached, hideRoadSurfaceCRG=false",
+  "shows": "Same profile; inside the object extent the object's fine bumps (darker bars) are stacked on top of the stepped road-surface CRG.",
+  "lesson": "attached + hide=false: height = OpenDRIVE + road CRG + object CRG.",
+  "right": [
+   "Set hideRoadSurfaceCRG=false when the object adds detail on top of road texture"
+  ],
+  "wrong": [],
+  "formula": "z = zOpenDRIVE + roadCRG + objectCRG",
+  "new_vs_1_7": "Corresponds to 1.7 img102."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_16.png",
+  "viewed": true,
+  "figure": "Table 109 illustration (object_16)",
+  "chapter": "13. Objects",
+  "section": "13.13 Object CRG surface, Table 109",
+  "caption": "(no caption) road surface CRG mode attached0 / genuine / global, hideRoadSurfaceCRG=true (not allowed)",
+  "shows": "Road elevation rises but the road CRG data stays near z=0 (absolute data); inside the object range a flat block sits on the CRG data, ignoring the elevation curve.",
+  "lesson": "For attached0/genuine/global road CRG the combination hideRoadSurfaceCRG=true is NOT allowed.",
+  "right": [
+   "Force hideRoadSurfaceCRG=false when the road CRG mode is not attached"
+  ],
+  "wrong": [
+   "hide=true over attached0/genuine/global road CRG"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Corresponds to 1.7 img103."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_15.png",
+  "viewed": true,
+  "figure": "Table 109 illustration (object_15)",
+  "chapter": "13. Objects",
+  "section": "13.13 Object CRG surface, Table 109",
+  "caption": "(no caption) road surface CRG mode attached0 / genuine / global, hideRoadSurfaceCRG=false",
+  "shows": "Same absolute road CRG near z=0; the object bumps are added on top of the road CRG profile inside the object range.",
+  "lesson": "Absolute road CRG + hide=false: height = road CRG + object CRG (OpenDRIVE elevation not added).",
+  "right": [],
+  "wrong": [],
+  "formula": "z = roadCRG + objectCRG",
+  "new_vs_1_7": "Corresponds to 1.7 img104."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/13_objects/object_17.png",
+  "viewed": true,
+  "figure": "Table 109 illustration (object_17, used twice)",
+  "chapter": "13. Objects",
+  "section": "13.13 Object CRG surface, Table 109",
+  "caption": "(no caption) no road surface CRG, hideRoadSurfaceCRG=true and =false",
+  "shows": "Only the OpenDRIVE elevation curve with the object block sitting on it between sStart and sEnd; the same image is used for both hide values.",
+  "lesson": "Without road CRG the flag has no effect: height = OpenDRIVE + object CRG. Where crgEvaluv2z returns NaN the object contributes nothing (allows non-rectangular manholes).",
+  "right": [
+   "Return NaN-as-no-object when sampling outside CRG data"
+  ],
+  "wrong": [],
+  "formula": "z = zOpenDRIVE + objectCRG",
+  "new_vs_1_7": "Corresponds to 1.7 img105/img106 (1.9 reuses one file for both cells)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/Signals_1.png",
+  "viewed": true,
+  "figure": "Figure 128",
+  "chapter": "14. Signals",
+  "section": "14.1 Introduction to signals",
+  "caption": "Figure 128. Signals in ASAM OpenDRIVE",
+  "shows": "Perspective road (s along the reference line, t to the left) with three items highlighted as signals: a painted zebra crossing, a 60 speed-limit sign at the right roadside and a traffic light at the right roadside. A faded painted turn arrow on the left lane is NOT highlighted.",
+  "lesson": "Signals are traffic signs, traffic lights AND binding road markings that regulate traffic (zebra, painted speed). Non-binding markings such as plain arrows are objects (roadMark) or lane road marks.",
+  "right": [
+   "Emit traffic lights and regulatory signs as <signal>",
+   "Binding painted markings may be signals; guidance arrows are roadMark objects",
+   "Place signals relative to the road they govern (s,t)"
+  ],
+  "wrong": [
+   "Emitting painted turn arrows as signals",
+   "Emitting traffic lights as objects"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 102 plus the explicit faded arrow (non-signal)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/Signals_2.png",
+  "viewed": true,
+  "figure": "Figure 129",
+  "chapter": "14. Signals",
+  "section": "14.1 Introduction to signals",
+  "caption": "Figure 129. Width and height for signal",
+  "shows": "XML of a German 100 km/h sign (s=3981.4158159146, t=-14.0503, id=5000162, name Vorschriftzeichen, dynamic=no, orientation=+, zOffset=3.8835, country=DE, countryRevision=2017, type=274, subtype=100, value=100, unit=km/h, height=0.77, width=0.77, hOffset=5.7595865) beside the round sign with width and height 0.77 m dimensioned on the plate.",
+  "lesson": "width/height describe the sign plate only (not the post); zOffset is to the plate bottom. type/subtype are unique only with country+countryRevision; value requires unit. In 1.9 width is along local v and an optional @length gives plate thickness along u.",
+  "right": [
+   "Always pair value with unit",
+   "Set country (ISO 3166 alpha-2) and countryRevision",
+   "Use country='OpenDRIVE' with the ASAM signal catalogue for items without official codes (traffic lights)"
+  ],
+  "wrong": [
+   "value without unit",
+   "height including the post",
+   "type/subtype without country"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 103. New: @length thickness, @invalidated, @temporary (1.9), and the OpenDRIVE signal catalogue for generic traffic lights."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/Signals_7.png",
+  "viewed": true,
+  "figure": "Figure 130",
+  "chapter": "14. Signals",
+  "section": "14.1 Introduction to signals",
+  "caption": "Figure 130. Orientation and hOffset for signal",
+  "shows": "Left: right-hand-traffic perspective road with reference line pointing away. Middle: 100 sign on a post, @zOffset dimensioned from road level to the bottom of the plate, @orientation='+'. Right: top view, reference line pointing up, sign at the right roadside; dashed line back to the reference line; red line = plate rotated by @hOffset measured counter-clockwise from the negative reference-line direction.",
+  "lesson": "orientation '+' = applies to traffic moving in +s; with hOffset=0 the face points toward -s (toward approaching drivers). hOffset is a CCW rotation from that base; for '-' the base is +s. For orientation=none hOffset is relative to the reference line.",
+  "right": [
+   "Default hOffset=0 for normal signs facing approaching traffic",
+   "For RHT +s traffic place sign at negative t (right side) with orientation '+'",
+   "Compute face heading = roadHdg(s) + pi + hOffset for '+', roadHdg(s) + hOffset for '-'"
+  ],
+  "wrong": [
+   "Setting hOffset=pi to 'face traffic' (double rotation)",
+   "orientation '+' on a sign for -s traffic"
+  ],
+  "formula": "faceHeading('+') = hdg_ref(s) + pi + hOffset; faceHeading('-') = hdg_ref(s) + hOffset",
+  "new_vs_1_7": "Same as 1.7 Figure 104; 1.9 text adds the hOffset meaning for orientation=none."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_811E8671_D70D_4491_BCD2_F2DC1CDF8E17.png",
+  "viewed": true,
+  "figure": "Figure 131",
+  "chapter": "14. Signals",
+  "section": "14.1 Introduction to signals",
+  "caption": "Figure 131. UML class diagram of the Signals class",
+  "shows": "t_road_signals has signal 0..* (class t_road_signals_signal_road) and signalReference 0..* (s,t,id,orientation, with validity 0..*). Abstract t_road_signals_signal: id, name[0..1], dynamic, orientation, country[0..1], countryRevision[0..1], type, subtype, value[0..1], text[0..1], unit[0..1], height[0..1], length[0..1], hOffset[0..1], width[0..1], roll[0..1], pitch[0..1], invalidated=false, temporary=false; children validity 0..* (laneValidity fromLane,toLane,layer), dependency 0..* (id, type[0..1]), reference 0..* (elementType object|signal, elementId, type[0..1]), semantics 0..1, physicalPosition 0..1 (xor positionRoad | positionInertial, both marked deprecated). t_road_signals_signal_road specialises it with s, t, zOffset and constraint: type multiBoard => dynamic=true and >=1 vmsBoard and >=1 staticBoard. t_road_signals_board_sign specialises signal with v, z. Abstract t_road_signals_board with subclasses staticBoard (sign 0..*) and vmsBoard (displayType, displayHeight, displayWidth, v, z; displayArea 0..* index,width,height,v,z); signal_road has staticBoard 0..* and vmsBoard 0..*.",
+  "lesson": "Signals are road-anchored (s,t,zOffset). Each signal can carry lane validity, dependencies (supplementary plates), references to objects/signals (e.g. stop line), semantics, and boards. Physical position is deprecated: place the signal where it physically stands.",
+  "right": [
+   "Required on signal: id, s, t, zOffset, orientation, dynamic, type, subtype",
+   "Use <reference elementType='object' elementId=stopLineId> from a traffic light to its stop line",
+   "Use <semantics> for behaviour (speed, priority, prohibited...)",
+   "Use staticBoard/vmsBoard children for sign assemblies"
+  ],
+  "wrong": [
+   "Emitting <positionRoad>/<positionInertial> in new 1.9 output",
+   "Using <dependency> to link a traffic light to its stop line (dependency is for supplementary signs)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Expanded from 1.7 Figure 105: adds length, invalidated, temporary, semantics, boards (staticBoard/vmsBoard/displayArea/board_sign), the signal/signal_road split, laneValidity.layer, and marks physicalPosition deprecated."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/Signals_3.png",
+  "viewed": true,
+  "figure": "Figure 132",
+  "chapter": "14. Signals",
+  "section": "14.2 Lane validity for signals",
+  "caption": "Figure 132. Lanes with signals in the shape of road markings",
+  "shows": "Road with lanes 4,3,2,1 (traffic to the left, gray arrows) and -1,-2 (traffic to the right). Painted speed numbers: 60 in lane 3, 80 in lane 2, 100 in lane 1 (all readable for leftward traffic) and 80 in lane -1 (readable for rightward traffic); each is a separate signal.",
+  "lesson": "Lane-specific rules use <validity fromLane toLane> on the signal; validity lanes must lie on the side implied by orientation (RHT: '+' -> negative lanes, '-' -> positive lanes; both -> 'none'). orientation alone covers overtaking vehicles in oncoming lanes; validity restricts strictly to those lanes.",
+  "right": [
+   "One signal per lane-specific value with validity fromLane=toLane",
+   "Use validity mainly for lane-specific traffic lights/markings, not for general speed signs",
+   "Add layer='temporary' validity separately when also valid on the temporary layer"
+  ],
+  "wrong": [
+   "Validity spanning both sides with orientation '+'",
+   "fromLane > toLane"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 106; 1.9 adds the layer attribute and the overtaking explanation."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/Signals_4.png",
+  "viewed": true,
+  "figure": "Figure 133",
+  "chapter": "14. Signals",
+  "section": "14.3 Signal dependency",
+  "caption": "Figure 133. Lane and type specific speed limit",
+  "shows": "Two-lane road (lane 1 left, -1 right). At the right roadside a 60 sign over a supplementary plate showing a lorry.",
+  "lesson": "Supplementary plates are separate signals at the same position, linked by <dependency id=...> from the main sign to the controlling/supplementary sign; the dependency type is application defined. Semantics (supplementaryProhibits vehicle heavyTruck) can carry the meaning.",
+  "right": [
+   "Main sign + plate as two signals, same s/t, plate lower zOffset",
+   "<dependency id=plateId> on the main sign",
+   "Optionally add semantics speed + supplementaryProhibits/vehicle"
+  ],
+  "wrong": [
+   "Encoding the plate only as text",
+   "Using signalReference (multi-road) instead of dependency"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same picture as 1.7 Figure 107; 1.9 makes semantics available to express the lorry restriction."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/fig_uml_class_signals_signalreference.png",
+  "viewed": true,
+  "figure": "Figure 134",
+  "chapter": "14. Signals",
+  "section": "14.5 Signals that apply to multiple roads",
+  "caption": "Figure 134. UML model of the t_road_signals_signalReference element in the Signals class",
+  "shows": "t_road_signals has signalReference 0..*; t_road_signals_signalReference has id (string), orientation (e_orientation), s (grEqZero), t (double).",
+  "lesson": "<signalReference> lets other roads (e.g. connecting roads in a junction, or parallel roads sharing a sign) reuse a signal defined on one road, at their own s/t/orientation, optionally with lane validity.",
+  "right": [
+   "Define the signal once on its physical road; add signalReference on each connecting road it governs",
+   "Give s where it takes effect on that road and orientation for its travel direction"
+  ],
+  "wrong": [
+   "Duplicating the signal with a new id on every connecting road",
+   "Confusing <signalReference> (multi-road) with <reference> (link signal->object/signal)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 110."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/00_images_reused/fig_junction.drawio.svg",
+  "viewed": true,
+  "figure": "Figure 135",
+  "chapter": "14. Signals",
+  "section": "14.6 Signal Controllers",
+  "caption": "Figure 135. Example of a junction with 20 traffic lights mapped into six signal groups (IDs 42-47)",
+  "shows": "Rendered SVG: X-junction with a tram line running north-south through the middle (black tracks), grass corners, stop lines across the incoming halves of each arm. Labels 'controller/signal': 42/17251-17253 tram bar signals at north, 43/17261-17263 tram signals at south; 44/17270 (NW corner, southbound cars) and 44/17200 (SE corner, northbound cars); 46/17060, 46/17070 (west arm, eastbound, one on the median island) and 46/16970, 46/16980 (east arm, westbound); 45/17271, 17300, 17361, 17360 pedestrian lights across the north arm with a refuge on the tram median; 47/17080, 17061, 16971, 16990 pedestrian lights across the west/east arms.",
+  "lesson": "A controller = one signal group: all dynamic signals that always show the same phase (e.g. both opposing straight approaches, or all heads of one pedestrian crossing) are listed as <control signalId> under one <controller>. Vehicle lights stand at the near-side right corner of each incoming arm next to the stop line; additional heads on medians belong to the same group.",
+  "right": [
+   "One <controller> per signal group, listing every head of that group",
+   "Opposing approaches with the same phase share a controller",
+   "Pedestrian heads at both ends of a crossing in one controller",
+   "Signal ids must be unique across the file"
+  ],
+  "wrong": [
+   "One controller per traffic light",
+   "Putting conflicting movements in the same controller"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Replaces the 1.7 4-light/2-controller figure with a realistic 20-head, 6-group example including trams and pedestrians."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/fig_signal_program.svg",
+  "viewed": true,
+  "figure": "Figure 136",
+  "chapter": "14. Signals",
+  "section": "14.6 Signal Controllers",
+  "caption": "Figure 136. Example of a signal program that defines the signal cycles for the signal groups",
+  "shows": "Rendered SVG timeline: Controller 42 phase bar stop-go-a(amber)-stop with signals 17251 (horizontal bar: on during stop), 17252 (dot: on only during amber) and 17253 (vertical bar: on during go). Controller 44 phase go-a-stop-(red/amber)-go with lights 17200 and 17270 showing red/amber/green on/off rows matching the phase.",
+  "lesson": "The signal program (phase timing and lamp states) lives outside OpenDRIVE (e.g. OpenSCENARIO); OpenDRIVE only defines which signals form a group via controllers. Annex C defines semantic states (stop, go, attention...).",
+  "right": [
+   "Do not try to encode timing in OpenDRIVE",
+   "Keep controller ids stable so scenario tools can drive them"
+  ],
+  "wrong": [
+   "Inventing userData timing as if it were standard"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.8/1.9 (no 1.7 counterpart)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_B88092E5_0933_4514_984D_54D2E961692B.png",
+  "viewed": true,
+  "figure": "Figure 137",
+  "chapter": "14. Signals",
+  "section": "14.6 Signal Controllers",
+  "caption": "Figure 137. UML class diagram of the Controller class",
+  "shows": "t_controller: id {id}, name [0..1], sequence nonNegativeInteger [0..1]; control 1..* -> t_controller_control: signalId (string), type [0..1].",
+  "lesson": "Top-level <controller> under <OpenDRIVE> needs at least one <control>; junctions reference controllers via <junction><controller id type sequence>.",
+  "right": [
+   "Emit <controller id><control signalId/></controller> at file level",
+   "Reference it from the junction with <controller id=...>"
+  ],
+  "wrong": [
+   "Empty controllers",
+   "control pointing to a static sign"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Unchanged from 1.7 Figure 87/112."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/fig_multistaticsign.png",
+  "viewed": true,
+  "figure": "Figure 138",
+  "chapter": "14. Signals",
+  "section": "14.7.1 Static boards",
+  "caption": "Figure 138. multiStaticSign from XML example above",
+  "shows": "One rectangular board holding two columns: left a 60 limit with plates 'lorry', '22-6h', 'Laermschutz'; right an 80 limit with plates '22-6h', 'Laermschutz'.",
+  "lesson": "Several signs on one sheet are one signal of type staticBoard (dynamic=false) whose child <staticBoard><sign v z .../> elements place each sign in the board's local v/z frame; each sign has full signal attributes and can carry dependencies/semantics.",
+  "right": [
+   "Use staticBoard only for multiple signs on one sheet",
+   "Give each sub-sign v,z on the board"
+  ],
+  "wrong": [
+   "staticBoard for a single sign (1.9 rule static_boards_no_single_signal)",
+   "dynamic=true on a static board"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8 (boards absent in 1.7)."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_58914C14_7C50_4f5c_85C2_C0D20AA0A0B0.png",
+  "viewed": true,
+  "figure": "Figure 139",
+  "chapter": "14. Signals",
+  "section": "14.7.4 Gantry",
+  "caption": "Figure 139. UML class diagram of the SignalGroup class",
+  "shows": "t_signalGroup_vmsGroup: id; vmsBoardReference 1..* -> t_signalGroup_vmsBoardReference: signalId, vmsIndex (int), groupIndex (int).",
+  "lesson": "A top-level <vmsGroup> groups all variable message boards on the same gantry so OpenSCENARIO can treat many small VMS like one; groupIndex must be unique within the group.",
+  "right": [
+   "One vmsGroup per gantry, at least one vmsBoardReference"
+  ],
+  "wrong": [
+   "Mixing boards from different gantries"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_CA805EC8_2A9C_434e_91E8_E81321F9441F.png",
+  "viewed": true,
+  "figure": "Figure 140",
+  "chapter": "14. Signals",
+  "section": "14.8.1 Possible semantics",
+  "caption": "Figure 140. UML class diagram of the Semantics class",
+  "shows": "t_signals_semantics with 0..* children: speed (type e_signals_semantics_speed, value, unit e_unitSpeed), lane (type), priority (type), prohibited, warning, routing, streetname, parking, tourist, supplementaryTime (type, value), supplementaryAllows, supplementaryProhibits, supplementaryDistance (type, value, unit e_unitDistance), supplementaryEnvironment (type), supplementaryExplanatory. prohibited, supplementaryAllows and supplementaryProhibits link to vehicle 0..* (type e_vehicleCategory), person 0..* (type e_personCategory), animal 0..*.",
+  "lesson": "Semantics describe traffic behaviour independent of country codes: e.g. a DE 274 sign gets <semantics><speed type='maximum' value unit/></semantics>; a stop sign gets <priority type='stop'/>; stop lines can be priority type stopLine. Supplementary semantics have no meaning alone and refine the main sign. Only use when a category exists.",
+  "right": [
+   "Add semantics to every emitted regulatory sign where a category exists (speed, priority stop/yield, prohibited vehicles)",
+   "Header defaultRegulations can carry semantics per road type / signal type",
+   "Use vehicle/person/animal children to name traffic participants"
+  ],
+  "wrong": [
+   "Inventing semantics for signs without a category (1.9 rule no_semantics_without_category)",
+   "Using semantics for visualisation"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8; vehicle/person/animal child classes and lane type 'other' are new in 1.9."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/Signals_5.png",
+  "viewed": true,
+  "figure": "Figure 141",
+  "chapter": "14. Signals",
+  "section": "14.9 Signal positioning (deprecated)",
+  "caption": "Figure 141. Junction with signals at physical and logical positions",
+  "shows": "Four-arm RHT junction with three lanes per direction, green medians, turn arrows and stop lines across the incoming halves. Lights: one on a mast arm hanging over the north approach, one at the NE corner, one at the SE corner of the south approach next to its stop line, one at the SW corner. A blue dot at the base of the SW light near the south stop line is labelled 'logical position'; lines from 'physical position' point to the overhead and far-side lights.",
+  "lesson": "Historic concept only: before 1.8 a signal's s was its logical position (where validity starts) and positionRoad/positionInertial gave a different physical spot. Since 1.8 signals are placed ONLY at their physical location; the start of validity (where to stop) is expressed by a stop-line object or signal linked with <reference>.",
+  "right": [
+   "Put the signal at its real location (s,t,zOffset on the nearest road, orientation for the governed direction)",
+   "Model the stop line as roadMark object (subtype signalLines) with laneValidity and link the light to it via <reference elementType='object'>",
+   "Use signalReference to make it apply on connecting roads"
+  ],
+  "wrong": [
+   "Emitting positionRoad/positionInertial in new files",
+   "Placing a far-side light's s at the stop line to fake validity"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Major change vs 1.7 Figure 108: the logical/physical model is deprecated (section titled deprecated); 1.7 said logical s marks the start of validity."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/14_signals/fig_uml_class_signals_physicalposition.png",
+  "viewed": true,
+  "figure": "Figure 142",
+  "chapter": "14. Signals",
+  "section": "14.9 Signal positioning (deprecated)",
+  "caption": "Figure 142. UML class diagram of the t_physicalPosition element in the Signals class",
+  "shows": "t_physicalPosition (0..1) choice: positionRoad (hOffset, pitch[0..1], roadId, roll[0..1], s, t, zOffset) or positionInertial (hdg, pitch[0..1], roll[0..1], x, y, z).",
+  "lesson": "Reader support only: parse legacy positionRoad/positionInertial (mutually exclusive) but do not write them; positionRoad is deprecated since 1.8.",
+  "right": [
+   "Reader: accept either element; writer: never emit"
+  ],
+  "wrong": [
+   "Emitting both elements"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same structure as 1.7 Figure 109, now marked deprecated."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_6B1CED55_51A4_4c21_978B_35F9092CC559.png",
+  "viewed": true,
+  "figure": "Figure 143",
+  "chapter": "15. Railroads",
+  "section": "15.1 Introduction to railroads",
+  "caption": "Figure 143. UML class diagram of the Railroad class",
+  "shows": "t_road_railroad -> switch 0..* (name {id}, id {id}, position e_road_railroad_switch_position); each switch has mainTrack (id, s, dir e_elementDir), sideTrack (id, s, dir) and partner 0..1 (name[0..1], id).",
+  "lesson": "Railroad content is limited to switches on the road of the main track; tracks are roads with one rail/tram lane, rail signals are ordinary signals.",
+  "right": [
+   "Emit <railroad><switch> on the main-track road only when switches exist",
+   "mainTrack/sideTrack reference road ids"
+  ],
+  "wrong": [
+   "Using railroad elements for complex rail networks"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 113."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/15_railroads/railroads_1.png",
+  "viewed": true,
+  "figure": "Figure 144",
+  "chapter": "15. Railroads",
+  "section": "15.2 Railroad tracks",
+  "caption": "Figure 144. Road reference lines for roads and railroads",
+  "shows": "Left: road with reference line on top and lanes -1,-2,-3 below. Right: railway with a single blue lane -1; its reference line runs through the middle of the lane and a laneOffset shifts the centre lane (0) up to the lane's upper edge.",
+  "lesson": "For tracks the reference line is the centre of the rail pair: one road per track, one tram/rail lane (-1) with laneOffset = +width/2 so lane -1 is centred on the reference line.",
+  "right": [
+   "One road per track, single lane type rail or tram",
+   "laneOffset a = width/2",
+   "Lane width >= vehicle width",
+   "Tram on a street still gets its own road"
+  ],
+  "wrong": [
+   "Tram lane inside a car road",
+   "Reference line on the rail edge"
+  ],
+  "formula": "laneOffset(s) = w/2 (constant)",
+  "new_vs_1_7": "Same as 1.7 Figure 114."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/15_railroads/railroads_2.png",
+  "viewed": true,
+  "figure": "Figure 145",
+  "chapter": "15. Railroads",
+  "section": "15.3 Switches",
+  "caption": "Figure 145. Railroad switches",
+  "shows": "Track 1 (A->B, s1 rightwards), track 3 (C->D, s3 leftwards), side track 2 (s2) leaving track 1 at switch id 12 and joining track 3 at switch id 32. Box of possible connections: A->B, A->C, B->A, C->A, C->D, D->C.",
+  "lesson": "Switches 12 and 32 are partners joined by side track 2; a train can diverge only in the facing direction at each switch (A->C, C->A), never D->A or B->C. mainTrack gives the main road id, s of the switch and dir for entering the side track; sideTrack gives side road id, s and dir after entering.",
+  "right": [
+   "Declare partner switches when a side track links two switches",
+   "Side tracks only connect switches"
+  ],
+  "wrong": [
+   "Main track connecting two switches",
+   "Partner on a single switch"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 115."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/15_railroads/railroads_3.png",
+  "viewed": true,
+  "figure": "Figure 146",
+  "chapter": "15. Railroads",
+  "section": "15.4 Stations",
+  "caption": "Figure 146. Railroad stations",
+  "shows": "Top: dashed station box with one platform between track 1 (A->B) and track 3 (C->D, opposite direction); one segment shared. Bottom: station with platform id=1 above track 5 (C->D) and platform id=2 below a track split into road 4 (A to middle) and road 6 (middle to B), so platform 2 has two segments.",
+  "lesson": "station -> platform 1..* -> segment 1..* (roadId, sStart, sEnd, side). A platform alongside a track split into two roads needs one segment per road. Stations may also be used for bus stops.",
+  "right": [
+   "One segment per (platform, road) pair with s range and side",
+   "Use <station> for bus/tram stops from OSM public_transport=platform"
+  ],
+  "wrong": [
+   "Station without platform, platform without segment"
+  ],
+  "formula": null,
+  "new_vs_1_7": "1.7 text/figure numbering mismatch (3/1/2 vs 5/4/6) is fixed in 1.9; 1.9 adds bus-station usage."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_2C45CCE7_B666_43dd_B239_6E71586B04E1.png",
+  "viewed": true,
+  "figure": "Figure 147",
+  "chapter": "15. Railroads",
+  "section": "15.4 Stations",
+  "caption": "Figure 147. UML class diagram of the Station class",
+  "shows": "t_station (name, id {id}, type e_station_type [0..1]) -> platform 1..* (name[0..1], id {id}) -> segment 1..* (roadId, sStart, sEnd, side e_station_platform_segment_side).",
+  "lesson": "Station is a top-level element (same level as junctions). Note: name is required on station, optional on platform.",
+  "right": [
+   "Always write station@name",
+   "Validate sStart<=sEnd within the road length"
+  ],
+  "wrong": [
+   "Missing segments"
+  ],
+  "formula": null,
+  "new_vs_1_7": "1.7 Figure 117 image was a duplicate of the railroad UML; 1.9 shows the correct station diagram."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/SoL_RoadLinkage.png",
+  "viewed": true,
+  "figure": "Figure 148",
+  "chapter": "Annex D. Additional rules (normative)",
+  "section": "D.1.1 Touching Points",
+  "caption": "Figure 148. Touching Points between 2 logically connected roads",
+  "shows": "Four panels of road 1 (angled two-lane) linked to road 2 (horizontal), red dots = touching points at lane edges. Panel 1 (X): a visible gap between the roads. Panel 2 (X): roads overlap with the edges laterally shifted, touching points do not coincide. Panel 3 (X): centre points coincide but road 1 meets road 2 at an angle (kink). Panel 4 (check): curved road 1 flows into curved road 2; all three touching points coincide and headings match.",
+  "lesson": "Logically linked drivable lanes must meet with matching x,y (no horizontal gap), matching heading (no kink), matching z and roll (no vertical gap) and should match pitch (no vertical kink), within floating tolerance.",
+  "right": [
+   "Check every predecessor/successor link: position, heading, z, roll, pitch at lane-edge touching points",
+   "Account for reference line direction (contactPoint start/end) when comparing headings",
+   "Fix geometry, not just links"
+  ],
+  "wrong": [
+   "Linking roads whose ends are separated or overlap",
+   "Linking roads that meet at an angle"
+  ],
+  "formula": "match(|p1-p2| < eps_xy, |hdg1-hdg2| < eps_hdg, |z1-z2| < eps_z, |roll1-roll2| < eps)",
+  "new_vs_1_7": "New normative annex in 1.8/1.9; formalises what 1.7 left implicit."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/SoL_LaneSections.png",
+  "viewed": true,
+  "figure": "Figure 149",
+  "chapter": "Annex D. Additional rules (normative)",
+  "section": "D.1.1 Touching Points",
+  "caption": "Figure 149. Touching Points within laneSections",
+  "shows": "One road with lane sections A, B, C. A laneOffset transition in B moves the centre lane up by 'Lane offset' relative to the reference line; lane ids renumber between sections (e.g. 2,1,-1 in A; 2,1/0/-1,-2 in B; 1,-1,-2 in C), outer green border lanes 3/-2 -> 3/-3 -> 2/-3. Red touching points sit on each lane boundary at section borders.",
+  "lesson": "Smoothness must also hold at lane-section boundaries inside one road: lane edges in consecutive sections must meet without gaps/kinks; laneOffset must be smooth across the boundary.",
+  "right": [
+   "Check lane-edge continuity at every laneSection boundary",
+   "Ensure lane links between sections pair lanes whose edges coincide",
+   "Keep laneOffset continuous (value and slope)"
+  ],
+  "wrong": [
+   "Width jumps at section boundaries",
+   "laneOffset with discontinuous value or derivative"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.8/1.9."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/SoL_JunctionLinkage.png",
+  "viewed": true,
+  "figure": "Figure 150",
+  "chapter": "Annex D. Additional rules (normative)",
+  "section": "D.1.1 Touching Points",
+  "caption": "Figure 150. Touching Points for connecting roads",
+  "shows": "Incoming road with lanes -1,-2 enters a dashed junction area; two connecting roads (lane -1 each) leave: one curves up-right into an outgoing road, one straight. Touching points at start and end of each connecting road coincide with incoming/outgoing lane edges. Marked correct.",
+  "lesson": "Connecting roads must start exactly at the incoming lane edges and end exactly at the outgoing lane edges with matching heading.",
+  "right": [
+   "Fit connecting road geometry to the touching points and headings of both ends",
+   "Validate every connection's both ends"
+  ],
+  "wrong": [
+   "Connecting road starting at the reference line of the incoming road when its lane is offset"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.8/1.9."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/SoL_Multiple_Successors.png",
+  "viewed": true,
+  "figure": "Figure 151",
+  "chapter": "Annex D. Additional rules (normative)",
+  "section": "D.1.1 Touching Points",
+  "caption": "Figure 151. Touching Points for multiple lane linkage",
+  "shows": "Aerial road photo: lane -1 splits into lanes -1 (left-turn arrow) and -2 (right-turn arrow). Red touching points on the outer edges; a yellow point at the start of the new dividing line labelled 'Not a Touching Point' because lane -1 has two successors.",
+  "lesson": "When a lane has multiple successors (lane split), the internal point where the new divider starts is not a touching point; only the outer edges are checked. Horizontal gaps cannot exist between adjacent lanes by construction.",
+  "right": [
+   "Allow one lane to have two successors at a split; check outer edges only"
+  ],
+  "wrong": [
+   "Flagging a smoothness error at the inner split point"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.8/1.9."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/No_Semi_Trailers_Sign.png",
+  "viewed": true,
+  "figure": "No_Semi_Trailers_Sign.png",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=semiTrailer in <prohibited>",
+  "shows": "Square US-style sign: red circle crossing out a tractor-trailer, text NO SEMI TRAILERS.",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='semiTrailer'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=semiTrailer inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_253.svg",
+  "viewed": true,
+  "figure": "Zeichen_253.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=heavyTruck in <prohibited>",
+  "shows": "German sign 253: red ring with a lorry (no entry for trucks).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='heavyTruck'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=heavyTruck inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_254.svg",
+  "viewed": true,
+  "figure": "Zeichen_254.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=bicycle in <prohibited>",
+  "shows": "German sign 254: red ring with a bicycle (no bicycles).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='bicycle'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=bicycle inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_255.svg",
+  "viewed": true,
+  "figure": "Zeichen_255.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=motorcycle in <prohibited>",
+  "shows": "German sign 255: red ring with a motorcyclist (no motorcycles).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='motorcycle'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=motorcycle inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_257-54.svg",
+  "viewed": true,
+  "figure": "Zeichen_257-54.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=bus in <prohibited>",
+  "shows": "German sign 257-54: red ring with a bus (no buses).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='bus'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=bus inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_257-55.svg",
+  "viewed": true,
+  "figure": "Zeichen_257-55.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=car in <prohibited>",
+  "shows": "German sign 257-55: red ring with a passenger car (no cars).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='car'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=car inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_257-56.svg",
+  "viewed": true,
+  "figure": "Zeichen_257-56.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=trailer in <prohibited>",
+  "shows": "German sign 257-56: red ring with a car towing a trailer (no vehicles with trailers).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='trailer'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=trailer inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_257-58.svg",
+  "viewed": true,
+  "figure": "Zeichen_257-58.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=workMachine in <prohibited>",
+  "shows": "German sign 257-58: red ring with a tractor (no agricultural/work machines).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='workMachine'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=workMachine inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zeichen_257-59.svg",
+  "viewed": true,
+  "figure": "Zeichen_257-59.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column prohibited",
+  "caption": "(no caption) example for @type=standupScooter in <prohibited>",
+  "shows": "German sign 257-59: red ring with an e-scooter (no stand-up e-scooters).",
+  "lesson": "Main prohibition sign: map to <semantics><prohibited><vehicle type='standupScooter'/></prohibited></semantics>.",
+  "right": [
+   "vehicle type=standupScooter inside <prohibited>"
+  ],
+  "wrong": [
+   "Mapping it to a speed or warning semantic"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-51.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-51.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=heavyTruck in <supplementaryProhibits>",
+  "shows": "Supplementary plate 1010-51: lorry symbol only (main sign applies to trucks).",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='heavyTruck'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=heavyTruck inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-52.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-52.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=bicycle in <supplementaryProhibits>",
+  "shows": "Plate 1010-52: bicycle symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='bicycle'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=bicycle inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-56.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-56.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=tram in <supplementaryProhibits>",
+  "shows": "Plate 1010-56: tram symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='tram'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=tram inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-57.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-57.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=bus in <supplementaryProhibits>",
+  "shows": "Plate 1010-57: bus symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='bus'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=bus inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-58.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-58.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=car in <supplementaryProhibits>",
+  "shows": "Plate 1010-58: car symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='car'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=car inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-59.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-59.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=trailer in <supplementaryProhibits>",
+  "shows": "Plate 1010-59: car with trailer symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='trailer'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=trailer inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-61.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-61.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=workMachine in <supplementaryProhibits>",
+  "shows": "Plate 1010-61: tractor symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='workMachine'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=workMachine inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-62.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-62.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=motorcycle in <supplementaryProhibits>",
+  "shows": "Plate 1010-62: motorcyclist symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='motorcycle'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=motorcycle inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1010-68.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1010-68.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=standupScooter in <supplementaryProhibits>",
+  "shows": "Plate 1010-68: e-scooter symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='standupScooter'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=standupScooter inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1020-13.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1020-13.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=microMobility device in <supplementaryAllows>",
+  "shows": "Plate 1020-13: inline skater with 'frei' (skaters exempt).",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='microMobility device'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=microMobility device inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)",
+   "Using it for a person category: skaters are listed under vehicle microMobility device"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1022-10.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1022-10.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=bicycle in <supplementaryAllows>",
+  "shows": "Plate 1022-10: bicycle with 'frei' (bicycles exempt).",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='bicycle'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=bicycle inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1022-12.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1022-12.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=motorcycle in <supplementaryAllows>",
+  "shows": "Plate 1022-12: motorcyclist with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='motorcycle'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=motorcycle inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1022-16.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1022-16.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=standupScooter in <supplementaryAllows>",
+  "shows": "Plate 1022-16: e-scooter with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='standupScooter'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=standupScooter inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1024-10.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1024-10.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=car in <supplementaryAllows>",
+  "shows": "Plate 1024-10: car with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='car'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=car inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1024-11.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1024-11.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=trailer in <supplementaryAllows>",
+  "shows": "Plate 1024-11: car with trailer and 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='trailer'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=trailer inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1024-12.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1024-12.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=heavyTruck in <supplementaryAllows>",
+  "shows": "Plate 1024-12: lorry with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='heavyTruck'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=heavyTruck inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1024-14.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1024-14.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=bus in <supplementaryAllows>",
+  "shows": "Plate 1024-14: bus with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='bus'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=bus inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1024-15.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1024-15.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=train in <supplementaryAllows>",
+  "shows": "Plate 1024-15: train (front view) with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='train'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=train inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1024-16.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1024-16.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=tram in <supplementaryAllows>",
+  "shows": "Plate 1024-16: tram with 'frei'.",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='tram'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=tram inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1026-38.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1026-38.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryAllows",
+  "caption": "(no caption) example for @type=workMachine in <supplementaryAllows>",
+  "shows": "Plate 1026-38: text 'Land- und forstwirtsch. Verkehr frei' (agricultural/forestry traffic exempt).",
+  "lesson": "Exemption plate ('frei'): map to <semantics><supplementaryAllows><vehicle type='workMachine'/></supplementaryAllows></semantics> on the plate signal, linked by <dependency>.",
+  "right": [
+   "vehicle type=workMachine inside <supplementaryAllows>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1044-10.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1044-10.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=microMobility device in <supplementaryProhibits>",
+  "shows": "Plate 1044-10: wheelchair user symbol.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='microMobility device'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=microMobility device inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)",
+   "Spec oddity: a wheelchair plate is listed as the microMobility example, although the text says wheelchairs should use their own category; treat with care"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1048-14.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1048-14.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=semiTractor in <supplementaryProhibits>",
+  "shows": "Plate 1048-14: articulated lorry (tractor with semi-trailer) symbol.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='semiTractor'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=semiTractor inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/Annex/signal_semantics_categories/Zusatzzeichen_1048-18.svg",
+  "viewed": true,
+  "figure": "Zusatzzeichen_1048-18.svg",
+  "chapter": "Annex E. Categories for signal semantics (informative)",
+  "section": "Table 214 Vehicle categories, column supplementaryProhibits",
+  "caption": "(no caption) example for @type=train in <supplementaryProhibits>",
+  "shows": "Plate 1048-18: train symbol only.",
+  "lesson": "Restricting plate (applies only to): map to <semantics><supplementaryProhibits><vehicle type='train'/></supplementaryProhibits></semantics> on the plate signal, linked to the main sign by <dependency>.",
+  "right": [
+   "vehicle type=train inside <supplementaryProhibits>"
+  ],
+  "wrong": [
+   "Using the plate semantics alone without a main sign (supplementary semantics have no meaning on their own)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "New in 1.9 (vehicle category annex; t_signals_semantics_vehicle introduced 1.9). Not in 1.7."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_1CD0AF4A_F90A_4a0e_A14A_05ABEC0D1ACB.png",
+  "viewed": true,
+  "figure": "UML Core (ch. 6.3 root element / ch. 7 additional data)",
+  "chapter": "6. General architecture / 7. Additional data",
+  "section": "6.3 Root element; 7 Additional data",
+  "caption": "UML class diagram 'Core' (OpenDRIVE root and g_additionalData)",
+  "shows": "OpenDRIVE::t_OpenDRIVE contains header (1), road 1..*, vmsGroup 0..*, controller 0..*, junction 0..*, junctionGroup 0..*, station 0..*; all classes specialise _OpenDriveElement which carries g_additionalData 0..*: userData 0..* (code, value[0..1], any content), include 0..* (file), dataQuality 0..1 (error 0..1: xyAbsolute, zAbsolute, xyRelative, zRelative; rawData 0..1: date, source, sourceComment[0..1], postProcessing, postProcessingComment[0..1]). Simple types t_zeroOne, t_grEqZero, t_grZero (double) and union t_grEqZeroOrContactPoint.",
+  "lesson": "Element order under <OpenDRIVE>: header, road+, then vmsGroup/controller/junction/junctionGroup/station. Every element may carry userData/include/dataQuality. At least one road is required.",
+  "right": [
+   "Write header first, then roads, then controllers, junctions, junctionGroups, stations",
+   "Use dataQuality rawData source='sensor'/'custom' + postProcessing for OSM-derived data",
+   "Put OSM ids in userData (code='osm_id')"
+  ],
+  "wrong": [
+   "File with zero roads",
+   "Custom attributes instead of userData"
+  ],
+  "formula": null,
+  "new_vs_1_7": "1.9 adds vmsGroup at top level (1.8) and t_grEqZeroOrContactPoint union for junction boundaries."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_8ED3471B_7252_4771_ADDB_FFD1ACE9AA18.png",
+  "viewed": true,
+  "figure": "UML Header (ch. 6.4)",
+  "chapter": "6. General architecture",
+  "section": "6.4 Header",
+  "caption": "UML class diagram 'Header'",
+  "shows": "t_header: revMajor, revMinor (integer), name, version, date, north, south, east, west, vendor (all [0..1]); children geoReference 0..1, offset 0..1 (x,y,z,hdg), license 0..1 (name, spdxid[0..1], text[0..1], resource[0..1]), defaultRegulations 0..1 -> roadRegulations 0..* (type e_roadType) and signalRegulations 0..* (type, subtype), each with semantics 0..1.",
+  "lesson": "Header can now declare a license (useful for ODbL OSM data) and default regulations per road type with semantics (e.g. default urban speed).",
+  "right": [
+   "revMajor=1, revMinor=9",
+   "Add <license name='ODbL-1.0' spdxid='ODbL-1.0'> for OSM-derived maps",
+   "Use defaultRegulations to state default speed per road type instead of placing signs everywhere"
+  ],
+  "wrong": [
+   "Omitting geoReference when coordinates are projected"
+  ],
+  "formula": null,
+  "new_vs_1_7": "license and defaultRegulations are new since 1.8."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_E70C4B2B_6DDE_4179_A15E_75EF81E5C66F.png",
+  "viewed": true,
+  "figure": "UML Road (ch. 10.1)",
+  "chapter": "10. Roads",
+  "section": "10.1 Introduction to roads",
+  "caption": "UML class diagram 'Road'",
+  "shows": "t_road: name[0..1], length (grZero), id {id}, junction (string), rule e_trafficRule[0..1]; children link 0..1, type 0..* (s, type e_roadType, country[0..1]) -> speed 0..1 (max t_maxSpeed = number or string, unit), planView 1, elevationProfile 0..1, lateralProfile 0..1, lanes 1..2, objects 0..1, signals 0..1, surface 0..1, railroad 0..1. e_countryCode accepts ISO alpha-2 (alpha-3 deprecated).",
+  "lesson": "Road has exactly one planView and one or two <lanes> (second for a lane layer), optional objects/signals/railroad. rule sets RHT/LHT per road.",
+  "right": [
+   "Write @rule='RHT' (or LHT) explicitly",
+   "junction='-1' for non-junction roads",
+   "Use 2-letter country codes"
+  ],
+  "wrong": [
+   "Two <lanes> without distinct layers",
+   "Alpha-3 country codes"
+  ],
+  "formula": null,
+  "new_vs_1_7": "lanes multiplicity 1..2 (lane layers) and rule attribute are newer than 1.7's single lanes."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_8A007E88_354E_463e_9D40_944248350DFB.png",
+  "viewed": true,
+  "figure": "UML RoadGeometry (ch. 9.2 / 10.1)",
+  "chapter": "9. Geometries / 10. Roads",
+  "section": "9.2 Road reference line",
+  "caption": "UML class diagram 'RoadGeometry'",
+  "shows": "planView -> geometry 1..* (s, x, y, hdg, length>0) with one of line, spiral (curvStart, curvEnd), arc (curvature), poly3 (deprecated; a,b,c,d), paramPoly3 (aU..dV, pRange). elevationProfile -> elevation 0..* (s,a,b,c,d). lateralProfile with constraint crossSectionSurface xor (superelevation/shape): superelevation 0..* (s,a,b,c,d), shape 0..* (s,t,a,b,c,d), crossSectionSurface 0..1 -> tOffset 0..1, surfaceStrips 1 -> strip 1..4 (id, mode) each with width/constant/linear/quadratic/cubic 0..1 -> coefficients 1..* (s,a,b,c,d). surface -> CRG 0..* (file, sStart, sEnd, orientation, mode, purpose, sOffset, tOffset, xOffset, yOffset, zOffset, zScale, hOffset).",
+  "lesson": "Plan view primitives for writing; poly3 is deprecated (use paramPoly3). crossSectionSurface cannot be combined with superelevation or shape.",
+  "right": [
+   "Emit line/arc/spiral/paramPoly3 only",
+   "Do not mix crossSectionSurface with superelevation/shape"
+  ],
+  "wrong": [
+   "Writing poly3 geometry in new files"
+  ],
+  "formula": null,
+  "new_vs_1_7": "crossSectionSurface (1.8) and CRG x/yOffset (1.9) are new; poly3 deprecated."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_4C4C33F7_889B_4892_ACCF_0127F3BA1B7B.png",
+  "viewed": true,
+  "figure": "UML Link (ch. 10.3)",
+  "chapter": "10. Roads",
+  "section": "10.3 Road linkage",
+  "caption": "UML class diagram 'Link'",
+  "shows": "t_road_link -> predecessor 0..1, successor 0..1 of t_road_link_predecessorSuccessor: elementId, elementType (road|junction), contactPoint[0..1], elementS[0..1], elementDir[0..1].",
+  "lesson": "Road links point to a road (with contactPoint) or a junction; elementS/elementDir allow linking into the middle of a road (virtual junction context).",
+  "right": [
+   "contactPoint mandatory when elementType=road",
+   "Omit contactPoint for junction links"
+  ],
+  "wrong": [
+   "contactPoint on a junction link"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Unchanged in essence; elementS/elementDir exist since 1.6."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_CD586CD1_8333_46a3_A103_8F63F2BCE9C1.png",
+  "viewed": true,
+  "figure": "UML Lanes (ch. 11.1 / 11.8)",
+  "chapter": "11. Lanes",
+  "section": "11.1 Introduction to lanes; 11.8 Lane properties",
+  "caption": "UML class diagram 'Lanes'",
+  "shows": "t_road_lanes: layer [0..1]=permanent; constraints: permanent layer laneSections have no @length; if laneOffset exists no lane may use border. laneOffset 0..* (s,a,b,c,d); laneSection 1..* (s, length[0..1], singleSide[0..1]) -> center 1 (lane 1, id=0, type/level deprecated), left 0..1 (lane 1..*, id positive), right 0..1 (lane 1..*, id negative). Lane (t_road_lanes_laneSection_lr_lane): type, advisory=none, direction=standard, dynamicLaneType, dynamicLaneDirection, level, roadWorks=false; link 0..1 -> predecessor/successor 0..* (id, layer=permanent); choice width 1..* xor border 1..*; roadMark 0..*; height 0..* (sOffset, inner, outer); rule 0..* (sOffset, value); material 0..*; speed 0..* (sOffset, max, unit); access 0..* (sOffset, rule allow/deny, restriction deprecated) -> restriction 0..* (type).",
+  "lesson": "Lane model for writing: width polynomials (not border when laneOffset present), multiple predecessors/successors allowed (lane splits), lane access with nested restriction children, direction/advisory attributes, center lane type deprecated.",
+  "right": [
+   "Use width (not border)",
+   "Write access as <access sOffset rule='allow'><restriction type='bus'/></access>",
+   "Allow multiple successor ids at lane splits"
+  ],
+  "wrong": [
+   "border lanes together with laneOffset",
+   "Using deprecated access@restriction attribute",
+   "Setting type on the center lane"
+  ],
+  "formula": null,
+  "new_vs_1_7": "advisory, direction, dynamicLane*, roadWorks, link layer, nested access restriction are post-1.7 additions."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_D2700AD5_7968_4435_AD3F_B177C0D1C1AD.png",
+  "viewed": true,
+  "figure": "UML RoadMark (ch. 11.9)",
+  "chapter": "11. Lanes",
+  "section": "11.9 Lane road markings",
+  "caption": "UML class diagram 'RoadMark'",
+  "shows": "t_road_lanes_laneSection_lcr_lane_roadMark: sOffset, type, weight[0..1], color, material[0..1], width[0..1], laneChange[0..1], height[0..1]; sway 0..* (ds,a,b,c,d), type 0..1 (name, width) -> line 1..* (length, space, tOffset, sOffset, rule, width, color), explicit 0..1 -> line 1..* (length, tOffset, sOffset, rule, width).",
+  "lesson": "Lane boundary markings; complex patterns via type/line; explicit lines for surveyed dashes.",
+  "right": [
+   "color is required",
+   "Use laneChange to express crossing permission"
+  ],
+  "wrong": [
+   "Using lane roadMarks for stop lines or crosswalks (those are objects/signals)"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Unchanged structure vs 1.7 apart from minor attribute types."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_522853C6_A091_462c_9784_E01118BD53AB.png",
+  "viewed": true,
+  "figure": "UML Junction (ch. 12.1)",
+  "chapter": "12. Junctions",
+  "section": "12.1 Introduction to junctions",
+  "caption": "UML class diagram 'Junction'",
+  "shows": "Abstract t_junction (name[0..1], id) with planView 0..1 (junction reference line), surface 0..1, elevationGrid 0..1, boundary 0..1, objects 0..1, controller 0..* (id, type, sequence), priority 0..* (high, low), crossPath 0..* (crossingRoad, id, roadAtStart, roadAtEnd; startLaneLink/endLaneLink 1 each: s, from, to). Subclasses: t_junction_common (type default; connection 0..* of t_junction_connection_common: connectingRoad), t_junction_direct (connection 1..* with linkedRoad), t_junction_virtual (mainRoad, sStart, sEnd, orientation; connection_virtual (deprecated, with predecessor/successor) xor connection_virtual_default), t_junction_crossing (roadSection 1..*: id, roadId, sStart, sEnd). Base t_junction_connection: id, incomingRoad[0..1], contactPoint[0..1]; laneLink 0..* (from, to, overlapZone[0..1], fromLayer, toLayer).",
+  "lesson": "Junctions can carry their own <objects> (e.g. crosswalks attached to the junction reference line) and controllers; pedestrian crossings are crossPaths; crossing junction type models road/rail crossings.",
+  "right": [
+   "Attach junction-wide objects (crosswalks, stop lines spanning several connecting roads) to the junction <objects> with a junction planView",
+   "Reference controllers from the junction",
+   "Use crossPath for pedestrian crossings inside junctions"
+  ],
+  "wrong": [
+   "Using deprecated virtual connection predecessor/successor"
+  ],
+  "formula": null,
+  "new_vs_1_7": "Junction-level planView/objects/boundary/elevationGrid/crossPath and crossing type are new since 1.8."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_4F7CBFCD_44AA_49be_9D85_6625376F773A.png",
+  "viewed": true,
+  "figure": "UML JunctionBoundary (ch. 12.10)",
+  "chapter": "12. Junctions",
+  "section": "12.10 Junction boundary",
+  "caption": "UML class diagram 'JunctionBoundary'",
+  "shows": "t_junction_boundary -> segment 1..* (abstract, roadId) specialised as segment_lane (type lane, boundaryLane, sStart, sEnd as grEqZero or contactPoint) and segment_joint (type joint, contactPoint, jointLaneStart[0..1], jointLaneEnd[0..1], transitionLength[0..1]).",
+  "lesson": "The junction area outline is built from lane segments along connecting roads and joint segments across road ends.",
+  "right": [
+   "Alternate lane and joint segments to close the boundary"
+  ],
+  "wrong": [],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_B37C31C9_20D3_450d_9BA3_A32B2F47FA82.png",
+  "viewed": true,
+  "figure": "UML ElevationGrid (ch. 12.11)",
+  "chapter": "12. Junctions",
+  "section": "12.11 Junction elevation grid",
+  "caption": "UML class diagram 'ElevationGrid'",
+  "shows": "t_junction_elevationGrid (sStart, gridSpacing) -> elevation 0..* (left[0..1], center, right[0..1] as space-separated double lists t_junction_grid_position_list).",
+  "lesson": "Junction surface height sampled on a grid along the junction reference line.",
+  "right": [
+   "Use gridSpacing consistent with junction planView length"
+  ],
+  "wrong": [],
+  "formula": null,
+  "new_vs_1_7": "New since 1.8."
+ },
+ {
+  "source": "1.9.0 spec",
+  "file": "docs/reference/asam_opendrive_1.9.0/_assets/specification/_images/uml_class_diagrams/EAID_C4CFB1D1_8463_420e_BB7B_BBC1449CFAB7.png",
+  "viewed": true,
+  "figure": "UML JunctionGroup (ch. 12.13)",
+  "chapter": "12. Junctions",
+  "section": "12.13 Junction groups",
+  "caption": "UML class diagram 'JunctionGroup'",
+  "shows": "t_junctionGroup (name[0..1], id, type e_junctionGroup_type) -> junctionReference 1..* (junction).",
+  "lesson": "Groups junctions (e.g. roundabout) at top level.",
+  "right": [
+   "At least one junctionReference"
+  ],
+  "wrong": [],
+  "formula": null,
+  "new_vs_1_7": "Same as 1.7 Figure 85."
+ }
+]

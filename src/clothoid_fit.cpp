@@ -270,13 +270,79 @@ std::vector<Vec2> simplifyPolyline(const std::vector<Vec2> &pts, double tol) {
   return out;
 }
 
+namespace {
+ReferenceLine fitSimplified(std::vector<Vec2> q, const PolylineFitOptions &o);
+// largest curvature step between consecutive elements
+double curvatureStep(const ReferenceLine &l) {
+  double m = 0.0;
+  for (size_t i = 1; i < l.elements.size(); ++i) m = std::max(m, std::abs(l.elements[i].k0 - l.elements[i - 1].k1));
+  return m;
+}
+}  // namespace
+
 ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
-  // 1. clean: drop duplicates, remove digitising noise, fillet sharp corners
-  std::vector<Vec2> q;
+  // 1. clean: drop duplicates, remove digitising noise
+  std::vector<Vec2> src;
   for (const Vec2 &p : pts)
-    if (q.empty() || (p - q.back()).norm() > 0.05) q.push_back(p);
-  if (q.size() < 2) return {};
-  q = simplifyPolyline(q, o.noiseTolerance);
+    if (src.empty() || (p - src.back()).norm() > 0.05) src.push_back(p);
+  if (src.size() < 2) return {};
+  std::vector<Vec2> q = simplifyPolyline(src, o.noiseTolerance);
+  ReferenceLine line = fitSimplified(q, o);
+  if (o.maxLegDeviation <= 0.0 || line.elements.empty()) return line;
+  // bounded error: the spline must follow the middle of every long leg of the source polyline. A
+  // vertex heading set from a short neighbouring leg tilts a long leg's spiral, which then bows away by
+  // about length x tilt / 4; the point of the leg it strays from most, as an extra vertex, holds it.
+  // the refits keep the first fit's end headings: the ends meet junctions and continuation roads, a
+  // refinement inside the chain must not turn them
+  PolylineFitOptions oe = o;
+  if (!oe.startHeading) oe.startHeading = line.elements.front().hdg;
+  if (!oe.endHeading) oe.endHeading = line.eval(line.length()).hdg;
+  // a corner sharp enough for a fillet owns up to R (tan(turn / 2) + turn / 2) of each leg next to it
+  const double R = std::max(o.minCornerRadius, o.maxCurvature > 0.0 ? 1.0 / o.maxCurvature : 0.0);
+  std::vector<double> reach(src.size(), 0.0);
+  for (size_t i = 1; i + 1 < src.size(); ++i) {
+    const Vec2 d0 = src[i] - src[i - 1], d1 = src[i + 1] - src[i];
+    const double turn = std::abs(normalizeAngle(std::atan2(d1.y, d1.x) - std::atan2(d0.y, d0.x)));
+    if (turn > o.cornerAngle) reach[i] = R * (std::tan(0.5 * std::min(turn, 2.8)) + 0.5 * turn) + 1.0;
+  }
+  for (int round = 0; round < 12; ++round) {
+    double worst = o.maxLegDeviation;
+    std::optional<Vec2> add;
+    for (size_t i = 0; i + 1 < src.size(); ++i) {
+      const Vec2 a = src[i], b = src[i + 1];
+      const double L = (b - a).norm();
+      if (L < o.minBoundLeg) continue;
+      for (double u : {0.25, 0.5, 0.75}) {
+        if (u * L < reach[i] || (1.0 - u) * L < reach[i + 1]) continue;
+        double s, t;
+        line.project(a + (b - a) * u, s, t);
+        if (std::abs(t) > worst) worst = std::abs(t), add = a + (b - a) * u;
+      }
+    }
+    if (!add) break;
+    // insert the midpoint in source order (between the kept vertices around it)
+    double sAdd, tAdd;
+    line.project(*add, sAdd, tAdd);
+    size_t at = 1;
+    for (; at < q.size(); ++at) {
+      double sq, tq;
+      line.project(q[at], sq, tq);
+      if (sq > sAdd) break;
+    }
+    if (at >= q.size() || (q[at] - *add).norm() < 0.5 || (q[at - 1] - *add).norm() < 0.5) break;
+    q.insert(q.begin() + static_cast<long>(at), *add);
+    ReferenceLine refit = fitSimplified(q, oe);
+    // the extra vertex must not cost curvature continuity (a G2 solve that rings around it falls back
+    // to G1 and kinks): then the closer fit is not taken
+    if (refit.elements.empty() || curvatureStep(refit) > curvatureStep(line) + 1e-6) break;
+    line = refit;
+  }
+  return line;
+}
+
+namespace {
+ReferenceLine fitSimplified(std::vector<Vec2> q, const PolylineFitOptions &o) {
+  // 1. fillet sharp corners
   std::vector<double> legH;
   std::vector<char> pairAt;
   q = filletCorners(q, o, &legH, &pairAt);
@@ -429,5 +495,6 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
   line.simplify(o.straightTolerance);
   return line;
 }
+}  // namespace
 
 }  // namespace odrforge

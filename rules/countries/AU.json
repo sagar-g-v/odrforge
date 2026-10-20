@@ -62,6 +62,8 @@
   "trunk": 2.0,
   "default": 0.0
  },
+ "parkingClearOfJunction": 10.0,
+ "parkingClearOfJunctionSource": "Australian Road Rules rule 170: no stopping within 10 m of an intersection without traffic lights",
  "sidewalkWidth": 2.0,
  "bikeLaneWidth": 1.5,
  "curbHeight": 0.15

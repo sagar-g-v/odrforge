@@ -13,8 +13,10 @@ command-line tool.
   limits change, and crosswalks, street lamps and trees are placed as objects.
 - **Any country.** JSON rule files cover driving side, widths, implicit speeds, marking styles and
   sign catalogues. Included: `XX` (generic), `US`, `CA`, `DE`, `FR`, `GB`, `IN`, `JP`, `AU`.
-- **Targets.** `asam` (OpenDRIVE 1.6), `asam18` (1.8: `walking` lanes, `direction`, ISO country
-  codes), `carla` (1.4 plus CARLA conventions), `esmini`.
+- **Output profiles.** `standard` (OpenDRIVE 1.8, validated against the 1.8.1 XSD: `walking`
+  lanes, lane `direction`, access restriction elements) and `carla` (the OpenDRIVE 1.4 vocabulary
+  LibCarla reads, plus CARLA conventions). Each newer feature is written as its documented 1.4
+  substitute in `carla`. The older names `asam`, `asam18` and `esmini` mean `standard`.
 - **Connected network.** OSM near-misses are joined, and parking lots that link streets are
   driven through. Freeway exits and entrances are lane-level splits and merges at the gore, so road
   surfaces never overlap there.
@@ -50,7 +52,7 @@ using namespace odrforge;
 OsmData osm = OsmData::readXml("area.osm");
 BuildOptions opt;
 opt.country = CountryProfile::load("DE");
-opt.target = TargetProfile::byName("asam18");
+opt.target = TargetProfile::byName("standard");
 opt.elevation = [&](double x, double y) { return dem.height(x, y); };  // optional terrain
 BuildReport rep;
 odr::OpenDrive od = buildOpenDrive(osm, Projection(lat0, lon0), opt, &rep);
@@ -108,6 +110,14 @@ generated roads with the map):
 `validate()` checks the ASAM OpenDRIVE rules listed in `src/validate.cpp`. Every message carries the
 ASAM rule id or the spec section it enforces. The test suite (`ctest`) runs the formulas, writer,
 reader and 9 end-to-end OSM scenarios against these rules.
+
+## Compared with SUMO netconvert
+
+[OdrForge vs SUMO netconvert](https://claude.ai/artifact/PMxFJbbrvoZbmRWSTRnrV2): a head-to-head on the six OSM
+test areas, measured on 2026-10-20 at commit `2fa2fda` against SUMO netconvert 1.28.0. It is judged mainly by
+CARLA's own map parser: in five areas, 390 position jumps over 1.6 m against SUMO's 15,130. It also covers the
+OpenDRIVE schema (0 errors against 144 to 8,739 per area) and London's kerb lines. Where SUMO is ahead: speed,
+smoother junction interiors and mountain hairpins. The page is private to its owner until shared.
 
 ## Versioning
 

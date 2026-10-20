@@ -18,6 +18,10 @@ struct Poly3 {
   double deriv(double ds) const { return b + ds * (2.0 * c + ds * 3.0 * d); }
   /// cubic Hermite from (v0, slope0) to (v1, slope1) over length L
   static Poly3 hermite(double s, double L, double v0, double m0, double v1, double m1);
+  /// C2 lateral shift from v0 to v1 over length L, level (slope and curvature 0) at both ends: four
+  /// cubics whose second derivative ramps 0 -> +A -> 0 -> -A -> 0, A = 8 (v1 - v0) / L^2. A single
+  /// cubic cannot be level in slope and curvature at both ends: its curvature steps there.
+  static std::vector<Poly3> shiftC2(double s, double L, double v0, double v1);
 };
 
 struct RoadMark {
@@ -44,9 +48,14 @@ struct Lane {
   std::optional<double> speedMax;  ///< m/s
   std::string speedUnit = "m/s";
   std::vector<std::string> accessDeny;  ///< restricted road users (1.6 <access rule="deny" restriction=...>)
-  std::optional<double> heightInner, heightOuter;  ///< curb / sidewalk raise (m)
+  std::optional<double> heightInner, heightOuter;  ///< curb / sidewalk raise (m) from the section start
+  struct HeightChange {
+    double sOffset = 0.0, inner = 0.0, outer = 0.0;
+  };
+  std::vector<HeightChange> heightChanges;  ///< further <height> records (sOffset > 0, ascending), e.g. lowered curbs
   std::string material;          ///< surface (asphalt, concrete, ...)
   std::string direction;         ///< 1.8 lane direction: standard, reversed, both (empty = not written)
+  std::vector<std::pair<double, std::string>> rules;  ///< lane rules (1.8.0 §11.9): sOffset in the section, value
 };
 
 struct LaneSection {
@@ -66,6 +75,18 @@ struct ValidityRange {
   int fromLane = 0, toLane = 0;
 };
 
+/// OpenDRIVE 1.9 §14.3 <dependency>: the signal with this id controls this one (e.g. a stop line
+/// obeyed while that traffic light is red)
+struct SignalDependency {
+  std::string id, type;
+};
+
+/// OpenDRIVE 1.9 §14.4 <reference>: a link from this signal to another signal or object (e.g. a
+/// traffic light to the stop line where traffic stops for it)
+struct SignalLink {
+  std::string elementId, elementType = "signal", type;
+};
+
 struct Signal {
   std::string id, name;
   double s = 0.0, t = 0.0, zOffset = 0.0, hOffset = 0.0, height = 0.0, width = 0.0;
@@ -77,6 +98,11 @@ struct Signal {
   std::optional<double> value;
   std::string unit, text;
   std::vector<ValidityRange> validity;
+  std::vector<SignalDependency> dependencies;
+  /// OpenDRIVE 1.8.0 §14.8 <semantics><priority type> (XSD 1.8.1 e_signals_semantics_priority), e.g. stopLine,
+  /// trafficLight, stop, yield; empty: none
+  std::string semanticsPriority;
+  std::vector<SignalLink> references;
 };
 
 struct SignalReference {
@@ -90,11 +116,21 @@ struct ObjectCorner {
   double u = 0.0, v = 0.0, z = 0.0, height = 0.0;  ///< cornerLocal (object frame)
 };
 
+/// OpenDRIVE 1.8.0 §13.4 <repeat> (XSD 1.8.1 t_road_objects_object_repeat; 1.4H §5.3.8.1.1): the object
+/// along [s, s + length]; distance 0 = one continuous feature, t / zOffset / height / width interpolated
+/// linearly from their Start to their End value
+struct ObjectRepeat {
+  double s = 0.0, length = 0.0, distance = 0.0;
+  double tStart = 0.0, tEnd = 0.0, zOffsetStart = 0.0, zOffsetEnd = 0.0;
+  double heightStart = 0.0, heightEnd = 0.0, widthStart = 0.0, widthEnd = 0.0;
+};
+
 struct Object {
   std::string id, name, type, subtype;
   double s = 0.0, t = 0.0, zOffset = 0.0, hdg = 0.0, pitch = 0.0, roll = 0.0;
   double length = 0.0, width = 0.0, height = 0.0, radius = 0.0;
   std::string orientation = "none";
+  std::vector<ObjectRepeat> repeats;  ///< continuous features (barriers); the size is given per repeat
   std::vector<ObjectCorner> outline;  ///< closed local outline (crosswalks, islands)
   std::vector<ValidityRange> validity;
 };
@@ -145,21 +181,65 @@ struct JunctionController {
   int sequence = 0;
 };
 
+/// OpenDRIVE 1.9 §12.5 cross path (1.8+): a crossing road linking a lane of the road at its start to a
+/// lane of the road at its end (each at an s on that road)
+struct CrossPath {
+  std::string id, crossingRoad, roadAtStart, roadAtEnd;
+  struct Link {
+    int from = 0;   ///< lane of roadAtStart / roadAtEnd
+    double s = 0.0;  ///< on roadAtStart / roadAtEnd
+    int to = 0;     ///< lane of the crossing road
+  };
+  Link start, end;
+};
+
+/// OpenDRIVE 1.8.0 §12.9 junction reference line (one line) and §12.11 elevation grid along it
+struct JunctionGrid {
+  double x = 0.0, y = 0.0, hdg = 0.0, length = 0.0;  ///< the reference line: start, heading, length
+  double gridSpacing = 5.0, sStart = 0.0;
+  struct Row {
+    double center = 0.0;
+    std::vector<double> left, right;  ///< from inside to outside
+  };
+  std::vector<Row> rows;  ///< at s = sStart + k gridSpacing
+};
+
+/// OpenDRIVE 1.8.0 §12.10 junction boundary segment: type "lane" (roadId, boundaryLane, sStart, sEnd as a number or
+/// "start" / "end") or "joint" (roadId, contactPoint; all lanes, or with jointLanes from jointLaneStart to jointLaneEnd -
+/// Table 78: "ID of the lane crossed by the segment")
+struct BoundarySegment {
+  std::string type, roadId, sStart, sEnd, contactPoint;
+  int boundaryLane = 0;
+  bool jointLanes = false;
+  int jointLaneStart = 0, jointLaneEnd = 0;
+};
+
 struct Junction {
   std::string id, name;
   std::string type = "default";  ///< default, direct (1.7+), virtual, crossing (1.8)
+  /// virtual junctions (OpenDRIVE 1.9 §12.7): the uncut main road, the s range and the orientation
+  std::string mainRoad, orientation = "none";
+  double sStart = 0.0, sEnd = 0.0;
   std::vector<Connection> connections;
+  std::vector<CrossPath> crossPaths;
   std::vector<JunctionController> controllers;
   struct Priority {
     std::string high, low;
   };
   std::vector<Priority> priorities;
+  std::optional<JunctionGrid> grid;  ///< common junctions, 1.8+
+  std::vector<BoundarySegment> boundary;  ///< counter-clockwise, common junctions, 1.8+
 };
 
 struct Controller {
   std::string id, name;
   int sequence = 0;
   std::vector<std::string> signalIds;  ///< <control signalId=..>
+};
+
+/// OpenDRIVE 1.9 §6.4.2 <license> (introduced 1.8.0): licensing of the file's content
+struct License {
+  std::string name, resource, spdxid, text;
 };
 
 struct Header {
@@ -169,6 +249,13 @@ struct Header {
   std::string geoReference;  ///< PROJ string
   std::map<std::string, std::string> userData;  ///< e.g. verticalDatum
   double offX = 0, offY = 0, offZ = 0, offHdg = 0;
+  std::optional<License> license;
+};
+
+/// OpenDRIVE 1.9 §12.13 junction group (1.4+): junctions that belong together, e.g. a roundabout.
+struct JunctionGroup {
+  std::string id, name, type = "roundabout";  ///< roundabout | unknown
+  std::vector<std::string> junctionIds;
 };
 
 struct OpenDrive {
@@ -176,6 +263,7 @@ struct OpenDrive {
   std::vector<Road> roads;
   std::vector<Junction> junctions;
   std::vector<Controller> controllers;
+  std::vector<JunctionGroup> junctionGroups;
 };
 
 struct WriteOptions {

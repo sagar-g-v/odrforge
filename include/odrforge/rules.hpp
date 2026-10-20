@@ -1,10 +1,12 @@
 // OdrForge - country rules (driving side, default widths / speeds / lane counts, marking colours,
-// sign catalogue) and output targets (generic ASAM OpenDRIVE, CARLA, esmini quirks).
+// sign catalogue) and output profiles (standard OpenDRIVE 1.8, CARLA's OpenDRIVE 1.4).
 #pragma once
 
 #include <map>
 #include <optional>
 #include <string>
+
+#include "odrforge/spec_revision.hpp"
 
 namespace odrforge {
 
@@ -26,6 +28,9 @@ struct CountryProfile {
   std::map<std::string, std::string> maxspeedZones;  ///< "DE:urban" -> "50" etc.
   double sidewalkWidth = 2.0, bikeLaneWidth = 1.5, parkingWidthParallel = 2.4;
   double parkingWidthDiagonal = 4.8, parkingWidthPerpendicular = 5.2;
+  /// no parking this close to a junction (the country's traffic law, rules/countries/*.json parkingClearOfJunctionSource):
+  /// parking lanes from tags carry "no stopping at any time" this close to a road end at a junction
+  double parkingClearOfJunction = 5.0;
   double curbHeight = 0.15;
   std::string centerLineColor = "white";    ///< yellow in the Americas
   std::string edgeLineColor = "white";
@@ -41,19 +46,27 @@ struct CountryProfile {
   static CountryProfile load(const std::string &code, const std::string &rulesDir = "");
 };
 
-/// Output target: what the consumer of the .xodr supports.
+/// Output profile: what the consumer of the .xodr reads.
+///   standard - ASAM OpenDRIVE 1.8 (validated against XSD 1.8.1), the full model.
+///   carla    - OpenDRIVE 1.4 vocabulary plus CARLA conventions (what LibCarla parses).
+/// A feature newer than the profile's revision is written as its documented older substitute
+/// (see SpecRevision), e.g. a walking lane becomes a sidewalk lane in carla.
 struct TargetProfile {
-  std::string name = "asam";       ///< asam | carla | esmini
-  int revMinor = 6;
+  std::string name = "standard";
+  int revMinor = 8;
   bool openDriveSignCatalog = false;  ///< CARLA: country="OpenDRIVE", 206 stop / 205 yield / 274 speed
   bool speedSignKmhBuckets = false;   ///< CARLA: speed sign subtype 30..120 km/h in steps of 10
-  bool trafficLightZeroOffset = true; ///< place traffic-light signals on the road surface (CARLA spawns poles)
+  /// true: traffic-light signals on the road surface (CARLA spawns poles); false: at the signal head on its pole
+  /// (Junction Guideline 1.0.0 §9.2: "Traffic lights shall be defined at their physical location")
+  bool trafficLightZeroOffset = false;
   size_t maxIdLength = 0;             ///< CARLA: 32
   bool writeLaneOffsetForConnecting = true;
   /// false: flat cross sections for consumers that ignore <superelevation> (LibCarla's own road
   /// meshing: ProfilesParser does not apply it). Junction surfaces are then level, so overlapping
   /// connecting lanes still agree exactly.
   bool superelevation = true;
+  SpecRevision spec() const { return {revMinor}; }
+  /// "standard" or "carla". Earlier names stay accepted: asam, asam18 and esmini mean standard.
   static TargetProfile byName(const std::string &name);
 };
 

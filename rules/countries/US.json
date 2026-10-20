@@ -71,6 +71,8 @@
   "trunk": 2.0,
   "default": 0.0
  },
+ "parkingClearOfJunction": 6.1,
+ "parkingClearOfJunctionSource": "Uniform Vehicle Code §11-1003(a)(2): no parking within 20 feet of a crosswalk at an intersection",
  "sidewalkWidth": 2.0,
  "bikeLaneWidth": 1.5,
  "curbHeight": 0.15

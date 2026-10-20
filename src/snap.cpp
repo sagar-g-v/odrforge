@@ -23,7 +23,7 @@ namespace detail {
 namespace {
 
 int wayLayer(const OsmWay &w) {
-  int l = tagYes(w.tags, "bridge") ? 1 : (tagYes(w.tags, "tunnel") || tagIs(w.tags, "tunnel", "building_passage")) ? -1 : 0;
+  int l = tagYes(w.tags, "bridge") ? 1 : tagYes(w.tags, "tunnel") ? -1 : 0;  // a building passage: at ground level
   if (auto lv = tag(w.tags, "layer")) {
     try {
       l = std::stoi(*lv);

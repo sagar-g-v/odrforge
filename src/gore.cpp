@@ -9,7 +9,7 @@
 //     ways' nodes, so heading and curvature stay continuous);
 //   * the trunk road runs on up to the separation point S, where the branch carriageway clears the
 //     main one, carrying the branch lanes beside the main lanes (added with a taper at the OSM node
-//     for a diverge, dropped there for a merge) - spec 4.4 lane sections, 4.5 width;
+//     for a diverge, dropped there for a merge) - OpenDRIVE 1.8.0 §11.3 lane sections, §11.6 lane width;
 //   * the junction is a few metres at S: main lanes continue 1:1, the branch lanes become the ramp.
 #include <algorithm>
 #include <cmath>
@@ -302,6 +302,7 @@ void Builder::buildGores() {
       moveRanges(&RoadMeta::bridges);
       moveRanges(&RoadMeta::tunnels);
       moveRanges(&RoadMeta::covered);
+      moveRanges(&RoadMeta::passages);
       nT.layers.clear(), nA.layers.clear();
       for (const auto *src : {&mT, &mA}) {
         const ReferenceLine &old = src == &mT ? oldT : oldA;
@@ -309,7 +310,7 @@ void Builder::buildGores() {
           const double a = remap(old, lr.s0, C), b = remap(old, lr.s1, C);
           for (auto [dst, off, L] : {std::tuple{&nT, offT, LT}, std::tuple{&nA, offA, LA}}) {
             const double ra = std::max(a - off, 0.0), rb = std::min(b - off, L);
-            if (rb - ra > 0.5) dst->layers.push_back({ra, rb, lr.layer});
+            if (rb - ra > 0.5) dst->layers.push_back({ra, rb, lr.layer, lr.maxHeight});
           }
         }
       }

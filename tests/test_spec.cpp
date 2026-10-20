@@ -5,7 +5,9 @@
 #include <set>
 #include <sstream>
 
+#include "odrforge/lanes.hpp"
 #include "odrforge/odr.hpp"
+#include "odrforge/rules.hpp"
 #include "odrforge/validate.hpp"
 #include "test.hpp"
 
@@ -320,6 +322,128 @@ TEST_CASE("writer 1.8: walking / direction=both / access restriction children, d
   CHECK(std::string(d.child("OpenDRIVE").child("header").attribute("revMinor").value()) == "8");
 }
 
+TEST_CASE("writer: header <license> in 1.8 (OpenDRIVE 1.9 §6.4.2, introduced 1.8.0), none in 1.4") {
+  odr::OpenDrive od = sampleNetwork();
+  od.header.license = odr::License{"Open Data Commons Open Database License 1.0", "https://opendatacommons.org/licenses/odbl/1-0/",
+                                   "ODbL-1.0", "Contains data from OpenStreetMap"};
+  for (const int minor : {8, 4}) {
+    pugi::xml_document d;
+    CHECK(d.load_string(odr::toString(od, {minor, 12}).c_str()));
+    const auto header = d.child("OpenDRIVE").child("header");
+    const auto lic = header.child("license");
+    CHECK(bool(lic) == (minor == 8));
+    if (!lic) continue;
+    CHECK(std::string(lic.attribute("spdxid").value()) == "ODbL-1.0");
+    // schema order: geoReference, offset, license, userData
+    for (auto n = lic.next_sibling(); n; n = n.next_sibling())
+      CHECK(std::string(n.name()) != "geoReference" && std::string(n.name()) != "offset");
+  }
+}
+
+TEST_CASE("writer 1.4 (carla profile): pre-1.8 vocabulary, bare <outline>, center lane typed") {
+  const std::string xml = odr::toString(sampleNetwork(), {4, 12});
+  pugi::xml_document d;
+  CHECK(d.load_string(xml.c_str()));
+  std::set<std::string> types;
+  bool direction = false, centerType = false, restrictionChild = false;
+  for (auto l : d.select_nodes("//lane")) {
+    const auto n = l.node();
+    if (n.attribute("id").as_int() == 0) centerType |= bool(n.attribute("type"));
+    else types.insert(n.attribute("type").value());
+    direction |= bool(n.attribute("direction"));
+    for (auto a : n.children("access")) restrictionChild |= bool(a.child("restriction"));
+  }
+  CHECK(types.count("sidewalk") && types.count("bidirectional") && !types.count("walking"));
+  CHECK(!direction && !restrictionChild && centerType);
+  // 1.4 access restrictions name no vehicle classes (simulator, autonomous traffic, pedestrian, none):
+  // the bus lane's deny list is not written
+  CHECK(d.select_nodes("//access").empty());
+  const auto obj = d.select_node("//object").node();
+  CHECK(obj.child("outline") && !obj.child("outlines"));
+}
+
+TEST_CASE("road marks: laneChange follows the lines (1.9 §11.9 Table 48, double lines Table 173)") {
+  // a US street: two-way left-turn lane on the left, a driving lane each way, a bike lane and a sidewalk on the right
+  CrossSection x;
+  x.highway = "secondary";
+  x.left.lanes = {{LaneKind::Bidirectional, 4.0, {}}, {LaneKind::Driving, 3.5, {}}};
+  x.right.lanes = {{LaneKind::Driving, 3.5, {}}, {LaneKind::Biking, 1.5, {}}, {LaneKind::Sidewalk, 2.0, {}}};
+  const CountryProfile us;
+  const odr::LaneSection sec = makeLaneSection(x, 0.0, us);
+  // the turn lane: broken line next to it on both sides (MUTCD 3B.03), entered and left sideways
+  CHECK(sec.center.roadMarks.front().type == "broken solid");  // center lane: lines left to right
+  CHECK(sec.center.roadMarks.front().laneChange == "both");
+  CHECK(sec.left[0].roadMarks.front().type == "broken solid");  // lane +1 outer edge: inside to outside
+  CHECK(sec.left[0].roadMarks.front().laneChange == "both");
+  // solid lines are not crossed: the driving lane's edge to the bike lane and the bike lane's own edge
+  CHECK(sec.right[0].roadMarks.front().type == "solid" && sec.right[0].roadMarks.front().laneChange == "none");
+  CHECK(sec.right[1].roadMarks.front().type == "solid" && sec.right[1].roadMarks.front().laneChange == "none");
+  // a "solid broken" center line (solid left, broken right) is crossed from the right lane only:
+  // toward the higher id
+  CrossSection y;
+  y.highway = "secondary";
+  y.left.lanes = {{LaneKind::Driving, 3.5, {}}};
+  y.right.lanes = {{LaneKind::Driving, 3.5, {}}};
+  CountryProfile c = us;
+  c.centerLineTwoWay = "solid broken";
+  CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "increase");
+  c.centerLineTwoWay = "broken solid";
+  CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "decrease");
+  c.centerLineTwoWay = "broken";
+  CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "both");
+}
+
+TEST_CASE("output profiles: standard is OpenDRIVE 1.8, carla is 1.4, older names mean standard") {
+  CHECK(TargetProfile::byName("standard").revMinor == 8);
+  CHECK(TargetProfile::byName("carla").revMinor == 4);
+  CHECK(TargetProfile::byName("carla").maxIdLength == 32);
+  for (const char *legacy : {"asam", "asam18", "esmini"}) CHECK(TargetProfile::byName(legacy).name == "standard");
+  bool threw = false;
+  try {
+    TargetProfile::byName("opendrive2");
+  } catch (const std::invalid_argument &) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK(TargetProfile{}.spec().hasLaneDirection() && !TargetProfile::byName("carla").spec().hasLaneDirection());
+}
+
+TEST_CASE("writer leaves out records that repeat the previous polynomial (performance.avoid_redundant_info)") {
+  odr::OpenDrive od = sampleNetwork();
+  odr::Road &r = od.roads[0];
+  r.elevation = {{0.0, 1.0, 0.02, 0, 0}, {10.0, 1.2, 0.02, 0, 0}, {20.0, 1.4, 0.03, 0, 0}};  // 2nd repeats 1st
+  pugi::xml_document d;
+  CHECK(d.load_string(odr::toString(od, {8, 12}).c_str()));
+  const auto profile = d.select_node("//road/elevationProfile").node();
+  int records = 0;
+  for (auto e : profile.children("elevation")) {
+    ++records;
+    (void)e;
+  }
+  CHECK(records == 2);
+}
+
+TEST_CASE("writer joins consecutive lines on one heading (Annex F.5.1 performance.avoid_redundant_info)") {
+  auto geometries = [](double secondHdg) {
+    odr::OpenDrive od = sampleNetwork();
+    ReferenceLine &pv = od.roads[0].planView;
+    GeomElement a;
+    a.hdg = 0.3, a.length = 6.7;
+    GeomElement b = a;
+    b.s = a.length, b.x = a.end().x, b.y = a.end().y, b.hdg = secondHdg;  // set directly: finalize() would copy a's heading
+    pv.elements = {a, b};
+    pugi::xml_document d;
+    CHECK(d.load_string(odr::toString(od, {8, 12}).c_str()));
+    std::vector<double> lengths;
+    for (auto g : d.select_node("//road/planView").node().children("geometry")) lengths.push_back(g.attribute("length").as_double());
+    return lengths;
+  };
+  const auto joined = geometries(0.3);  // straight on: one 13.4 m line
+  CHECK(joined.size() == 1);
+  CHECK(std::abs(joined[0] - 13.4) < 1e-7);  // lengths are written on a 2^-24 m grid
+  CHECK(geometries(0.31).size() == 2);  // a heading step is real geometry, kept
+}
+
 TEST_CASE("writer precision keeps at least 10 significant digits") {
   odr::OpenDrive od = sampleNetwork();
   od.roads[0].planView.elements[0].x = 1234.567890123;
@@ -363,13 +487,35 @@ TEST_CASE("validator catches spec violations (negative tests)") {
   od.roads[0].lanes[0].left[0].type = "flyingCarLane";     // invalid enum
   const ValidationReport v = validate(od);
   CHECK(v.count("spec7.1.validity_order") == 1);
-  CHECK(v.count("spec10.lane_id_contiguity") >= 1);
+  CHECK(v.count("road.lane.lane_order_no_gaps") >= 1);
   CHECK(v.count("road.lane.width.lane_width_validity") >= 1);
   CHECK(v.count("road.geometry.refline_no_gaps") == 1);
-  CHECK(v.count("spec7.2.control_signal") == 1);
+  CHECK(v.count("ids.only_ref_defined_ids") == 1);
   CHECK(v.count("spec4.3.lane_type_enum") == 1);
   // and a clean model passes
   CHECK(validate(sampleNetwork()).errors == 0);
+}
+
+TEST_CASE("validator: a direct junction's linked road is one of its roads (1.9 section 12.6)") {
+  // road A ends in junction 100, road B starts there; a direct junction links A to B (@linkedRoad)
+  odr::OpenDrive od = sampleNetwork();
+  odr::Road b = od.roads[0];
+  b.id = "200";
+  od.roads[0].successor = odr::LinkTarget{"junction", "100", ""};
+  b.predecessor = odr::LinkTarget{"junction", "100", ""};
+  b.successor.reset();
+  od.roads.push_back(b);
+  odr::Junction J;
+  J.id = "100";
+  J.type = "direct";
+  odr::Connection cn;
+  cn.id = "0";
+  cn.incomingRoad = od.roads[0].id;
+  cn.connectingRoad = "200";  // written as @linkedRoad
+  cn.laneLinks = {{-1, -1}};
+  J.connections = {cn};
+  od.junctions.push_back(J);
+  CHECK(validate(od).count("road.linkage.both_sides_consistency") == 0);
 }
 
 TEST_CASE("writer: road length is never shorter than the written geometry (strict readers)") {

@@ -1,0 +1,570 @@
+"""Terrain contract: absolute limits on the proven terrain results of the reference areas (docs/TERRAIN_CONTRACT.md).
+
+    python terrain_contract.py [--areas munich,london,stelvio] [--dir build/testareas] [--json out.json]
+
+Unlike gate.py's baseline (counts relative to the last stored run), these limits do not move when a baseline is
+refreshed: a converter change that lifts roads off the ground, lets a deck road float, banks a road past the cap or
+leaves a stale output fails here. The limits are the proven numbers plus a small margin; they are tightened with new
+evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks per area:
+  fresh        every output (carla <area>.xodr, <area>_standard.xodr, <area>_ground_conformed.odrz) is newer than its
+               inputs (OSM, ground and deck grids, osm2xodr.exe) - London road 389 floated 39 m in a carla file written
+               before its deck grid existed
+  conformed    paved edges minus the 0.05 m road floor vs the conformed ground (OpenDRIVE 1.8.0 §10.5: z = elevation +
+               t tan(superelevation)); edges whose ground another, lower road's floor or cut holds down (lower wins, user
+               decision 2026-10-18) are left out here and counted by `floating`
+  centre       carriageway reference line vs the raw ground, plain roads outside bridges / tunnels
+  decks        bridge roads vs the measured deck where the deck grid has a value under them and no other road passes
+               over them (a surface model sees the top deck only: under a flyover the lower bridge would be measured
+               against the upper deck): a quantile limit, and / or the share of samples within 0.5 m
+  superelev    plain roads more than 30 m from their ends: |superelevation| <= 0.085 rad (elevation.cpp caps the terrain
+               cross slope at 8 %, atan = 0.0798, plus the cubic records' overshoot); everywhere <= atan(15 %) + 2 mrad
+               (junction planes are capped at a 15 % gradient, elevation.cpp step 4, and road ends bank into them)
+  steep        roads with a grade over 20 % at a 5 m step (exactly the validator's quality.max_grade warning)
+  buried       plain roads more than 2 m under the raw ground over 10 m outside bridges / tunnels and not under a
+               bridge (Frankfurt: the Hugo-Eckener-Ring under the terminal forecourt, covered=yes, ran 7 m under it as a
+               plain road and the conformed ground trenched it; elevation.cpp coveredUnderpasses)
+  objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
+               (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
+  floating     lane points more than 1 m over the conformed ground (outside tunnels / bridges): the road floor's
+               lower-wins cost where roads at different heights lie within a cell or the cut's reach (held at the counts)
+  above        roads with a lane point where the conformed ground stands over the road floor - the lane's surface minus
+               0.05 m (outside tunnels / bridges): limit 0 (conform.cpp step 4, user decision 2026-10-18)
+  junction_fill  points inside junction boundaries where the conformed ground stands over the junction's elevationGrid
+               minus 0.05 m (except under a road beside it more than 0.5 m higher): limit 0 (conform.cpp rasterPolygon)
+  pits        no junction road carrying a driving lane outside tunnels / bridges where the conformed ground lies more than 2 m under the raw
+               ground (Frankfurt's underground car park: connecting roads without tunnel records dug 723 pit points into
+               the published ground; elevation.cpp junctionsUnderCover)
+  cliffs       roads of 0.1 m and more with a grade over 50 % between samples 0.25 m apart: short stubs the steep check's
+               5 m steps cannot see (Frankfurt's 2 m stubs climbing 5-6 m before the smooth-deck filter)
+  named       named roads with their own limit (London: Adam Street on the Adelphi terrace)
+Exit 0 when every limit holds, 1 otherwise.
+"""
+import argparse
+import json
+import math
+import os
+import struct
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import odrgeom as G  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+DATA = r"C:\mywork\osm2carla"
+TOUT = os.path.join(DATA, "build", "testareas")
+EXE = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
+SE_PLAIN = 0.085            # plain-road interior: atan(8 %) = 0.0798 + cubic overshoot (measured max 0.0822)
+SE_ALL = math.atan(0.15) + 2e-3  # junction-plane cap (measured max 0.1489 = atan(15 %))
+OBJECT_TOL = 0.3  # m: a tree / street lamp base vs the conformed ground under it (off bridge stretches)
+SE_END = 30.0               # m: a plain road's end blend into its junction plane (opt.junctionBlend) lies within
+# buried: a plain road more than BURIED_DEPTH under the raw ground outside bridges / tunnels, and not under a bridge,
+# over BURIED_RUN or more (elevation.cpp coveredUnderpasses writes covered stretches that deep as underpasses;
+# the conformed ground trenches whatever stays a plain road)
+BURIED_DEPTH = 2.0  # m
+# m: catches all five Frankfurt covered stretches before their underpasses were written (20 m caught two); samples
+# under a bridge road neither count nor end a run
+BURIED_RUN = 10.0
+PIT_DEPTH = 2.0  # m: conformed ground this far under the raw ground on a junction road outside tunnels / bridges
+FLOOR = 0.05  # m: the road floor - the conformed ground stays this far under every lane (conform.cpp step 4)
+ABOVE = 0.01  # m: tolerance over the floor before a lane point counts as having ground above it
+OTHER_LEVEL = 0.5  # m: a road beside a junction this far over its grid is at another level (conform.cpp kOtherLevel)
+FLOAT = 1.0  # m: a lane point this far over the conformed ground floats (off bridges / tunnels)
+PRESSED_TOL = 0.02  # m under the floor before a paved edge counts as pressed down by another, lower road's floor
+FLOOR_SLOPE = 2.0  # the floor's cut rises 2 m per metre away from a lane (conform.cpp ConformOptions::floorSlope)
+# cliffs: roads of 0.1 m and more (junction roads too) with a grade over CLIFF_GRADE between samples CLIFF_STEP apart -
+# the steep check's 5 m steps cannot see a 2 m stub climbing 5 m (Frankfurt 97 / 366 / 367 before the smooth-deck
+# filter, LA 656 / 657). No public road reaches 50 % (the steepest streets: ~35-37 %)
+CLIFF_GRADE = 0.5
+CLIFF_STEP = 0.25  # m
+
+# limits: proven value (2026-10-17, docs/TERRAIN_CONTRACT.md) -> limit. q = (quantile, |metric| limit in m)
+CONTRACT = {
+    # floating: lane points > 1 m over the conformed ground - the road floor's lower-wins cost (user decision 2026-10-18),
+    # held at the measured counts and tightened as they fall
+    "munich": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], steep=2, floating=71),
+    # cliffs held at the proven state (open items, docs/TERRAIN_CONTRACT.md): London 250 and Stelvio 31, 4-6 m service
+    # stubs climbing 1.6-2.3 m from a junction surface that cannot follow the terrain step beside it
+    "london": dict(conformed=(99, 0.02), centre=[(50, 0.05), (95, 0.40)], decks=(95, 0.30), decks_near=0.98, steep=4,
+                   named={"Adam Street": 0.10, "Lancaster Place": 0.10}, cliffs=1, floating=179),
+    # Frankfurter Kreuz: decks as a share - a surface model sees the top structure only (the ICE viaduct over road
+    # bridges) and narrow service bridges drawn a few metres off their deck sample the ground beside it
+    "frankfurt_kreuz": dict(conformed=(99, 0.06), centre=[(50, 0.05), (95, 0.40)], decks_near=0.92, steep=4, floating=515),
+    "stelvio": dict(conformed=(95, 0.20), centre=[(50, 0.05), (95, 0.25)], steep=1, cliffs=1, floating=3804),
+}
+
+
+def read_grid(path):
+    """.odrz -> (originX, originY, cell, z[levels, ny, nx]) (tools/make_terrain.py write_odrz)"""
+    with open(path, "rb") as f:
+        magic = f.read(8)
+        ox, oy, cell, nx, ny = struct.unpack("<dddii", f.read(32))
+        levels = struct.unpack("<i", f.read(4))[0] if magic == b"ODRZGRD2" else 1
+        f.read(32)
+        z = np.frombuffer(f.read(nx * ny * 4 * levels), dtype="<f4").reshape(levels, ny, nx).astype(float)
+    return ox, oy, cell, z
+
+
+def sampler(grid, level=0):
+    """bilinear height of one level at (x, y); NaN outside or where a corner has no data"""
+    ox, oy, cell, z = grid
+    Z = z[level]
+    ny, nx = Z.shape
+
+    def f(x, y):
+        fx, fy = (x - ox) / cell, (y - oy) / cell
+        i, j = int(math.floor(fx)), int(math.floor(fy))
+        if i < 0 or j < 0 or i + 1 >= nx or j + 1 >= ny:
+            return math.nan
+        u, v = fx - i, fy - j
+        return float(Z[j, i] * (1 - u) * (1 - v) + Z[j, i + 1] * u * (1 - v) + Z[j + 1, i] * (1 - u) * v
+                     + Z[j + 1, i + 1] * u * v)
+    return f
+
+
+def piecewise(road, tag, parent):
+    el = road.el.find(parent)
+    recs = sorted([(float(e.get("s")), G._abcd(e)) for e in el.findall(tag)]) if el is not None else []
+    return (lambda s: road._piecewise(recs, np.asarray(s, dtype=float))) if recs else (lambda s: np.zeros(np.shape(s)))
+
+
+def structures(road):
+    o = road.el.find("objects")
+    out = []
+    if o is not None:
+        for c in o:
+            if c.tag in ("bridge", "tunnel"):
+                out.append((c.tag, float(c.get("s")), float(c.get("s")) + float(c.get("length"))))
+    return out
+
+
+def on_structure(sts, s, kind=None):
+    return any(a - 1e-6 <= s <= b + 1e-6 and (kind is None or k == kind) for k, a, b in sts)
+
+
+def quantiles(v, qs):
+    a = np.abs(np.asarray(v, dtype=float))
+    return {q: float(np.percentile(a, q)) if len(a) else math.nan for q in qs}
+
+
+def grid_of(j):
+    """a <junction>'s reference line and <elevationGrid> (OpenDRIVE 1.8.0 §12.9 / §12.11), or None"""
+    pv, eg = j.find("planView/geometry"), j.find("elevationGrid")
+    if pv is None or eg is None:
+        return None
+    rows = [(float(e.get("center")), [float(v) for v in (e.get("left") or "").split()],
+             [float(v) for v in (e.get("right") or "").split()]) for e in eg.findall("elevation")]
+    return dict(x=float(pv.get("x")), y=float(pv.get("y")), hdg=float(pv.get("hdg")), sp=float(eg.get("gridSpacing")),
+                s0=float(eg.get("sStart") or 0.0), rows=rows)
+
+
+def grid_z(g, x, y):
+    """the grid at (x, y): bilinear between its points, linear beyond its outer squares (exact on the planes we write;
+    §12.11.1 interpolates bicubically)"""
+    rows = g["rows"]
+    nl, nr = len(rows[0][1]), len(rows[0][2])
+    c, s = math.cos(g["hdg"]), math.sin(g["hdg"])
+    fk = ((x - g["x"]) * c + (y - g["y"]) * s - g["s0"]) / g["sp"]
+    fj = (-(x - g["x"]) * s + (y - g["y"]) * c) / g["sp"]
+    at = lambda k, j: rows[k][0] if j == 0 else rows[k][1][j - 1] if j > 0 else rows[k][2][-j - 1]  # noqa: E731
+    k0, j0 = min(max(int(math.floor(fk)), 0), len(rows) - 2), min(max(int(math.floor(fj)), -nr), nl - 1)
+    u, v = fk - k0, fj - j0
+    return (1 - u) * (1 - v) * at(k0, j0) + u * (1 - v) * at(k0 + 1, j0) + (1 - u) * v * at(k0, j0 + 1) + u * v * at(k0 + 1, j0 + 1)
+
+
+def junction_fill(xodr, od, roads, c, cell):
+    """points (every 1 m) inside junction boundaries where the conformed ground stands over grid - FLOOR + ABOVE, not
+    under a lane of a road outside every junction"""
+    import xml.etree.ElementTree as ET
+    import boundary_audit as B
+    R = od.roads if isinstance(od.roads, dict) else {r.id: r for r in roads}
+    covered = {r.junction for r in roads if r.junction != "-1" and any(st[0] == "tunnel" for st in structures(r))}
+    bad = 0
+    for j in ET.parse(xodr).getroot().findall("junction"):
+        g = grid_of(j)
+        if j.find("boundary") is None or g is None or j.get("id") in covered:
+            continue
+        segs, pts = j.findall("boundary/segment"), []
+        for sg in segs:
+            r = R.get(sg.get("roadId"))
+            if r is None:
+                pts = []
+                break
+            if sg.get("type") == "joint":
+                s = 0.0 if sg.get("contactPoint") == "start" else r.length
+                b = r.borders_at(s, r.section_at(s))
+                if sg.get("jointLaneStart") is not None:
+                    lo, hi = sorted((int(sg.get("jointLaneStart")), int(sg.get("jointLaneEnd"))))
+                    b = {k: v for k, v in b.items() if k != 0 and lo <= k <= hi}
+                ts = [t for v in b.values() for t in v]
+                end = [B.pt(r, s, min(ts)), B.pt(r, s, max(ts))]
+                if pts and np.linalg.norm(end[1] - pts[-1]) < np.linalg.norm(end[0] - pts[-1]):
+                    end = end[::-1]
+                pts.extend(end)
+            else:
+                lane, s0, s1 = int(sg.get("boundaryLane")), B.s_of(r, sg.get("sStart")), B.s_of(r, sg.get("sEnd"))
+                pts.extend(B.pt(r, s, B.edge_t(r, s, lane)) for s in np.linspace(s0, s1, max(2, int(abs(s1 - s0)) + 1)))
+        if len(pts) < 3:
+            continue
+        P = np.array(pts)
+        (x0, y0), (x1, y1) = P.min(axis=0), P.max(axis=0)
+        for x in np.arange(math.floor(x0), x1, 1.0):
+            for y in np.arange(math.floor(y0), y1, 1.0):
+                if not B.inside(P, (x, y)):
+                    continue
+                v = c(x, y)
+                if math.isnan(v) or v <= grid_z(g, x, y) - FLOOR + ABOVE:
+                    continue
+                plain = False  # under a lane of a road outside every junction at another level (its own floor holds)
+                zg = grid_z(g, x, y)
+                for q in od.roads_near(x, y, 30.0):
+                    if q.junction != "-1":
+                        continue
+                    s, t, _ = q.project(x, y)
+                    if 0.0 <= s <= q.length:
+                        sq = float(min(max(s, 1e-6), q.length - 1e-6))
+                        ts = [tt for v2 in q.borders_at(sq).values() for tt in v2]
+                        if min(ts) - 1.5 * cell <= t <= max(ts) + 1.5 * cell and float(q.z(np.array([sq]))[0]) > zg + OTHER_LEVEL:
+                            plain = True
+                            break
+                bad += not plain
+    return bad
+
+
+def measure(xodr, ground=None, conformed=None, decks=None, named=()):
+    """metrics of one OpenDRIVE file against its grids (every 2 m along every road)"""
+    od = G.OpenDrive(xodr)
+    roads = od.roads.values() if isinstance(od.roads, dict) else od.roads
+    g = sampler(read_grid(ground)) if ground else None
+    c = sampler(read_grid(conformed)) if conformed else None
+    dk = read_grid(decks) if decks else None
+    dks = [sampler(dk, l) for l in range(dk[3].shape[0])] if dk else []
+    centre, edges, deck = [], [], []
+    pressed = 0  # paved edges left out of `conformed`: another, lower road's floor pressed their ground (user decision)
+    # every road's lane points outside tunnels (lane centre and borders, every 1 m): whose floor may press the ground
+    lane_pts = None
+    if c:
+        from scipy.spatial import cKDTree
+        cell = read_grid(conformed)[2]
+        pts, zs, ids, ss = [], [], [], []
+        for r in roads:
+            sts = structures(r)
+            for sec in r.sections:
+                for s in np.arange(sec.s + 0.5, sec.e, 1.0):
+                    if on_structure(sts, s, "tunnel"):
+                        continue
+                    z0 = float(r.z(np.array([s]))[0])
+                    for lid, (ti, to) in r.borders_at(float(s), sec).items():
+                        if lid == 0:
+                            continue
+                        for t in (ti, 0.5 * (ti + to), to):
+                            x, y = r.point(np.array([s]), np.array([t]))
+                            pts.append((float(np.ravel(x)[0]), float(np.ravel(y)[0]))), zs.append(z0), ids.append(r.id)
+                            ss.append(float(s))
+        lane_pts = (cKDTree(np.array(pts)), np.array(zs), np.array(ids), 1.5 * cell, np.array(ss)) if pts else None
+
+    def pressed_by_lower(x, y, z, rid, s):
+        """a lane point of another road - or of this road more than 20 m along it (a hairpin's other leg) - lower by d
+        (> 0.1 m) lies within 1.5 cells + d / FLOOR_SLOPE of (x, y): its floor (lower wins) or the cut rising from it may
+        hold the ground under this point (conform.cpp step 4)"""
+        if lane_pts is None:
+            return False
+        tree, lz, lid, rad, ls = lane_pts
+        idx = tree.query_ball_point((x, y), rad + 20.0)
+        d = np.hypot(tree.data[idx, 0] - x, tree.data[idx, 1] - y) if idx else []
+        return any((lid[i] != rid or abs(ls[i] - s) > 20.0) and lz[i] < z - 0.1 and di <= rad + (z - lz[i]) / FLOOR_SLOPE
+                   for i, di in zip(idx, d))
+    tops = {}  # 5 m cells -> centre-line samples (x, y, z) of every road, for "another road passes over"
+    for r in roads:
+        sts = structures(r)
+        for s in np.arange(0.0, r.length, 2.0):
+            x, y = r.point(np.array([s]), 0.0)
+            x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+            tops.setdefault((int(x // 5), int(y // 5)), []).append(
+                (x, y, float(r.z(np.array([s]))[0]), r.id, on_structure(sts, s, "bridge")))
+
+    def covered(x, y, z, rid, bridges_only=False):
+        """another road (on a bridge stretch: bridges_only) passes more than 2 m above (x, y, z) within 4 m"""
+        cx, cy = int(x // 5), int(y // 5)
+        return any(q[3] != rid and q[2] > z + 2.0 and (q[4] or not bridges_only) and math.hypot(q[0] - x, q[1] - y) < 4.0
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1) for q in tops.get((cx + dx, cy + dy), ()))
+    se_plain = se_all = 0.0
+    steep, named_grade, buried, cliffs = [], {n: 0.0 for n in named}, [], []
+
+    def cliff(r):
+        """a grade over CLIFF_GRADE between samples CLIFF_STEP apart (the whole road when shorter)"""
+        ss = np.append(np.arange(0.0, r.length, CLIFF_STEP), r.length)
+        zz = r.z(ss)
+        return bool(np.max(np.abs(np.diff(zz) / np.maximum(np.diff(ss), 1e-9))) > CLIFF_GRADE)
+    for r in roads:
+        if 0.1 <= r.length < 0.5 and cliff(r):  # too short for the loop below, not for a cliff
+            cliffs.append(r.id)
+        if r.length < 0.5:
+            continue
+        sts = structures(r)
+        se = piecewise(r, "superelevation", "lateralProfile")
+        ss = np.linspace(0.0, r.length, max(3, int(r.length / 0.5)))
+        zz = r.z(ss)
+        grade = np.abs(np.gradient(zz, ss))
+        roll = np.abs(se(ss))
+        se_all = max(se_all, float(roll.max()))
+        inner = (ss > SE_END) & (ss < r.length - SE_END)
+        if r.el.get("junction") == "-1" and inner.any():
+            se_plain = max(se_plain, float(roll[inner].max()))
+        s5 = np.arange(0.0, r.length + 1e-9, 5.0)  # validate.cpp quality.max_grade: every 5 m, slope > 20 %
+        h = 1e-3
+        slope = (r.z(np.clip(s5 + h, 0, r.length)) - r.z(np.clip(s5 - h, 0, r.length))) /             np.maximum(np.clip(s5 + h, 0, r.length) - np.clip(s5 - h, 0, r.length), 1e-12)
+        if np.any(np.abs(slope) > 0.20):
+            steep.append(r.id)
+        if cliff(r):
+            cliffs.append(r.id)
+        name = r.el.get("name")
+        if name in named_grade and r.el.get("junction") == "-1":
+            named_grade[name] = max(named_grade[name], float(grade.max()))
+        if r.el.get("junction") != "-1":
+            continue
+        run = 0.0  # buried: consecutive 2 m samples outside structures more than BURIED_DEPTH under the raw ground
+        for s in np.arange(1.0, r.length - 1.0, 2.0):
+            z0 = float(r.z(np.array([s]))[0])
+            x, y = r.point(np.array([s]), 0.0)
+            x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+            if on_structure(sts, s, "bridge"):
+                lv = [f(x, y) for f in dks]
+                lv = [v for v in lv if not math.isnan(v)]
+                if lv and not covered(x, y, z0, r.id):
+                    deck.append(min((z0 - v for v in lv), key=abs))
+                continue
+            if on_structure(sts, s):
+                run = 0.0
+                continue
+            if g:
+                v = g(x, y)
+                if not math.isnan(v):
+                    centre.append(z0 - v)
+                # under a bridge is not evidence either way: the raw grid there may hold the deck (Frankfurt roads 57,
+                # 276 under bridges 34, 58), so such a sample neither counts nor ends a run - a buried stretch that
+                # passes partly under a bridge is still caught. A plain road above does not excuse it (Hugo-Eckener-Ring
+                # under the forecourt roads)
+                deep = not math.isnan(v) and z0 - v < -BURIED_DEPTH
+                if not (deep and covered(x, y, z0, r.id, bridges_only=True)):
+                    run = run + 2.0 if deep else 0.0
+                if run >= BURIED_RUN and r.id not in buried:
+                    buried.append(r.id)
+            if c:
+                b = r.borders_at(s)
+                lanes = [v for k, v in b.items() if k]
+                if not lanes:
+                    continue
+                lo, hi = min(min(v) for v in lanes), max(max(v) for v in lanes)
+                roll = float(se(np.array([s]))[0])
+                for t in (lo + 0.3, hi - 0.3):
+                    xe, ye = r.point(np.array([s]), t)
+                    v = c(float(np.ravel(xe)[0]), float(np.ravel(ye)[0]))
+                    if not math.isnan(v):
+                        e = z0 + t * math.tan(roll) - FLOOR - v  # against the floor (user decision 2026-10-18)
+                        xe0, ye0 = float(np.ravel(xe)[0]), float(np.ravel(ye)[0])
+                        if e > PRESSED_TOL and pressed_by_lower(xe0, ye0, z0, r.id, s):
+                            pressed += 1  # the approved lower-wins cost, counted by `floating` instead
+                        else:
+                            edges.append(e)
+    near = float(np.mean(np.abs(np.asarray(deck)) <= 0.5)) if deck else math.nan
+    # trees and street lamps (point objects without outline / repeat) off bridge stretches: base = elevation(s) +
+    # zOffset (XSD 1.8.1 t_road_objects_object @zOffset) vs the conformed ground under them
+    objects = []
+    if c:
+        for r in roads:
+            sts = structures(r)
+            for o in r.el.findall("objects/object"):
+                if o.get("type") not in ("tree", "pole", "streetLamp") or o.find("outline") is not None or                         o.find("repeat") is not None:
+                    continue
+                s = float(o.get("s"))
+                if on_structure(sts, s, "bridge"):
+                    continue
+                x, y = r.point(np.array([s]), float(o.get("t")))
+                v = c(float(np.ravel(x)[0]), float(np.ravel(y)[0]))
+                if not math.isnan(v):
+                    objects.append(float(r.z(np.array([s]))[0]) + float(o.get("zOffset", 0.0)) - v)
+    # pits: junction-road points (2 m steps on the reference line) outside tunnel / bridge records where the conformed
+    # ground lies more than PIT_DEPTH under the raw ground - a junction under cover without a tunnel record. Only roads
+    # carrying a driving lane: a corner sidewalk round a lay-by cut into a hillside the terrain model cannot resolve (Stelvio
+    # road 245, GLO-30) is not a covered junction (user decision 2026-10-18)
+    pits = []
+    if c and g:
+        for r in roads:
+            if r.el.get("junction") == "-1" or r.length < 0.5 or not carries_driving(r):
+                continue
+            sts = structures(r)
+            for s in np.arange(0.25, r.length, 2.0):
+                if on_structure(sts, s):
+                    continue
+                x, y = r.point(np.array([s]), 0.0)
+                x, y = float(np.ravel(x)[0]), float(np.ravel(y)[0])
+                vg, vc = g(x, y), c(x, y)
+                if not (math.isnan(vg) or math.isnan(vc)) and vc < vg - PIT_DEPTH and r.id not in pits:
+                    # pressed by another, lower road's floor (the approved lower-wins cost) is not a missing tunnel record
+                    if not pressed_by_lower(x, y, float(r.z(np.array([s]))[0]), r.id, s):
+                        pits.append(r.id)
+    # above: roads with a lane point (every 1 m; lane centre and 0.05 m inside both borders) outside tunnel / bridge records
+    # where the conformed ground, read as any reader of the grid does (bilinear), stands over the road floor - the lane's
+    # surface (OpenDRIVE 1.8.0 §10.5, no lane height) minus FLOOR - by more than ABOVE (conform.cpp step 4)
+    above, floating = [], 0
+    if c:
+        for r in roads:
+            sts, se = structures(r), piecewise(r, "superelevation", "lateralProfile")
+            for sec in r.sections:
+                for s in np.arange(sec.s + 0.5, sec.e, 1.0):
+                    if on_structure(sts, s):
+                        continue
+                    z0, roll = float(r.z(np.array([s]))[0]), float(se(np.array([s]))[0])
+                    hit = False
+                    for lid, (ti, to) in r.borders_at(float(s), sec).items():
+                        if lid == 0 or abs(to - ti) < 0.1:
+                            continue
+                        lo, hi = min(ti, to), max(ti, to)
+                        for t in (lo + 0.05, 0.5 * (lo + hi), hi - 0.05):
+                            x, y = r.point(np.array([s]), np.array([t]))
+                            v = c(float(np.ravel(x)[0]), float(np.ravel(y)[0]))
+                            if not math.isnan(v) and v > z0 + t * math.tan(roll) - FLOOR + ABOVE:
+                                hit = True
+                            if not math.isnan(v) and z0 + t * math.tan(roll) - v > FLOAT:
+                                floating += 1
+                    if hit and r.id not in above:
+                        above.append(r.id)
+    # junction_fill: inside every junction <boundary> (OpenDRIVE 1.8.0 §12.10; junctions with a tunnel road left out) the
+    # conformed ground stays under the junction's <elevationGrid> (§12.11) minus FLOOR (conform.cpp rasterPolygon):
+    # points every 1 m where it stands more than ABOVE over it, unless a lane of a road outside every junction more than
+    # OTHER_LEVEL over the grid covers the point (within 1.5 cells: the converter's raster footprint) - a road beside the
+    # junction on a wall keeps its own floor there
+    fill = junction_fill(xodr, od, roads, c, read_grid(conformed)[2]) if c else 0
+    by_id = lambda ids: sorted(ids, key=lambda x: int(x) if x.isdigit() else 0)  # noqa: E731
+    return dict(above=by_id(above), floating=floating, pressed=pressed, junction_fill=fill, pits=by_id(pits), cliffs=by_id(cliffs), centre=quantiles(centre, (50, 95, 99)), conformed=quantiles(edges, (50, 95, 99)),
+                objects=dict(n=len(objects), off=int(np.sum(np.abs(np.asarray(objects)) > OBJECT_TOL)) if objects else 0,
+                             worst=float(np.max(np.abs(objects))) if objects else 0.0),
+                decks=quantiles(deck, (50, 95, 99)), decks_near=near, n=dict(centre=len(centre), conformed=len(edges), decks=len(deck)),
+                superelev=dict(plain=se_plain, all=se_all), steep=sorted(steep, key=lambda x: int(x) if x.isdigit() else 0),
+                buried=sorted(buried, key=lambda x: int(x) if x.isdigit() else 0), named=named_grade)
+
+
+def files(area, d, out=None):
+    """an area's inputs (OSM, ground and deck grids) in `d` and outputs (carla, standard, conformed ground) in `out`:
+    by default `d` - or, while a gate run stages its outputs (gate.py STAGE_ENV) and `d` is the published folder, that
+    run's staged copies, so the contract and its self-test measure what the run is about to publish"""
+    if out is None:
+        stage = os.environ.get("ODRFORGE_GATE_STAGE")
+        same = os.path.normcase(os.path.abspath(d)) == os.path.normcase(os.path.abspath(TOUT))
+        out = os.path.join(stage, os.path.basename(os.path.normpath(TOUT))) if stage and same else d
+    p = lambda f: os.path.join(d, f)  # noqa: E731
+    o = lambda f: os.path.join(out, f)  # noqa: E731
+    decks = p(f"{area}_decks.odrz")
+    return dict(osm=os.path.join(DATA, "data", "testareas", area + ".osm"), ground=p(f"{area}_ground.odrz"),
+                decks=decks if os.path.exists(decks) else None, carla=o(f"{area}.xodr"),
+                standard=o(f"{area}_standard.xodr"), conformed=o(f"{area}_ground_conformed.odrz"))
+
+
+DRIVING = {"driving", "entry", "exit", "onRamp", "offRamp", "connectingRamp", "bidirectional", "slipLane", "bus", "taxi",
+           "HOV", "mwyEntry", "mwyExit"}
+
+
+def carries_driving(r):
+    """does road r have a lane motor vehicles drive on in any of its sections?"""
+    return any(l.type in DRIVING for sec in r.sections for l in sec.lanes())
+
+
+def stale(f, exe=EXE):
+    """outputs older than an input they are built from"""
+    inputs = [x for x in (f["osm"], f["ground"], f["decks"], exe) if x and os.path.exists(x)]
+    newest = max(os.path.getmtime(x) for x in inputs)
+    return [os.path.basename(o) for o in (f["carla"], f["standard"], f["conformed"])
+            if not os.path.exists(o) or os.path.getmtime(o) < newest]
+
+
+def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
+    """(problems, metrics) of one area against its contract (the outputs of `profiles` measured)"""
+    lim, f, problems = CONTRACT[area], files(area, d), []
+    old = stale(f, exe)
+    if old:
+        problems.append(f"{area} fresh: older than their inputs (OSM, grids, osm2xodr): {', '.join(old)}")
+    named = tuple(lim.get("named", {}))
+    metrics = {}
+    for prof in profiles:
+        if not os.path.exists(f[prof]):
+            continue
+        m = measure(f[prof], f["ground"], f["conformed"] if prof == "standard" else None, f["decks"], named)
+        metrics[prof] = m
+        tag = f"{area} {prof}"
+        for q, v in lim["centre"]:
+            if not m["centre"][q] <= v:
+                problems.append(f"{tag} centre: |reference line - ground| p{q} {m['centre'][q]:.3f} m > {v} m")
+        if prof == "standard":
+            q, v = lim["conformed"]
+            if not m["conformed"][q] <= v:
+                problems.append(f"{tag} conformed: |paved edge - conformed ground| p{q} {m['conformed'][q]:.3f} m > {v} m")
+            if m["objects"]["off"]:
+                problems.append(f"{tag} objects: {m['objects']['off']} of {m['objects']['n']} trees / street lamps more than "
+                                f"{OBJECT_TOL} m off the ground (worst {m['objects']['worst']:.2f} m)")
+            if m["floating"] > lim.get("floating", 0):
+                problems.append(f"{tag} floating: {m['floating']} lane points more than {FLOAT} m over the conformed "
+                                f"ground (<= {lim.get('floating', 0)})")
+            if m["junction_fill"] > lim.get("junction_fill", 0):
+                problems.append(f"{tag} junction_fill: {m['junction_fill']} points inside junction boundaries with the "
+                                f"conformed ground over the junction grid - {FLOOR} m (<= {lim.get('junction_fill', 0)})")
+            if len(m["above"]) > lim.get("above", 0):
+                problems.append(f"{tag} above: the conformed ground stands over the road floor (lane - {FLOOR} m) on "
+                                f"{len(m['above'])} roads (<= {lim.get('above', 0)}): {', '.join(m['above'][:8])}")
+            if m["pits"]:
+                problems.append(f"{tag} pits: the conformed ground lies more than {PIT_DEPTH} m under the raw ground on "
+                                f"{len(m['pits'])} junction roads outside tunnels / bridges ({', '.join(m['pits'][:8])})")
+        if lim.get("decks"):
+            q, v = lim["decks"]
+            if not m["decks"][q] <= v:
+                problems.append(f"{tag} decks: |bridge road - measured deck| p{q} {m['decks'][q]:.3f} m > {v} m")
+        if lim.get("decks_near") is not None and not m["decks_near"] >= lim["decks_near"]:
+            problems.append(f"{tag} decks: {m['decks_near'] * 100:.1f} % of bridge samples within 0.5 m of the measured deck "
+                            f"< {lim['decks_near'] * 100:.0f} %")
+        if m["superelev"]["plain"] > SE_PLAIN:
+            problems.append(f"{tag} superelev: plain roads {m['superelev']['plain']:.4f} rad > {SE_PLAIN} (8 % cap)")
+        if m["superelev"]["all"] > SE_ALL:
+            problems.append(f"{tag} superelev: {m['superelev']['all']:.4f} rad > atan(15 %) (junction-plane cap)")
+        if len(m["buried"]) > lim.get("buried", 0):
+            problems.append(f"{tag} buried: {len(m['buried'])} plain roads more than {BURIED_DEPTH} m under the ground over "
+                            f"{BURIED_RUN:.0f} m outside bridges / tunnels and not under a bridge > {lim.get('buried', 0)} "
+                            f"({', '.join(m['buried'][:8])})")
+        if len(m["cliffs"]) > lim.get("cliffs", 0):
+            problems.append(f"{tag} cliffs: {len(m['cliffs'])} roads with a grade over {CLIFF_GRADE * 100:.0f} % between "
+                            f"0.5 m samples > {lim.get('cliffs', 0)} ({', '.join(m['cliffs'][:8])})")
+        if lim.get("steep") is not None and len(m["steep"]) > lim["steep"]:
+            problems.append(f"{tag} steep: {len(m['steep'])} roads over 20 % > {lim['steep']} ({', '.join(m['steep'][:8])})")
+        for name, v in lim.get("named", {}).items():
+            if not m["named"].get(name, 0.0) <= v:
+                problems.append(f"{tag} named: {name} max grade {m['named'][name] * 100:.0f} % > {v * 100:.0f} %")
+    return problems, metrics
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--areas", default=",".join(CONTRACT))
+    ap.add_argument("--dir", default=TOUT)
+    ap.add_argument("--json")
+    a = ap.parse_args()
+    allp, allm = [], {}
+    for area in [x for x in a.areas.split(",") if x]:
+        p, m = check(area, a.dir)
+        allp += p
+        allm[area] = m
+        print(f"{area}: {'ok' if not p else f'{len(p)} problem(s)'}")
+        for prof, mm in m.items():
+            print(f"  {prof}: centre p50/p95 {mm['centre'][50]:.3f}/{mm['centre'][95]:.3f}, conformed p95/p99 "
+                  f"{mm['conformed'][95]:.3f}/{mm['conformed'][99]:.3f}, decks p95 {mm['decks'][95]:.3f} (n {mm['n']['decks']}), "
+                  f"superelev plain/all {mm['superelev']['plain']:.4f}/{mm['superelev']['all']:.4f}, steep {len(mm['steep'])}, "
+                  f"buried {len(mm['buried'])}, cliffs {len(mm['cliffs'])}, named {mm['named']}")
+    for p in allp:
+        print("FAIL", p)
+    if a.json:
+        json.dump(dict(problems=allp, metrics=allm), open(a.json, "w"), indent=1, default=str)
+    sys.exit(1 if allp else 0)
+
+
+if __name__ == "__main__":
+    main()
