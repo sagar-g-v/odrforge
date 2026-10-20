@@ -26,9 +26,7 @@
 namespace odrforge {
 namespace detail {
 
-namespace {
-// the level a way lies on: layer=*, else +1 for a bridge and -1 for a tunnel
-int levelOf(const Tags &t) {
+int wayLevel(const Tags &t) {
   if (auto l = tag(t, "layer")) try {
       return std::stoi(*l);
     } catch (...) {
@@ -37,6 +35,8 @@ int levelOf(const Tags &t) {
   if (tagYes(t, "tunnel")) return -1;
   return 0;
 }
+
+namespace {
 constexpr double kCell = 20.0;
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kMaxDistance = 30.0;  // farther: the sidewalk of something else (a service road, a plaza)
@@ -108,6 +108,57 @@ std::optional<SidewalkIndex::Measured> SidewalkIndex::measure(const std::vector<
   return Measured{dist[dist.size() / 2], width[width.size() / 2]};
 }
 
+std::vector<double> SidewalkIndex::across(const Sample &q, double reach) const {
+  std::vector<double> out;
+  const Vec2 nrm{-q.dir.y, q.dir.x};  // left normal
+  const long n = static_cast<long>(std::ceil(reach / kCell));
+  for (long dx = -n; dx <= n; ++dx)
+    for (long dy = -n; dy <= n; ++dy) {
+      auto it = grid_.find({cellOf(q.p.x) + dx, cellOf(q.p.y) + dy});
+      if (it == grid_.end()) continue;
+      for (size_t k : it->second) {
+        const Leg &g = legs_[k];
+        if (g.level != q.level) continue;
+        const Vec2 gd = g.b - g.a;
+        if (std::abs(gd.dot(q.dir)) < std::cos(25.0 * kPi / 180.0) * gd.norm()) continue;  // not parallel
+        const Vec2 r = g.a - q.p;
+        const double v = -(q.dir.dot(r)) / q.dir.dot(gd);
+        if (v < 0.0 || v > 1.0) continue;
+        const double t = nrm.dot(r + gd * v);
+        if (std::abs(t) <= reach && std::find(out.begin(), out.end(), t) == out.end()) out.push_back(t);
+      }
+    }
+  return out;
+}
+
+std::vector<std::pair<double, double>> SidewalkIndex::carriageways(const Sample &q, double reach, int road) const {
+  std::vector<std::pair<double, double>> out;
+  const Vec2 nrm{-q.dir.y, q.dir.x};  // left normal
+  const long n = static_cast<long>(std::ceil(reach / kCell));
+  std::vector<size_t> seen;
+  for (long dx = -n; dx <= n; ++dx)
+    for (long dy = -n; dy <= n; ++dy) {
+      auto it = grid_.find({cellOf(q.p.x) + dx, cellOf(q.p.y) + dy});
+      if (it == grid_.end()) continue;
+      for (size_t k : it->second) {
+        const Leg &g = legs_[k];
+        if (g.road < 0 || g.road == road || std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+        seen.push_back(k);
+        const Vec2 gd = g.b - g.a;
+        const double along = gd.dot(q.dir);
+        if (std::abs(along) < std::cos(25.0 * kPi / 180.0) * gd.norm()) continue;  // not parallel
+        const Vec2 r = g.a - q.p;
+        const double v = -(q.dir.dot(r)) / along;
+        if (v < 0.0 || v > 1.0) continue;
+        const double t = nrm.dot(r + gd * v);
+        if (std::abs(t) > reach) continue;
+        // the leg's left is the sample's left when they run the same way
+        out.push_back(along > 0.0 ? std::pair{t - g.reachRight, t + g.reachLeft} : std::pair{t - g.reachLeft, t + g.reachRight});
+      }
+    }
+  return out;
+}
+
 void Builder::attachSeparateSidewalks() {
   if (!opt.separateSidewalks) return;
   const CountryProfile &C = opt.country;
@@ -128,7 +179,7 @@ void Builder::attachSeparateSidewalks() {
     for (size_t i = 0; i + 1 < w.nodes.size(); ++i) {
       Vec2 a, b;
       if (!xy(w.nodes[i], a) || !xy(w.nodes[i + 1], b) || (b - a).norm() < 0.5) continue;
-      sidewalks.add({a, b, width, levelOf(w.tags), kerbLine && !sidewalkWay});
+      sidewalks.add({a, b, width, wayLevel(w.tags), kerbLine && !sidewalkWay});
     }
   }
   if (sidewalks.empty()) return;
@@ -146,7 +197,7 @@ void Builder::attachSeparateSidewalks() {
       // attached ("yes") / none ("no"): as tagged
       allowed[si][side] = !noWalk && (tagged == "separate" || (tagged.empty() && !onlyIfTagged));
     }
-    const int level = levelOf(*sg.tags);
+    const int level = wayLevel(*sg.tags);
     std::vector<Vec2> pts;
     for (OsmId id : sg.nodes) {
       Vec2 p;

@@ -752,6 +752,7 @@ void Builder::buildRoads() {
     applyParkingBays(m, s0, len, secs);            // mapped street-side areas win where they lie
     for (size_t k = 0; k < secs.size(); ++k)
       keepVergeFoldSafe(secs[k].xs, r.planView, secs[k].s, k + 1 < secs.size() ? secs[k + 1].s : len);
+    kerbShoulders(m, r.planView, len, secs);  // where the kerb lies beyond the widest lane (kerbs.cpp)
     // lane sections, tapers and links
     for (size_t k = 0; k < secs.size(); ++k) r.lanes.push_back(makeLaneSection(secs[k].xs, secs[k].s, C));
     std::map<std::vector<odr::Lane> *, std::map<size_t, bool>> added, dropped;
@@ -851,6 +852,12 @@ void Builder::buildRoads() {
                 p->widths.push_back(odr::Poly3::hermite(prevLen - tb, tb, w0, 0.0, wm, mm));
               }
             }
+          }
+          // a lane of width 0 (the shoulder a kerb may widen, kerbs.cpp) neither grows nor falls: no taper, and the
+          // lane offset does not move for it
+          if (w <= 0.0 && ta <= 0.0) {
+            l.widths = {odr::Poly3{0.0, 0.0, 0.0, 0.0, 0.0}};
+            continue;
           }
           if (!g && ta <= 0.0 && !d) continue;
           const double cap = (d ? (g ? 0.5 : ta > 0.0 ? 0.6 : 0.8) : 0.8) * secLen;
@@ -1181,6 +1188,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   };
   stage("collect segments", &detail::Builder::collectSegments);
   if (o.separateSidewalks) stage("separate sidewalks", &detail::Builder::attachSeparateSidewalks);
+  stage("kerb lines", &detail::Builder::collectKerbs);
   stage("junction nodes", &detail::Builder::findJunctionNodes);
   stage("chains", &detail::Builder::buildChains);
   // junction layout; a second pass joins junctions that squeezed the road between them out
@@ -1201,6 +1209,7 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   stage("street-side parking", &detail::Builder::measureStreetSideParking);  // on the fitted, trimmed lines
   stage("roads", &detail::Builder::buildRoads);
   stage("resolve overlaps", &detail::Builder::resolveOverlaps);
+  stage("kerb edges", &detail::Builder::kerbEdges);  // after the drawing offsets are corrected: the kerbs win
   stage("elevation samples", &detail::Builder::sampleElevation);
   stage("junction surfaces", &detail::Builder::junctionSurfaces);
   stage("elevation profiles", &detail::Builder::fitRoadElevation);

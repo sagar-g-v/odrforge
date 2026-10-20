@@ -123,6 +123,8 @@ struct Cluster {
 
 /// OSM layer of a road at s on its trimmed reference line (overlap.cpp)
 int layerAt(const RoadMeta &m, double s);
+/// the level a way lies on: layer=*, else +1 for a bridge and -1 for a tunnel (sidewalk.cpp)
+int wayLevel(const Tags &t);
 /// minimum fillet radius of a road class (m)
 double classMinRadius(const std::string &hw);
 /// carriageway extents (left, right) of a cross section relative to the reference line (no sidewalks)
@@ -157,6 +159,8 @@ class SidewalkIndex {
     double width;
     int level;  ///< OSM layer, bridges / tunnels one level apart from the ground when untagged
     bool kerb;  ///< a kerb line: the sidewalk's curb-side edge
+    int road = -1;                       ///< a road's reference line (index into OpenDrive::roads): its carriageway
+    double reachLeft = 0.0, reachRight = 0.0;  ///< ... reaching this far left / right of the line
   };
   /// a point on the road and its unit direction of travel
   struct Sample {
@@ -170,6 +174,12 @@ class SidewalkIndex {
   bool empty() const { return legs_.empty(); }
   /// median sidewalk on one side of the samples; none when fewer than half the samples (or < 2) see one
   std::optional<Measured> measure(const std::vector<Sample> &samples, bool left) const;
+  /// every leg on the sample's level running parallel to it (within 25 deg) whose segment the sample's normal meets
+  /// within `reach`: where, as a signed distance along the left normal
+  std::vector<double> across(const Sample &q, double reach) const;
+  /// the carriageways of road legs (road >= 0) other than `road`, on any level, whose line the sample's normal meets
+  /// within `reach` running parallel to it (within 25 deg): each as its t interval across the sample
+  std::vector<std::pair<double, double>> carriageways(const Sample &q, double reach, int road) const;
 
  private:
   std::vector<Leg> legs_;
@@ -199,6 +209,8 @@ struct Builder {
   /// junction node pairs built as one junction because the road between them was squeezed out
   std::vector<std::pair<OsmId, OsmId>> forcedJoins;
   SidewalkIndex sidewalks;  ///< filled by attachSeparateSidewalks
+  SidewalkIndex kerbs;      ///< open barrier=kerb lines not ringing a traffic island: filled by collectKerbs
+  SidewalkIndex carriageways;  ///< every road's reference line with its carriageway's reach: filled by kerbEdges
 
   Builder(const OsmData &o, const Projection &p, const BuildOptions &b) : osm(o), proj(p), opt(b) {}
 
@@ -210,6 +222,15 @@ struct Builder {
   // stages (network.cpp)
   void collectSegments();
   void attachSeparateSidewalks();  // sidewalk.cpp
+  void collectKerbs();             // kerbs.cpp
+  /// the carriageway edges of a built road follow the mapped kerbs (kerbs.cpp)
+  void followKerbs(const RoadMeta &m, odr::Road &r);
+  /// followKerbs on every road, once the overlaps between roads are resolved (kerbs.cpp)
+  void kerbEdges();
+  /// a kerb at t across pose p stands on the level of the edge at `edge`: measured ground within 0.3 m (kerbs.cpp)
+  bool kerbOnLevel(const Pose &p, double edge, double t) const;
+  /// a shoulder (width 0, widened by followKerbs) on the sides whose kerb lies beyond a kMaxLane lane (kerbs.cpp)
+  void kerbShoulders(const RoadMeta &m, const ReferenceLine &line, double len, std::vector<SectionInfo> &secs) const;
   /// re-measures attached sidewalks from the fitted, trimmed reference line (sidewalk.cpp)
   void remeasureSidewalks(const RoadMeta &m, const ReferenceLine &line, std::vector<SectionInfo> &secs) const;
   /// street-side parking areas (OSM parking=street_side|lane|layby) measured beside the roads (parking.cpp)

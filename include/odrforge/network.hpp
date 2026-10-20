@@ -79,6 +79,9 @@ struct BuildOptions {
   bool laneLevelGores = true;
   /// near-parallel roads drawn closer than their lanes are wide are moved apart (bounded laneOffset)
   bool resolveOverlaps = true;
+  /// the carriageway edge follows the OSM kerb line (barrier=kerb) beside it: the outermost travelled lane's width
+  /// (2 - 5.5 m) and, on a side without lanes, the lane offset vary along the road (kerbs.cpp)
+  bool followKerbs = true;
   std::set<OsmId> includeWays;  ///< ways included regardless of the class filters (lot aisles are added here)
   std::string name = "OdrForge network";
 };
@@ -94,6 +97,10 @@ struct BuildReport {
   int inheritedLinkLanes = 0;  ///< untagged *_link pieces given the lanes of the tagged piece they continue one to one
   int parkingAisles = 0;
   int separateSidewalks = 0;  ///< road sides extended to a separately mapped sidewalk
+  int kerbSides = 0;          ///< road sides whose carriageway edge follows a mapped kerb line
+  int kerbSamples = 0, kerbSamplesIgnored = 0;  ///< kerb positions used / left out (implying a lane under 2 m)
+  /// kerb positions left out: measured ground > 0.3 m from the edge's (another level), or beyond another road's lanes
+  int kerbSamplesOffLevel = 0;
   int streetSideParking = 0;         ///< OSM street-side parking areas (parking=street_side|lane|layby) drawn as parking lanes
   int streetSideParkingLeftOut = 0;  ///< ... beside no road, or not fitting as a parking lane (warned)
   int parkingTagsOverruled = 0;      ///< section sides whose parking:* tag lane gave way to the mapped areas

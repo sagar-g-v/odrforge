@@ -25,6 +25,7 @@ static void usage() {
       "  --name NAME         header name\n"
       "  --no-sidewalks      do not assume sidewalks on untagged urban streets\n"
       "  --separate-sidewalks  extend roads to sidewalks mapped as their own ways (experimental)\n"
+      "  --no-kerb-edges     keep the carriageway edges at the tagged lane widths (do not follow barrier=kerb)\n"
       "  --no-furniture      no street lamps / trees\n"
       "  --viz OUT.html      also write an interactive HTML view of the result\n"
       "  --basemap DIR       offline HD map / imagery backgrounds for the view (tools/make_basemap.py)\n"
@@ -64,6 +65,7 @@ int main(int argc, char **argv) {
       std::sscanf(v.c_str(), "%lf,%lf", &lat0, &lon0);
     } else if (a == "--no-sidewalks") opt.lanes.assumeSidewalks = false;
     else if (a == "--separate-sidewalks") opt.separateSidewalks = true;
+    else if (a == "--no-kerb-edges") opt.followKerbs = false;
     else if (a == "--no-furniture") opt.streetFurniture = false;
     else if (a == "--viz") vizPath = next();
     else if (a == "--basemap") basemapDir = next();
@@ -182,6 +184,10 @@ int main(int argc, char **argv) {
                   rep.directJunctions);
     if (rep.separateSidewalks)
       std::printf("  cross-section: %d road sides extended to their separately mapped sidewalk\n", rep.separateSidewalks);
+    if (rep.kerbSides || rep.kerbSamplesIgnored)
+      std::printf("  kerb edges: %d road sides follow a mapped kerb (%d kerb positions used; left out: %d would leave a "
+                  "lane under 2 m, %d on another level or beyond another road's lanes)\n",
+                  rep.kerbSides, rep.kerbSamples, rep.kerbSamplesIgnored, rep.kerbSamplesOffLevel);
     if (rep.parkingNoStoppingAtJunctions)
       std::printf("  parking: %d roads' tagged parking lanes carry \"no stopping at any time\" near junctions (%.1f m, "
                   "country rule)\n",

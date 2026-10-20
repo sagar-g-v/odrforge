@@ -5,6 +5,26 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Added
+- **Carriageway edges follow the mapped kerb** (kerbs.cpp, `--no-kerb-edges` to switch off; P2, user decisions
+  2026-10-20): every 2 m each side of a road looks across to the parallel OSM `barrier=kerb` line on its level; the
+  kerb positions, smoothed over +-10 m, move the edge through the width of the outermost motor lane (a cycle lane where
+  there is none) that neither grows nor ends in its section - kept 2 - 5.5 m wide, beyond that a road-level shoulder
+  takes the rest - and on a side without lanes through the lane offset. Left out: a kerb that would leave a lane under
+  2 m (an island's or another road's), a kerb ringing a traffic island, a kerb whose measured ground lies > 0.3 m from
+  the edge's (another level), and one the edge cannot reach without its curb / sidewalk running into another road's
+  lanes (London Kingsway beside the Strand Underpass ramp: the terrain contract's floating count went 179 -> 361
+  without these two). Changes are C2 ramps between knots every ~5 m and at section joints (0 where the lane taking them
+  changes), no steeper than 5 %; the stage runs after the overlap resolution; a lane of width 0 takes no taper in
+  buildRoads. London, tools/inspect/kerb_gap.py with the viewer's edge set (junction roads' laned sides included, the
+  two tools agreeing sample by sample): median +0.76 -> 0.00 m, within 0.3 m 15.0 % -> 56.7 %, both profiles (target
+  80 % not reached: corner kerbs at junctions and road ends). The other five areas: every metric and checker count
+  unchanged (LA's few kerbs move nothing); London: G2_ref_junction 3726 -> 3602, osm_off_road 48 -> 43, osm_ref_far 53 -> 44, but G2_lane 60 -> 64
+  (steps <= 0.0005 1/m), continuity_junction_corner 22 -> 25, edge.break.unexplained 10 -> 12, carla fold 28 -> 29,
+  junctions with a boundary 281 -> 279 (junction 11: two arms end in kerb shoulders no connecting lane continues;
+  junction 281: widened arm ends fail the traced outline's joint check). Validation 0 errors, XSD valid, terrain
+  contract passes in all four areas. Unit tests 7 (six mutations caught); kerb_gap.py committed (`--csv` per-sample
+  dump) with a planted-defect self-test. Jev 0.21 (evidence from one kerbed area, the target missed, the small
+  regressions): committed by user decision as the first P2 step; junction-corner kerbs next.
 - **A left-out parking area's warning names the reason from the road it lies nearest** (parking.cpp): it took the
   reason from the run with the most samples, so Munich 449417494 (beside driveway roads 272 / 273 for 2 m) was
   reported as "lies 13.33 m beyond the carriageway" of a road farther off; now "shorter than 5 m along the road". Of
