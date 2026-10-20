@@ -204,6 +204,11 @@ int main(int argc, char **argv) {
                   "contour), %d left without a boundary\n",
                   rep.junctionGrids, rep.junctionBoundaries, rep.boundaryHelperRoads, rep.boundariesTraced,
                   rep.boundariesLeftOut);
+    if (rep.armsPulledBack || rep.armCutsUndone)
+      std::printf("  junction arms cut back past the turns lying on their lanes: %d (undone, as they cost a turn: %s; "
+                  "%d more builds)\n",
+                  rep.armsPulledBack, rep.armCutsUndone < 0 ? "all" : std::to_string(rep.armCutsUndone).c_str(),
+                  rep.armRebuilds);
     if (rep.junctionRoadsUnderCover)
       std::printf("  junction roads under cover: %d (in a tunnel, or the part under the terrain at a portal)\n",
                   rep.junctionRoadsUnderCover);

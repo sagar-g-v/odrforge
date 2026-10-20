@@ -81,6 +81,8 @@ struct RoadMeta {
   std::vector<double> zRel;    ///< terrain mode: the relative-mode levels per sample (OSM layer storeys, 0 = ground)
   std::vector<double> zGround; ///< terrain mode: the measured ground at the carriageway centre per sample (NaN: none)
   std::optional<double> fixedTrimStart, fixedTrimEnd;  ///< set by the gore stage: not re-trimmed
+  /// of trimStart / trimEnd: the cut past the turns of the junction lying on the road (Builder::extraTrim)
+  double extraTrimStart = 0.0, extraTrimEnd = 0.0;
   std::vector<double> zy, zw, ztc;  ///< observed centre heights (NaN: none), robust weights, carriageway centre t
   std::vector<char> zMeasured;      ///< per sample: a terrain measurement (not a guess between / beyond measurements)
   double zLambda = 0.0;             ///< Whittaker smoothing weight used for the profile
@@ -198,6 +200,10 @@ struct Builder {
   std::vector<double> fitDev;  ///< per OSM node: distance to its fitted reference line
   /// junction node pairs built as one junction because the road between them was squeezed out
   std::vector<std::pair<OsmId, OsmId>> forcedJoins;
+  /// (the road's first OSM way, its first and last OSM node, at its end): how much farther trimRoads pulls that road
+  /// end back - where a build found the lanes of another turn of its junction lying on the road's own lanes
+  /// (network.cpp armsCrossedByTurns, buildOpenDrive). Keyed by OSM ids: the same road in every build, whatever the trims
+  std::map<std::tuple<OsmId, OsmId, OsmId, bool>, double> extraTrim;
   SidewalkIndex sidewalks;  ///< filled by attachSeparateSidewalks
 
   Builder(const OsmData &o, const Projection &p, const BuildOptions &b) : osm(o), proj(p), opt(b) {}

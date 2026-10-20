@@ -107,6 +107,9 @@ struct BuildReport {
   int boundaryHelperRoads = 0;  ///< roads added only to close a junction boundary (1.8.0 §12.10)
   int boundariesTraced = 0;     ///< of junctionBoundaries: traced along the outer contour of the junction's lanes
   int boundariesLeftOut = 0;    ///< junctions whose outline would not enclose all their lanes: no boundary written
+  int armsPulledBack = 0;       ///< arm ends cut back farther: a turn of their junction lay on their lanes
+  int armCutsUndone = 0;        ///< of those cuts, undone: they cost their junction a turn (-1: all, out of builds)
+  int armRebuilds = 0;          ///< builds of the network repeated for those cuts
   int junctionRoadsUnderCover = 0;  ///< connecting roads between tunnel ends given a tunnel record (1.8.0 §13.11)
   int crossPaths = 0;          ///< crossings written as cross paths (OpenDRIVE 1.8+)
   int junctionCrossPaths = 0;  ///< of those, crossings inside common junctions (Junction Guideline §6.3.3)

@@ -7,7 +7,10 @@
 #include <execution>
 #include <functional>
 #include <limits>
+#include <map>
+#include <memory>
 #include <numeric>
+#include <set>
 #include <tuple>
 
 #include "network_internal.hpp"
@@ -231,6 +234,11 @@ void Builder::buildChains() {
 
 namespace {
 constexpr double kMaxAbsorbedRoad = 15.0;  // m: a wide median; longer roads between junction nodes stay roads
+constexpr double kKeptRoad = 2.0;  // m: the shortest a road's junctions cut it down to (half of a shorter road)
+constexpr double kMinRoadBetweenJunctions = 3.0;  // m: less of a road left between two junctions: one intersection
+/// m: the least of a road the cut past its junction's turns leaves (as long as an absorbed road: a shorter one between
+/// two junctions cut to a sliver drops out of the OSM way's line - Frankfurt road 183, 11.4 -> 3 m, LA road 971)
+constexpr double kArmCutKeeps = kMaxAbsorbedRoad;
 }  // namespace
 
 void Builder::clusterJunctions() {
@@ -516,14 +524,30 @@ void Builder::trimRoads() {
         trim += kCrosswalkJunctionDepth;
         (e.atEnd ? metas[e.road].crosswalkInJunctionEnd : metas[e.road].crosswalkInJunctionStart) = true;
       }
-      if (const auto &fixed = e.atEnd ? m.fixedTrimEnd : m.fixedTrimStart) trim = *fixed;
+      // beyond where a turn of the junction crossed the road's own lanes in an earlier build (armsCrossedByTurns)
+      double extra = 0.0;
+      if (!m.nodeS.empty())
+        if (const auto it = extraTrim.find({m.wayStart, m.nodeS.front().first, m.nodeS.back().first, e.atEnd});
+            it != extraTrim.end())
+          extra = it->second;
+      trim += extra;
+      if (const auto &fixed = e.atEnd ? m.fixedTrimEnd : m.fixedTrimStart) trim = *fixed, extra = 0.0;
       (e.atEnd ? metas[e.road].trimEnd : metas[e.road].trimStart) = trim;
+      (e.atEnd ? metas[e.road].extraTrimEnd : metas[e.road].extraTrimStart) = extra;
     }
     makeRoomForCurbReturns(c, trimCap);
   });
   for (RoadMeta &m : metas) {
     const double L = m.full.length();
-    const double keep = std::min(2.0, 0.5 * L);
+    // the cut past the turns lying on a road never leaves less of it than kArmCutKeeps (nor less than it keeps without
+    // that cut): it does not squeeze a short road between two junctions - where it would, it is pulled back
+    if (const double extra = m.extraTrimStart + m.extraTrimEnd, over = m.trimStart + m.trimEnd - (L - kArmCutKeeps);
+        extra > 0.0 && over > 0.0) {
+      const double k = std::min(1.0, over / extra);  // the share of the cut pulled back
+      m.trimStart -= k * m.extraTrimStart, m.trimEnd -= k * m.extraTrimEnd;
+      m.extraTrimStart *= 1.0 - k, m.extraTrimEnd *= 1.0 - k;
+    }
+    const double keep = std::min(kKeptRoad, 0.5 * L);
     if (m.trimStart + m.trimEnd > L - keep) {
       const double k = (L - keep) / std::max(1e-6, m.trimStart + m.trimEnd);
       m.trimStart *= k;
@@ -539,7 +563,6 @@ void Builder::trimRoads() {
 // leave less than a short road between them, and that road is no longer than a median crossing
 // (the two halves of a dual-carriageway intersection), the two are one intersection.
 bool Builder::joinSqueezedJunctions() {
-  constexpr double kMinRoadBetweenJunctions = 3.0;  // m
   bool joined = false;
   for (const RoadMeta &m : metas) {
     const Chain &ch = chains[m.chain];
@@ -1152,6 +1175,126 @@ int inheritLinkLanes(OsmData &osm) {
   }
   return inherited;
 }
+
+// a junction's arm end (a plain road linked to it) and how far along the arm, from that end, the farthest lane point of
+// another turn of the junction lies on the arm's own lanes
+using ArmKey = std::tuple<OsmId, OsmId, OsmId, bool>;  // as Builder::extraTrim
+
+// The arm ends whose lanes a turn of their junction lies on: the lanes of the junction's connecting roads that are not
+// linked to that end - their borders and centres every 0.25 m - projected onto the arm at 0.05 m < s < length - 0.05 m
+// and more than 0.1 m inside its outermost lane borders. Arm ends trimRoads does not move are left out: those the gore
+// stage fixed, those of a road with no more than kArmCutKeeps left (trimRoads cuts no further there) and those `kept`
+// where they are (a cut there cost a turn of the junction).
+// a road end as ArmKey: the road's first OSM way, first and last OSM node, at its end (nullopt: no such road)
+std::optional<ArmKey> armKeyOf(const std::map<std::string, const detail::RoadMeta *> &metaOf,
+                                const std::optional<odr::LinkTarget> &t) {
+  if (!t || t->elementType != "road") return std::nullopt;
+  const auto it = metaOf.find(t->elementId);
+  if (it == metaOf.end()) return std::nullopt;
+  const detail::RoadMeta &m = *it->second;
+  return ArmKey{m.wayStart, m.nodeS.front().first, m.nodeS.back().first, t->contactPoint == "end"};
+}
+
+// The turns of every junction: (from arm end, to arm end) -> lane links of the connections between them, and each arm
+// end's junction
+struct JunctionTurns {
+  std::map<std::pair<ArmKey, ArmKey>, size_t> links;
+  std::map<ArmKey, std::string> junctionOf;
+};
+JunctionTurns junctionTurns(const detail::Builder &b) {
+  std::map<std::string, const detail::RoadMeta *> metaOf;
+  for (const detail::RoadMeta &m : b.metas)
+    if (m.roadIndex >= 0 && !m.nodeS.empty()) metaOf[b.od.roads[m.roadIndex].id] = &m;
+  std::map<std::string, const odr::Road *> roads;
+  for (const odr::Road &r : b.od.roads) roads[r.id] = &r;
+  JunctionTurns turns;
+  for (const odr::Junction &j : b.od.junctions)
+    for (const odr::Connection &c : j.connections) {
+      const auto it = roads.find(c.connectingRoad);
+      if (it == roads.end()) continue;
+      const odr::Road &q = *it->second;
+      const bool fromStart = c.contactPoint == "start";
+      const auto from = armKeyOf(metaOf, fromStart ? q.predecessor : q.successor);
+      const auto to = armKeyOf(metaOf, fromStart ? q.successor : q.predecessor);
+      if (!from || !to) continue;
+      turns.links[{*from, *to}] += c.laneLinks.size();
+      turns.junctionOf[*from] = turns.junctionOf[*to] = j.id;
+    }
+  return turns;
+}
+
+std::map<ArmKey, double> armsCrossedByTurns(const detail::Builder &b, const std::set<ArmKey> &kept) {
+  constexpr double kStep = 0.25, kEndGap = 0.05, kInside = 0.1;
+  const odr::OpenDrive &od = b.od;
+  std::map<std::string, std::vector<const odr::Road *>> turns;
+  for (const odr::Road &r : od.roads)
+    if (r.junction != "-1") turns[r.junction].push_back(&r);
+  // the arm's outermost lane borders at s
+  auto extent = [](const odr::Road &r, double s, double &lo, double &hi) {
+    lo = hi = odr::laneOffsetAt(r, s);
+    const odr::LaneSection &sec = odr::sectionAt(r, s);
+    for (const auto *side : {&sec.left, &sec.right})
+      for (const odr::Lane &l : *side) {
+        double a, c;
+        if (odr::laneBorders(r, s, l.id, a, c)) lo = std::min({lo, a, c}), hi = std::max({hi, a, c});
+      }
+  };
+  std::map<ArmKey, double> crossed;
+  for (const detail::RoadMeta &m : b.metas) {
+    if (m.roadIndex < 0 || m.nodeS.empty()) continue;
+    if (m.full.length() - m.trimStart - m.trimEnd <= detail::kArmCutKeeps + 1e-6) continue;
+    const odr::Road &arm = od.roads[m.roadIndex];
+    const double L = arm.length();
+    if (arm.junction != "-1" || arm.lanes.empty() || L <= 2.0 * kEndGap) continue;
+    // a box around the arm's lanes: points outside it are not on them
+    double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+    for (double s = 0.0;; s = std::min(L, s + 1.0)) {
+      double lo, hi;
+      extent(arm, s, lo, hi);
+      const Pose p = arm.planView.eval(s);
+      for (const Vec2 &q : {p.offset(lo), p.offset(hi)})
+        x0 = std::min(x0, q.x), y0 = std::min(y0, q.y), x1 = std::max(x1, q.x), y1 = std::max(y1, q.y);
+      if (s >= L) break;
+    }
+    for (const bool atEnd : {false, true}) {
+      const auto &lk = atEnd ? arm.successor : arm.predecessor;
+      if (!lk || lk->elementType != "junction" || (atEnd ? m.fixedTrimEnd : m.fixedTrimStart)) continue;
+      const auto it = turns.find(lk->elementId);
+      if (it == turns.end()) continue;
+      const std::string cp = atEnd ? "end" : "start";
+      auto here = [&](const std::optional<odr::LinkTarget> &t) {
+        return t && t->elementType == "road" && t->elementId == arm.id && t->contactPoint == cp;
+      };
+      double reach = -1.0;
+      for (const odr::Road *q : it->second) {
+        if (here(q->predecessor) || here(q->successor)) continue;
+        const double Lq = q->length();
+        for (double s = 0.0; s < Lq; s += kStep) {
+          const double sq = std::clamp(s, 1e-6, Lq - 1e-6);
+          const Pose p = q->planView.eval(sq);
+          const odr::LaneSection &sec = odr::sectionAt(*q, sq);
+          for (const auto *side : {&sec.left, &sec.right})
+            for (const odr::Lane &l : *side) {
+              double ti, to;
+              if (!odr::laneBorders(*q, sq, l.id, ti, to)) continue;
+              for (const double t : {ti, 0.5 * (ti + to), to}) {
+                const Vec2 pt = p.offset(t);
+                if (pt.x < x0 - kInside || pt.x > x1 + kInside || pt.y < y0 - kInside || pt.y > y1 + kInside) continue;
+                double sa, ta, lo, hi;
+                arm.planView.project(pt, sa, ta);
+                if (sa <= kEndGap || sa >= L - kEndGap) continue;
+                extent(arm, sa, lo, hi);
+                if (ta > lo + kInside && ta < hi - kInside) reach = std::max(reach, atEnd ? L - sa : sa);
+              }
+            }
+        }
+      }
+      if (const ArmKey key{m.wayStart, m.nodeS.front().first, m.nodeS.back().first, atEnd}; reach >= 0.0 && !kept.count(key))
+        crossed[key] = reach;
+    }
+  }
+  return crossed;
+}
 }  // namespace
 
 odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, const BuildOptions &opt,
@@ -1165,49 +1308,98 @@ odr::OpenDrive buildOpenDrive(const OsmData &osmIn, const Projection &proj, cons
   int snapped = 0, crossings = 0;
   OsmData osm = detail::snapDanglingEnds(src, proj, o, snapped, &crossings);
   const int inheritedLanes = inheritLinkLanes(osm);
-  detail::Builder b(osm, proj, o);
-  b.rep.inheritedLinkLanes = inheritedLanes;
-  b.rep.snappedEnds = snapped;
-  b.rep.joinedCrossings = crossings;
-  b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());
   const bool verbose = std::getenv("ODRFORGE_VERBOSE") != nullptr;
+  std::unique_ptr<detail::Builder> bp;
   // ODRFORGE_VERBOSE: each stage with its run time (where a conversion spends its time)
   auto stage = [&](const char *name, void (detail::Builder::*fn)()) {
     const auto start = std::chrono::steady_clock::now();
-    (b.*fn)();
+    ((*bp).*fn)();
     if (verbose)
       std::fprintf(stderr, "[odrforge] %-28s %8.0f ms\n", name,
                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
   };
-  stage("collect segments", &detail::Builder::collectSegments);
-  if (o.separateSidewalks) stage("separate sidewalks", &detail::Builder::attachSeparateSidewalks);
-  stage("junction nodes", &detail::Builder::findJunctionNodes);
-  stage("chains", &detail::Builder::buildChains);
-  // junction layout; a second pass joins junctions that squeezed the road between them out
-  const std::vector<detail::Chain> chainsBefore = b.chains;
-  const BuildReport repBefore = b.rep;
-  for (int pass = 0; pass < 2; ++pass) {
-    if (pass > 0) {
-      b.forgetJunctionLayout(chainsBefore);
-      b.rep = repBefore;
+  // the network up to its junctions; where a turn of a junction lies on the lanes of one of its arms (the arm cut
+  // back for the arms' own overlaps only, not for the turns between the others), that arm end is cut back past it -
+  // the farthest such point plus kArmClearance - and the network built again, the cuts growing up to kArmGrowth times.
+  // No harm done: where a build has fewer lane links between two arm ends than the first, every arm end of that
+  // junction (as the first build has it) keeps the first build's cut and the network is built again; out of builds
+  // (kArmBuilds), every cut is undone - the first build's network again
+  constexpr int kArmGrowth = 2, kArmBuilds = 5;
+  constexpr double kArmClearance = 0.5;  // m
+  std::map<ArmKey, double> extraTrim;
+  std::set<ArmKey> kept;  // arm ends whose cut cost a turn of their junction
+  JunctionTurns first;
+  int rebuilds = 0, grown = 0, undone = 0;
+  bool gaveUp = false;
+  for (;; ++rebuilds) {
+    bp = std::make_unique<detail::Builder>(osm, proj, o);
+    detail::Builder &b = *bp;
+    b.extraTrim = extraTrim;
+    b.rep.inheritedLinkLanes = inheritedLanes;
+    b.rep.snappedEnds = snapped;
+    b.rep.joinedCrossings = crossings;
+    b.rep.parkingAisles = static_cast<int>(o.includeWays.size() - opt.includeWays.size());
+    stage("collect segments", &detail::Builder::collectSegments);
+    if (o.separateSidewalks) stage("separate sidewalks", &detail::Builder::attachSeparateSidewalks);
+    stage("junction nodes", &detail::Builder::findJunctionNodes);
+    stage("chains", &detail::Builder::buildChains);
+    // junction layout; a second pass joins junctions that squeezed the road between them out
+    const std::vector<detail::Chain> chainsBefore = b.chains;
+    const BuildReport repBefore = b.rep;
+    for (int pass = 0; pass < 2; ++pass) {
+      if (pass > 0) {
+        b.forgetJunctionLayout(chainsBefore);
+        b.rep = repBefore;
+      }
+      stage("cluster junctions", &detail::Builder::clusterJunctions);
+      stage("reference lines", &detail::Builder::buildRoadGeometry);
+      stage("lane-level gores", &detail::Builder::buildGores);
+      stage("signal control", &detail::Builder::markSignalControl);  // before the trims: crosswalks in junctions
+      stage("trim roads", &detail::Builder::trimRoads);
+      if (pass > 0 || !b.joinSqueezedJunctions()) break;
     }
-    stage("cluster junctions", &detail::Builder::clusterJunctions);
-    stage("reference lines", &detail::Builder::buildRoadGeometry);
-    stage("lane-level gores", &detail::Builder::buildGores);
-    stage("signal control", &detail::Builder::markSignalControl);  // before the trims: crosswalks in junctions
-    stage("trim roads", &detail::Builder::trimRoads);
-    if (pass > 0 || !b.joinSqueezedJunctions()) break;
+    stage("street-side parking", &detail::Builder::measureStreetSideParking);  // on the fitted, trimmed lines
+    stage("roads", &detail::Builder::buildRoads);
+    stage("resolve overlaps", &detail::Builder::resolveOverlaps);
+    stage("elevation samples", &detail::Builder::sampleElevation);
+    stage("junction surfaces", &detail::Builder::junctionSurfaces);
+    stage("elevation profiles", &detail::Builder::fitRoadElevation);
+    stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
+    stage("covered underpasses", &detail::Builder::coveredUnderpasses);  // on the final heights
+    stage("junctions", &detail::Builder::buildJunctions);
+    stage("direct junctions", &detail::Builder::directJunctions);
+    if (gaveUp) break;
+    if (rebuilds == 0) {
+      first = junctionTurns(b);
+    } else {
+      // the junctions that lost lane links between two of their arm ends
+      const JunctionTurns now = junctionTurns(b);
+      std::set<std::string> lost;
+      for (const auto &[pair, links] : first.links)
+        if (const auto it = now.links.find(pair); it == now.links.end() || it->second < links)
+          lost.insert(first.junctionOf.at(pair.first));
+      if (verbose) std::fprintf(stderr, "[odrforge] junctions that lost a turn to the arm cuts: %zu\n", lost.size());
+      if (!lost.empty()) {
+        if (rebuilds + 1 >= kArmBuilds) {
+          extraTrim.clear(), gaveUp = true;
+        } else {
+          for (const auto &[key, junction] : first.junctionOf)
+            if (lost.count(junction)) undone += static_cast<int>(extraTrim.erase(key)), kept.insert(key);
+        }
+        continue;
+      }
+    }
+    if (grown == kArmGrowth || rebuilds + 1 >= kArmBuilds) break;
+    const std::map<ArmKey, double> crossed = armsCrossedByTurns(b, kept);
+    if (verbose) std::fprintf(stderr, "[odrforge] arm ends a turn lies on: %zu\n", crossed.size());
+    if (crossed.empty()) break;
+    for (const auto &[key, reach] : crossed) extraTrim[key] += reach + kArmClearance;
+    ++grown;
   }
-  stage("street-side parking", &detail::Builder::measureStreetSideParking);  // on the fitted, trimmed lines
-  stage("roads", &detail::Builder::buildRoads);
-  stage("resolve overlaps", &detail::Builder::resolveOverlaps);
-  stage("elevation samples", &detail::Builder::sampleElevation);
-  stage("junction surfaces", &detail::Builder::junctionSurfaces);
-  stage("elevation profiles", &detail::Builder::fitRoadElevation);
-  stage("resolve overlaps (heights)", &detail::Builder::resolveLevelOverlaps);
-  stage("covered underpasses", &detail::Builder::coveredUnderpasses);  // on the final heights
-  stage("junctions", &detail::Builder::buildJunctions);
-  stage("direct junctions", &detail::Builder::directJunctions);
+  detail::Builder &b = *bp;
+  b.rep.armsPulledBack = static_cast<int>(extraTrim.size());
+  b.rep.armCutsUndone = gaveUp ? -1 : undone;
+  b.rep.armRebuilds = rebuilds;
   stage("objects", &detail::Builder::buildObjects);  // crosswalks before the stop lines placed behind them
   stage("signals", &detail::Builder::buildSignals);
   stage("curb lanes", &detail::Builder::curbLanes);
