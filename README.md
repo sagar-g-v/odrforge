@@ -111,6 +111,14 @@ generated roads with the map):
 ASAM rule id or the spec section it enforces. The test suite (`ctest`) runs the formulas, writer,
 reader and 9 end-to-end OSM scenarios against these rules.
 
+## Compared with SUMO netconvert
+
+[OdrForge vs SUMO netconvert](https://claude.ai/artifact/PMxFJbbrvoZbmRWSTRnrV2): a head-to-head on the six OSM
+test areas, measured on 2026-10-20 at commit `2fa2fda` against SUMO netconvert 1.28.0. It is judged mainly by
+CARLA's own map parser: in five areas, 390 position jumps over 1.6 m against SUMO's 15,130. It also covers the
+OpenDRIVE schema (0 errors against 144 to 8,739 per area) and London's kerb lines. Where SUMO is ahead: speed,
+smoother junction interiors and mountain hairpins. The page is private to its owner until shared.
+
 ## Versioning
 
 The library follows [Semantic Versioning](https://semver.org/). The version lives in `VERSION` and
