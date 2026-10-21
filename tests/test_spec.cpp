@@ -393,6 +393,19 @@ TEST_CASE("road marks: laneChange follows the lines (1.9 §11.9 Table 48, double
   CHECK(makeLaneSection(y, 0.0, c).center.roadMarks.front().laneChange == "both");
 }
 
+TEST_CASE("center line: none on service roads (alleys, parking aisles) unless lane_markings says so") {
+  const CountryProfile us;
+  auto center = [&](const Tags &t) { return makeLaneSection(crossSectionFromTags(t, us), 0.0, us).center.roadMarks.front(); };
+  CHECK(center({{"highway", "residential"}}).type == us.centerLineTwoWay);
+  CHECK(center({{"highway", "service"}, {"service", "alley"}}).type == "none");
+  CHECK(center({{"highway", "service"}, {"service", "alley"}}).laneChange == "both");
+  CHECK(center({{"highway", "service"}, {"service", "parking_aisle"}}).type == "none");
+  CHECK(center({{"highway", "service"}, {"lane_markings", "yes"}}).type == us.centerLineTwoWay);
+  CHECK(center({{"highway", "residential"}, {"lane_markings", "no"}}).type == "none");
+  // one-way service road: no center line either way (nothing changes)
+  CHECK(center({{"highway", "service"}, {"oneway", "yes"}}).type == "none");
+}
+
 TEST_CASE("output profiles: standard is OpenDRIVE 1.8, carla is 1.4, older names mean standard") {
   CHECK(TargetProfile::byName("standard").revMinor == 8);
   CHECK(TargetProfile::byName("carla").revMinor == 4);

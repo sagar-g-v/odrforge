@@ -43,6 +43,9 @@ struct CrossSection {
   SideSpec left, right;      ///< OpenDRIVE sides relative to the OSM way direction
   double laneOffset = 0.0;   ///< position of the lane-0 divider relative to the OSM way (left +)
   bool roundabout = false;
+  /// a line between the directions is painted: OSM lane_markings, else not on service roads (alleys,
+  /// parking aisles, driveways are unmarked)
+  bool centerLine = true;
   /// this section's laneOffset applies across its boundaries even when lanes change on one side
   /// only (lanes added beside lanes that must not move, e.g. the branch lanes before a gore)
   bool holdOffset = false;
