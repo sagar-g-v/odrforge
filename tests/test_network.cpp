@@ -1497,3 +1497,28 @@ TEST_CASE("lanes: an untagged branch of a link split takes the trunk lanes whose
   CHECK(!lanes.empty());
   if (!lanes.empty()) CHECK(lanes.back() == 1);
 }
+
+TEST_CASE("carla profile: junction ids lie apart from road ids (LibCarla reads a link's id as a road when one exists)") {
+  // LibCarla MapBuilder::GetLaneNext takes a road's successor / predecessor elementId for a road whenever a road of
+  // that id exists, whatever its elementType: a junction sharing a road's id leaves the lanes into it without a next
+  const Result c = build(crossroads(false), "US", "carla");
+  std::set<std::string> roads, junctions;
+  for (const auto &r : c.od.roads) roads.insert(r.id);
+  for (const auto &j : c.od.junctions) junctions.insert(j.id);
+  CHECK(!junctions.empty());
+  for (const auto &j : junctions) CHECK(!roads.count(j));
+  int links = 0;
+  for (const auto &r : c.od.roads) {
+    if (r.junction != "-1") CHECK(junctions.count(r.junction));
+    for (const auto *t : {&r.predecessor, &r.successor})
+      if (*t && (*t)->elementType == "junction") {
+        CHECK(junctions.count((*t)->elementId));
+        ++links;
+      }
+  }
+  CHECK(links >= 4);
+  CHECK(c.val.errors == 0);
+  // the standard profile keeps its own numbering (OpenDRIVE asks ids to be unique per element type only)
+  const Result s = build(crossroads(false));
+  CHECK(!s.od.junctions.empty() && s.od.junctions.front().id == "1");
+}

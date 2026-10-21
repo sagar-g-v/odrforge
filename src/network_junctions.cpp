@@ -1526,9 +1526,48 @@ void Builder::groupRoundabouts() {
   }
 }
 
+namespace {
+// Junction ids moved past every road id: the next power of ten above the largest numeric road id (at least 1000),
+// plus the junction's own number - roads, links to junctions and junction groups follow (TargetProfile::
+// junctionIdsApartFromRoads; LA, carla profile: before, CARLA's own parser found no lane beyond 2,984 road ends at
+// junctions and its Traffic Manager removed every vehicle routed there)
+void junctionIdsApartFromRoads(odr::OpenDrive &od) {
+  long long top = 0;
+  for (const odr::Road &r : od.roads) try {
+      top = std::max(top, std::stoll(r.id));
+    } catch (...) {
+    }
+  long long offset = 1000;
+  while (offset <= top) offset *= 10;
+  std::map<std::string, std::string> moved;
+  long long next = 0;
+  for (odr::Junction &j : od.junctions) {
+    long long n = ++next;
+    try {
+      n = std::stoll(j.id);
+    } catch (...) {
+    }
+    moved[j.id] = std::to_string(offset + n);
+    j.id = moved[j.id];
+  }
+  auto relink = [&](std::optional<odr::LinkTarget> &t) {
+    if (t && t->elementType == "junction")
+      if (const auto it = moved.find(t->elementId); it != moved.end()) t->elementId = it->second;
+  };
+  for (odr::Road &r : od.roads) {
+    if (const auto it = moved.find(r.junction); r.junction != "-1" && it != moved.end()) r.junction = it->second;
+    relink(r.predecessor), relink(r.successor);
+  }
+  for (odr::JunctionGroup &g : od.junctionGroups)
+    for (std::string &id : g.junctionIds)
+      if (const auto it = moved.find(id); it != moved.end()) id = it->second;
+}
+}  // namespace
+
 void Builder::finish() {
   dropJunctionsWithoutConnections(od);
   groupRoundabouts();
+  if (opt.target.junctionIdsApartFromRoads) junctionIdsApartFromRoads(od);
   // header: extent, georeference, date
   double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
   for (const auto &r : od.roads)

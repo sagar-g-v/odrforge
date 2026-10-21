@@ -205,6 +205,26 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **No center line on service roads; OSM `lane_markings` honoured** (found in the CARLA end-to-end run, LA): every
+  two-way road got the country's center line, alleys, parking aisles and driveways included (LA: 665 service roads
+  with a double yellow, 3 m lanes), where US practice paints none. Now `lane_markings=no` gives no center line,
+  `lane_markings=yes` the country's, and an untagged `highway=service` none; every other road is unchanged. The center
+  lane's road mark is then "none" with laneChange "both". Six areas, carla and standard targets: every road identical
+  apart from that mark; center marks changed LA 668 (all service), Munich 238, Tokyo 212, Frankfurt 136, London 135,
+  Stelvio 37 (the residential / unclassified ones among them are tagged lane_markings=no); return codes unchanged.
+  CARLA 0.10, LA on MirrorMile meshes, Traffic Manager 60 vehicles 150 s seed 7: solid-line crossings 228 -> 93 (172 of
+  the 228 were double-yellow crossings, mostly on 3 m alley lanes), all other driving figures identical; the other five
+  areas in CARLA's OpenDRIVE mode identical before / after (their center lines were broken white). The gate's exact
+  checkers (invariants, laneflow, Annex F): no count moved in any area. Unit test (fails with the service rule off).
+  Jev keep 0.79, committed on the user's decision (2026-10-21).
+- **CARLA follows every lane into a junction** (carla profile; found in the first end-to-end run in CARLA 0.10):
+  LibCarla (MapBuilder::GetLaneNext) reads a road link's elementId as a road whenever a road of that id exists,
+  whatever its elementType. Junctions were numbered from 1 like the roads, so in LA CARLA found no lane beyond 2,984
+  road ends and its Traffic Manager removed every vehicle routed there. The carla profile now numbers junctions from
+  the next power of ten above the largest road id (LA: 10001); road links, road@junction and junction groups follow.
+  The standard profile keeps its numbering (OpenDRIVE asks ids to be unique per element type only). Six areas,
+  carla: outputs identical apart from the junction ids; CARLA's dead ends 6,429 -> 783; Traffic Manager distance
+  over 150 s, Munich 2.1 -> 23.8 km. New unit test, mutation caught. Jev 0.80.
 - **Trees and street lamps stand on the ground** (src/conform.cpp seatObjects, osm2xodr): written with zOffset 0 they
   stood at the reference line's height (XSD 1.8.1 @zOffset: relative to the road reference line's elevation) - on
   slopes, beside cuttings and above tunnel roads (Munich: 141 of 679 more than 0.3 m off the ground, worst 8.2 m). On

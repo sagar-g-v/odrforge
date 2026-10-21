@@ -196,6 +196,9 @@ CrossSection crossSectionFromTags(const Tags &t, const CountryProfile &c, const 
   const std::string &hw = x.highway;
   const bool lht = c.leftHandTraffic;
   x.roundabout = tagIs(t, "junction", "roundabout") || tagIs(t, "junction", "circular");
+  // OSM lane_markings=yes|no; untagged service roads carry no line between the directions
+  const std::string marks = tag(t, "lane_markings").value_or("");
+  x.centerLine = marks == "no" ? false : marks == "yes" ? true : hw != "service";
   const std::string ow = tag(t, "oneway").value_or("");
   bool reverse = ow == "-1" || ow == "reverse";
   x.oneway = ow == "yes" || ow == "true" || ow == "1" || reverse || x.roundabout ||
@@ -470,7 +473,10 @@ std::vector<odr::Lane> sideLanes(const SideSpec &side, int sign, bool motorwayLi
 odr::RoadMark centerLineMark(const CrossSection &x, bool motorwayLike, const CountryProfile &c) {
   odr::RoadMark m;
   const int nl = x.left.drivingCount(), nr = x.right.drivingCount();
-  if (nl > 0 && nr > 0) {
+  if (nl > 0 && nr > 0 && !x.centerLine) {
+    m.type = "none";
+    m.laneChange = laneChangeAcross(m.type, 0);
+  } else if (nl > 0 && nr > 0) {
     m.type = (nl >= 2 && nr >= 2) ? c.centerLineMultiLane : c.centerLineTwoWay;
     m.color = c.centerLineColor;
     m.laneChange = laneChangeAcross(m.type, 0);
