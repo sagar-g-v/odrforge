@@ -7,6 +7,7 @@
 #include <set>
 
 #include "network_internal.hpp"
+#include "odrforge/validate.hpp"
 
 namespace odrforge {
 namespace detail {
@@ -771,8 +772,10 @@ void Builder::buildJunctions() {
       std::vector<Target> targets;
       for (const RoadEnd &out : cl.ends) {
         // never back into the same road: its own end (a U-turn) or, for a loop road with both ends
-        // here, its start (driving round again through the junction)
-        if (out.road == in.road) continue;
+        // here, its start (driving round again through the junction) - except for consumers that get loop roads
+        // cut in two (TargetProfile::loopRoadsApart): there the two ends are two roads and the way round again
+        // is a movement like any other
+        if (out.road == in.road && (out.atEnd == in.atEnd || !opt.target.loopRoadsApart)) continue;
         const RoadMeta &mo = metas[out.road];
         const odr::Road &ro = od.roads[mo.roadIndex];
         std::vector<int> ol = endLanes(ro, out.atEnd, false);
@@ -780,6 +783,8 @@ void Builder::buildJunctions() {
         const Pose po = ro.planView.eval(out.atEnd ? ro.length() : 0.0);
         const double hOut = out.atEnd ? po.hdg + kPi : po.hdg;
         Turn t = classify(normalizeAngle(hOut - hIn));
+        // round a loop road again (loopRoadsApart): a real turn between ends a turning circle apart, never a U-turn
+        if (out.road == in.road && (t == Turn::UTurn || (pin.pos() - po.pos()).norm() < 8.0)) continue;
         if (t == Turn::UTurn) {
           // a U-turn between arms at different OSM nodes of the junction is made of the turns OSM
           // allows along the ways absorbed into it (a median opening) - where the two carriageways
@@ -789,7 +794,7 @@ void Builder::buildJunctions() {
           const double armGap = (pin.pos() - po.pos()).norm();
           const bool alongAbsorbedWays = attachNode(in) != attachNode(out) && armGap >= kMinUTurnWidth;
           const bool onlyWayOn = !regularPartner(in, true) || !regularPartner(out, false);
-          if (out.road == in.road || !(alongAbsorbedWays || onlyWayOn)) continue;
+          if ((out.road == in.road && out.atEnd == in.atEnd) || !(alongAbsorbedWays || onlyWayOn)) continue;
           t = normalizeAngle(hOut - hIn) > 0 ? Turn::Left : Turn::Right;  // built as a tight turn
         }
         // turn restrictions on the OSM ways adjacent to the junction
@@ -1018,7 +1023,10 @@ void Builder::buildJunctions() {
         const auto &pairs = pairsOf[ti];
         if (pairs.empty()) continue;
         const ConnectionEnds ends{&ri, in.atEnd, &od.roads[metas[tg.end->road].roadIndex], tg.end->atEnd};
+        const size_t before = connecting.size();
         connectLanes(ends, pairs, cl, J, connecting, nextConnId);
+        if (tg.end->road == in.road)  // round a loop road again: numbered after every other road (finish())
+          for (size_t c = before; c < connecting.size(); ++c) loopRoundRoads.insert(connecting[c].id);
       }
     }
     buildCornerSidewalks(cl, J, connecting, nextConnId);
@@ -1562,11 +1570,307 @@ void junctionIdsApartFromRoads(odr::OpenDrive &od) {
     for (std::string &id : g.junctionIds)
       if (const auto it = moved.find(id); it != moved.end()) id = it->second;
 }
+
+// ---- loop roads apart (TargetProfile::loopRoadsApart)
+
+/// the roads in `last` take the highest road ids and every other road the id it has without them (references follow):
+/// ids stay what review flags and pins refer to when roads are added in between
+void roadsLast(odr::OpenDrive &od, const std::set<std::string> &last) {
+  if (last.empty()) return;
+  std::vector<long long> A;
+  long long top = 0;
+  for (const odr::Road &r : od.roads) try {
+      const long long n = std::stoll(r.id);
+      top = std::max(top, n);
+      if (last.count(r.id)) A.push_back(n);
+    } catch (...) {
+    }
+  std::sort(A.begin(), A.end());
+  std::map<std::string, std::string> moved;
+  for (const odr::Road &r : od.roads) try {
+      const long long n = std::stoll(r.id);
+      if (last.count(r.id)) continue;
+      const long long below = std::lower_bound(A.begin(), A.end(), n) - A.begin();
+      if (below) moved[r.id] = std::to_string(n - below);
+    } catch (...) {
+    }
+  long long next = top - static_cast<long long>(A.size());
+  for (long long a : A) moved[std::to_string(a)] = std::to_string(++next);
+  auto mv = [&](std::string &id) {
+    if (const auto it = moved.find(id); it != moved.end()) id = it->second;
+  };
+  for (odr::Road &r : od.roads) {
+    mv(r.id);
+    for (auto *t : {&r.predecessor, &r.successor})
+      if (*t && (*t)->elementType == "road") mv((*t)->elementId);
+  }
+  for (odr::Junction &j : od.junctions) {
+    mv(j.mainRoad);
+    for (odr::Connection &c : j.connections) mv(c.incomingRoad), mv(c.connectingRoad);
+    for (odr::CrossPath &x : j.crossPaths) mv(x.crossingRoad), mv(x.roadAtStart), mv(x.roadAtEnd);
+    for (odr::BoundarySegment &b : j.boundary) mv(b.roadId);
+    for (auto &p : j.priorities) mv(p.high), mv(p.low);
+  }
+}
+
+/// p(ds + d) as a polynomial in ds: the record re-based d further along (exact for a cubic)
+odr::Poly3 shiftedBy(const odr::Poly3 &p, double d) {
+  odr::Poly3 q = p;
+  q.a = p.eval(d), q.b = p.deriv(d), q.c = p.c + 3.0 * p.d * d;
+  return q;
+}
+
+/// records with s from the start of their range (absolute along the road, or within a lane section) cut at S: those
+/// before S stay in `a`; `b` gets the record active at S re-based to 0 and the later ones shifted back by S
+void cutPoly3(std::vector<odr::Poly3> &a, std::vector<odr::Poly3> &b, double S) {
+  b.clear();
+  const odr::Poly3 *active = nullptr;
+  for (const odr::Poly3 &p : a)
+    if (p.s <= S) active = &p;
+  if (active) {
+    odr::Poly3 q = shiftedBy(*active, S - active->s);
+    q.s = 0.0;
+    b.push_back(q);
+  }
+  for (const odr::Poly3 &p : a)
+    if (p.s > S) b.push_back(p), b.back().s -= S;
+  a.erase(std::remove_if(a.begin(), a.end(), [&](const odr::Poly3 &p) { return p.s >= S; }), a.end());
+}
+
+/// lane l as it continues d into its section, as the first lane of a new section: widths, marks, heights and rules
+/// re-based (the record active at d starts the new section, the later ones shift back by d)
+odr::Lane laneFrom(const odr::Lane &l, double d) {
+  odr::Lane n = l;
+  std::vector<odr::Poly3> w = l.widths;
+  cutPoly3(w, n.widths, d);
+  n.roadMarks.clear();
+  for (const odr::RoadMark &m : l.roadMarks)
+    if (m.sOffset <= d) n.roadMarks = {m}, n.roadMarks.back().sOffset = 0.0;
+  for (const odr::RoadMark &m : l.roadMarks)
+    if (m.sOffset > d) n.roadMarks.push_back(m), n.roadMarks.back().sOffset -= d;
+  if (l.heightInner || !l.heightChanges.empty()) {
+    double in = l.heightInner.value_or(0.0), out = l.heightOuter.value_or(0.0);
+    n.heightChanges.clear();
+    for (const auto &h : l.heightChanges)
+      if (h.sOffset <= d) in = h.inner, out = h.outer;
+      else n.heightChanges.push_back(h), n.heightChanges.back().sOffset -= d;
+    n.heightInner = in, n.heightOuter = out;
+  }
+  n.rules.clear();
+  for (const auto &[s, v] : l.rules)
+    if (s <= d) n.rules = {{0.0, v}};
+  for (const auto &[s, v] : l.rules)
+    if (s > d) n.rules.push_back({s - d, v});
+  return n;
+}
+
+/// where to cut road r: nearest the middle, at least 2 m from every lane section joint and the road ends, where every
+/// lane keeps its width over +-2 m (no taper is cut) and is either present (>= 0.3 m) or absent (zero) - a lane link
+/// across a lane of zero width is not allowed (OpenDRIVE 1.8.0 §11.5, road.lane.link.zero_width_at_end)
+std::optional<double> loopCut(const odr::Road &r) {
+  const double L = r.length();
+  for (double j = 0.0; j < 0.5 * L - 2.0; j += 0.5)
+    for (double S : {0.5 * L - j, 0.5 * L + j}) {
+      if (S < 2.0 || S > L - 2.0) continue;
+      size_t k = 0;
+      while (k + 1 < r.lanes.size() && r.lanes[k + 1].s <= S) ++k;
+      const double secEnd = k + 1 < r.lanes.size() ? r.lanes[k + 1].s : L;
+      if (S - r.lanes[k].s < 2.0 || secEnd - S < 2.0) continue;
+      // not within 5 cm of a planView element joint: slicing would leave a piece under ReferenceLine::dropTiny's 1 cm,
+      // folded into its neighbour with that neighbour's curvature (a curvature step at the cut)
+      bool ok = true;
+      for (const GeomElement &e : r.planView.elements) ok &= std::abs(S - e.s) >= 0.05 && std::abs(S - e.s - e.length) >= 0.05;
+      const double d = S - r.lanes[k].s;
+      for (const auto *side : {&r.lanes[k].left, &r.lanes[k].right})
+        for (const odr::Lane &l : *side) {
+          const double w = odr::laneWidthAt(l, d);
+          ok &= (w >= 0.3 || w < 1e-6) && std::abs(odr::laneWidthAt(l, d - 2.0) - w) < 0.01 &&
+                std::abs(odr::laneWidthAt(l, d + 2.0) - w) < 0.01;
+        }
+      if (ok) return S;
+    }
+  return std::nullopt;
+}
+
+/// LibCarla (MapBuilder::GetJunctionLanes) matches a connecting road to an incoming road by road and lane id, not by the
+/// contact point: a road with both ends in one junction gets the connecting lanes of both its ends at each end. Every
+/// such road is cut in two (loopCut) and the halves are linked road to road and lane to lane; the second half takes
+/// the next free road id and the junction's connections at the old road's end follow it
+void splitLoopRoads(odr::OpenDrive &od, int &nextObjectId, BuildReport &rep) {
+  long long top = 0;
+  for (const odr::Road &r : od.roads) try {
+      top = std::max(top, std::stoll(r.id));
+    } catch (...) {
+    }
+  std::vector<odr::Road> added;
+  std::map<std::string, std::string> tailOf;  // cut road -> its second half
+  std::set<std::string> kept;                 // loop roads left whole
+  for (odr::Road &orig : od.roads) {
+    if (orig.junction != "-1" || !orig.predecessor || !orig.successor || orig.predecessor->elementType != "junction" ||
+        orig.successor->elementType != "junction" || orig.predecessor->elementId != orig.successor->elementId)
+      continue;
+    const std::optional<double> cut = loopCut(orig);
+    if (!cut) {
+      ++rep.loopRoadsKept;
+      kept.insert(orig.id);
+      continue;
+    }
+    odr::Road r = orig;  // cut on a copy: kept only if the halves pass the overlap check below
+    const double S = *cut, L = r.length();
+    odr::Road b;
+    b.id = std::to_string(top + 1);
+    b.name = r.name, b.rule = r.rule, b.userData = r.userData;
+    b.planView = r.planView.slice(S, L);
+    r.planView = r.planView.slice(0.0, S);
+    cutPoly3(r.elevation, b.elevation, S);
+    cutPoly3(r.superelevation, b.superelevation, S);
+    cutPoly3(r.laneOffset, b.laneOffset, S);
+    // road types: the one in force at S starts the second half
+    for (const auto &t : r.types)
+      if (t.s <= S) b.types = {t}, b.types.back().s = 0.0;
+    for (const auto &t : r.types)
+      if (t.s > S) b.types.push_back(t), b.types.back().s -= S;
+    r.types.erase(std::remove_if(r.types.begin(), r.types.end(), [&](const auto &t) { return t.s >= S; }), r.types.end());
+    // lane sections: the one holding S is continued in the second half; its lanes link across the cut (non-zero ones)
+    size_t k = 0;
+    while (k + 1 < r.lanes.size() && r.lanes[k + 1].s <= S) ++k;
+    const double d = S - r.lanes[k].s;
+    odr::LaneSection first;
+    first.s = 0.0;
+    first.center = laneFrom(r.lanes[k].center, d);
+    for (const odr::Lane &l : r.lanes[k].left) first.left.push_back(laneFrom(l, d));
+    for (const odr::Lane &l : r.lanes[k].right) first.right.push_back(laneFrom(l, d));
+    for (auto *side : {&first.left, &first.right})
+      for (odr::Lane &l : *side) l.link.predecessor = odr::laneWidthAt(l, 0.0) >= 1e-6 ? std::optional<int>(l.id) : std::nullopt;
+    for (auto *side : {&r.lanes[k].left, &r.lanes[k].right})
+      for (odr::Lane &l : *side) l.link.successor = odr::laneWidthAt(l, d) >= 1e-6 ? std::optional<int>(l.id) : std::nullopt;
+    b.lanes.push_back(first);
+    for (size_t i = k + 1; i < r.lanes.size(); ++i) b.lanes.push_back(r.lanes[i]), b.lanes.back().s -= S;
+    r.lanes.resize(k + 1);
+    // objects / structures / signals by position; a continuous feature (repeat) or a bridge / tunnel across the cut is
+    // cut in two, the second piece a new object with its values interpolated at the cut
+    std::vector<odr::Object> keepO;
+    for (odr::Object o : r.objects) {
+      if (o.repeats.empty()) {
+        if (o.s < S) keepO.push_back(o);
+        else b.objects.push_back(o), b.objects.back().s -= S;
+        continue;
+      }
+      odr::Object oa = o, ob = o;
+      oa.repeats.clear(), ob.repeats.clear();
+      for (const odr::ObjectRepeat &p : o.repeats) {
+        const double e = p.s + p.length;
+        if (e <= S) oa.repeats.push_back(p);
+        else if (p.s >= S) ob.repeats.push_back(p), ob.repeats.back().s -= S;
+        else {
+          const double f = (S - p.s) / p.length;
+          auto at = [&](double x0, double x1) { return x0 + f * (x1 - x0); };
+          odr::ObjectRepeat pa = p, pb = p;
+          pa.length = S - p.s;
+          pa.tEnd = pb.tStart = at(p.tStart, p.tEnd);
+          pa.zOffsetEnd = pb.zOffsetStart = at(p.zOffsetStart, p.zOffsetEnd);
+          pa.heightEnd = pb.heightStart = at(p.heightStart, p.heightEnd);
+          pa.widthEnd = pb.widthStart = at(p.widthStart, p.widthEnd);
+          pb.s = 0.0, pb.length = e - S;
+          oa.repeats.push_back(pa), ob.repeats.push_back(pb);
+        }
+      }
+      if (!oa.repeats.empty()) keepO.push_back(oa);
+      if (!ob.repeats.empty()) {
+        ob.s = std::max(0.0, o.s - S);
+        if (!oa.repeats.empty()) ob.id = std::to_string(nextObjectId++);
+        b.objects.push_back(ob);
+      }
+    }
+    r.objects = keepO;
+    for (auto *list : {&r.bridges, &r.tunnels}) {
+      std::vector<odr::Structure> keep, &to = list == &r.bridges ? b.bridges : b.tunnels;
+      for (odr::Structure st : *list) {
+        const double e = st.s + st.length;
+        if (e <= S) keep.push_back(st);
+        else if (st.s >= S) st.s -= S, to.push_back(st);
+        else {
+          odr::Structure tail = st;
+          st.length = S - st.s, keep.push_back(st);
+          tail.s = 0.0, tail.length = e - S, tail.id = std::to_string(nextObjectId++);
+          to.push_back(tail);
+        }
+      }
+      *list = keep;
+    }
+    std::vector<odr::Signal> keepS;
+    for (const odr::Signal &g : r.signals)
+      if (g.s < S) keepS.push_back(g);
+      else b.signals.push_back(g), b.signals.back().s -= S;
+    r.signals = keepS;
+    std::vector<odr::SignalReference> keepR;
+    for (const odr::SignalReference &g : r.signalReferences)
+      if (g.s < S) keepR.push_back(g);
+      else b.signalReferences.push_back(g), b.signalReferences.back().s -= S;
+    r.signalReferences = keepR;
+    // road linkage: first half -> second half -> the junction
+    b.successor = r.successor;
+    r.successor = odr::LinkTarget{"road", b.id, "start"};
+    b.predecessor = odr::LinkTarget{"road", r.id, "end"};
+    // a loop whose lanes overlap themselves (a tight turnaround meeting its own junction) would leave two separate
+    // roads overlapping at the same level (validation quality.road_overlap): such a loop stays uncut
+    odr::OpenDrive pair;
+    pair.roads = {r, b};
+    if (validate(pair).count("quality.road_overlap")) {
+      ++rep.loopRoadsKept;
+      kept.insert(orig.id);
+      continue;
+    }
+    ++top;
+    orig = r;
+    tailOf[r.id] = b.id;
+    added.push_back(std::move(b));
+    ++rep.loopRoadsSplit;
+  }
+  // a loop left whole keeps no way round again through its junction (a connecting road from the road into itself is
+  // what LibCarla mismatches)
+  if (!kept.empty()) {
+    std::set<std::string> drop;
+    for (const odr::Road &c : od.roads)
+      if (c.junction != "-1" && c.predecessor && c.successor && c.predecessor->elementType == "road" &&
+          c.successor->elementType == "road" && c.predecessor->elementId == c.successor->elementId &&
+          kept.count(c.predecessor->elementId))
+        drop.insert(c.id);
+    od.roads.erase(std::remove_if(od.roads.begin(), od.roads.end(), [&](const odr::Road &r) { return drop.count(r.id) > 0; }),
+                   od.roads.end());
+    for (odr::Junction &j : od.junctions)
+      j.connections.erase(std::remove_if(j.connections.begin(), j.connections.end(),
+                                         [&](const odr::Connection &c) { return drop.count(c.connectingRoad) > 0; }),
+                          j.connections.end());
+  }
+  if (added.empty()) return;
+  // the junction's connections at the old road's end now meet the second half
+  std::map<std::string, odr::Road *> byId;
+  for (odr::Road &r : od.roads) byId[r.id] = &r;
+  for (odr::Junction &j : od.junctions)
+    for (odr::Connection &c : j.connections) {
+      const auto cr = byId.find(c.connectingRoad);
+      if (cr == byId.end()) continue;
+      odr::Road &con = *cr->second;
+      const auto &in = c.contactPoint == "end" ? con.successor : con.predecessor;
+      if (in && in->elementType == "road" && in->contactPoint == "end")
+        if (const auto t = tailOf.find(in->elementId); t != tailOf.end() && c.incomingRoad == in->elementId)
+          c.incomingRoad = t->second;
+      for (auto *lk : {&con.predecessor, &con.successor})
+        if (*lk && (*lk)->elementType == "road" && (*lk)->contactPoint == "end")
+          if (const auto t = tailOf.find((*lk)->elementId); t != tailOf.end()) (*lk)->elementId = t->second;
+    }
+  for (odr::Road &b : added) od.roads.push_back(std::move(b));
+}
 }  // namespace
 
 void Builder::finish() {
   dropJunctionsWithoutConnections(od);
   groupRoundabouts();
+  if (opt.target.loopRoadsApart) {
+    roadsLast(od, loopRoundRoads);
+    splitLoopRoads(od, nextObjectId, rep);
+  }
   if (opt.target.junctionIdsApartFromRoads) junctionIdsApartFromRoads(od);
   // header: extent, georeference, date
   double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;

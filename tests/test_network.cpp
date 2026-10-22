@@ -1522,3 +1522,62 @@ TEST_CASE("carla profile: junction ids lie apart from road ids (LibCarla reads a
   const Result s = build(crossroads(false));
   CHECK(!s.od.junctions.empty() && s.od.junctions.front().id == "1");
 }
+
+TEST_CASE("carla profile: no road starts and ends in one junction (LibCarla ignores the contact point)") {
+  // LibCarla MapBuilder::GetJunctionLanes matches a connecting road to an incoming road by road and lane id, not by the
+  // contact point: a loop street with both ends in one junction gets the connecting lanes of both its ends at each end
+  // (lanes that jump across the junction). Here a street through node c and a 330 m loop leaving and returning to c
+  OsmBuilder b;
+  const OsmId c = b.node(0, 0);
+  const Tags street{{"highway", "residential"}, {"lanes", "2"}};
+  b.way({b.node(-120, 0), b.node(-60, 0), c}, street);
+  b.way({c, b.node(60, 0), b.node(120, 0)}, street);
+  b.way({c, b.node(20, 40), b.node(20, 140), b.node(-20, 140), b.node(-20, 40), c}, street);
+  auto loops = [](const odr::OpenDrive &od) {
+    int n = 0;
+    for (const auto &r : od.roads)
+      if (r.junction == "-1" && r.predecessor && r.successor && r.predecessor->elementType == "junction" &&
+          r.successor->elementType == "junction" && r.predecessor->elementId == r.successor->elementId)
+        ++n;
+    return n;
+  };
+  const Result s = build(b);  // the standard profile keeps the loop road
+  CHECK(loops(s.od) == 1);
+  CHECK(s.rep.loopRoadsSplit == 0);
+  const Result k = build(b, "US", "carla");
+  CHECK(loops(k.od) == 0);
+  CHECK(k.rep.loopRoadsSplit == 1);
+  CHECK(k.od.junctions.size() == s.od.junctions.size());  // cut in two without a junction
+  // the halves are linked road to road: first half's end -> second half's start, and back; driving lanes linked
+  int pairs = 0;
+  for (const auto &a : k.od.roads) {
+    if (a.junction != "-1" || !a.successor || a.successor->elementType != "road") continue;
+    for (const auto &c : k.od.roads) {
+      if (c.junction != "-1" || c.id != a.successor->elementId) continue;
+      CHECK(a.successor->contactPoint == "start");
+      CHECK(c.predecessor && c.predecessor->elementType == "road" && c.predecessor->elementId == a.id &&
+            c.predecessor->contactPoint == "end");
+      CHECK(c.successor && c.successor->elementType == "junction" && a.predecessor &&
+            a.predecessor->elementId == c.successor->elementId);
+      int linked = 0;
+      for (const auto &l : a.lanes.back().right)
+        if (l.type == "driving") linked += l.link.successor && odr::findLane(c.lanes.front(), *l.link.successor) ? 1 : 0;
+      CHECK(linked >= 1);
+      // the way round the loop again: from the second half's end through the junction into the first half's start
+      int round = 0;
+      for (const auto &j : k.od.roads)
+        if (j.junction != "-1" && j.predecessor && j.successor &&
+            ((j.predecessor->elementId == c.id && j.successor->elementId == a.id) ||
+             (j.predecessor->elementId == a.id && j.successor->elementId == c.id)))
+          ++round;
+      CHECK(round >= 1);
+      for (const auto &u : s.od.roads)  // the halves add up to the uncut loop road of the standard profile
+        if (u.junction == "-1" && u.predecessor && u.successor && u.predecessor->elementType == "junction" &&
+            u.successor->elementType == "junction" && u.predecessor->elementId == u.successor->elementId)
+          CHECK(std::abs(a.length() + c.length() - u.length()) < 0.05);
+      ++pairs;
+    }
+  }
+  CHECK(pairs == 1);
+  CHECK(k.val.errors == 0);
+}

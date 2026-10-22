@@ -107,6 +107,8 @@ struct BuildReport {
   int parkingNoStoppingAtJunctions = 0; ///< roads whose tagged parking lanes carry the no-stopping rule near a junction (country parkingClearOfJunction)
   int parkingDroppedOnShortRoads = 0;   ///< roads too short to park on beside their junctions: no tagged parking lane
   int joinedCrossings = 0;  ///< minor roads crossing on one level without a node: intersection added
+  int loopRoadsSplit = 0;   ///< roads starting and ending in one junction cut in two, linked road to road (TargetProfile::loopRoadsApart)
+  int loopRoadsKept = 0;    ///< ... with no place to cut (every candidate inside a lane taper or a section joint)
   int gores = 0;          ///< splits / merges modelled with branch lanes up to the gore  ///< parking-lot aisles included because they connect streets  ///< OSM way ends joined to the road they stop short of
   int directJunctions = 0;  ///< gores written as direct junctions (OpenDRIVE 1.7+)
   int junctionGrids = 0;        ///< junctions with a reference line and elevation grid (OpenDRIVE 1.8+)

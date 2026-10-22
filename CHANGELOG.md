@@ -205,6 +205,28 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   DEM5A, Copernicus GLO-30), terrain grids and conversion in each profile; downloads are listed and confirmed first.
 
 ### Fixed
+- **CARLA: no road starts and ends in the same junction** (carla profile, TargetProfile::loopRoadsApart; found by the
+  gate's CARLA loader check once the junction-id fix let CARLA follow lanes into junctions: carla_sideways LA 0 -> 10,
+  London 0 -> 15). LibCarla (MapBuilder::GetJunctionLanes) matches a connecting road to an incoming road by road and lane
+  id, not by the contact point, so a loop street with both ends in one junction got the connecting lanes of both its
+  ends at each end (LA road 1175 -> 5334: a 13 m sideways jump). Such a road is cut in two in finish() - nearest its
+  middle where every lane keeps its width over +-2 m, >= 2 m from section joints, >= 5 cm from planView joints - and the
+  halves are linked road to road and lane to lane (non-zero lanes: rule road.lane.link.zero_width_at_end); geometry,
+  elevation, superelevation, lane offset, lanes, marks, heights, rules, types, objects, bridges / tunnels, signals and
+  signal references are divided at the cut; the junction's connections at the old end follow the second half. A loop
+  whose halves would overlap each other (an LA teardrop whose lanes overlapped themselves) stays whole. With the ends
+  two roads, the movement round the loop again through its junction - never built before - is built like any movement,
+  unless it is a U-turn or the ends lie closer than a turning circle (8 m); the second halves and these connecting roads
+  take the highest road ids, so no other id changes. Six areas, carla target: cut LA 23, Munich 9, London 4, Frankfurt
+  1, Stelvio 1, Tokyo 2 (10 stay whole); CARLA sideways discontinuities LA 10 -> 0, London 15 -> 0; CARLA lane-graph
+  defects (LA) 220 -> 218; dead ends and return codes unchanged; standard profile byte-identical. Gate exact checkers:
+  the intended split counts (needless_split / split.road_needless +1 per cut), junction curvature counts from the new
+  connecting roads (LA +38 / +20), turn.missing LA 16 -> 17, London 2 -> 3, Frankfurt 4 -> 6 (loop movements left out as
+  U-turns), and per-road reporting of existing findings on both halves (osm_off_road LA +7, fold LA +1, lane_count +1).
+  CARLA 0.10, LA standalone, 3 seeds: distance 27.2 -> 28.9 km, removals 51.7 -> 51.7, off-road episodes 45 -> 36 -
+  within the seed spread. Unit test (two mutations caught). An earlier variant cutting at a two-arm junction (Jev 0.60,
+  folds +3, osm_off_road +6, junction curvature +180 in LA) was replaced. Jev keep 0.46, committed on the user's
+  decision (2026-10-22).
 - **No center line on service roads; OSM `lane_markings` honoured** (found in the CARLA end-to-end run, LA): every
   two-way road got the country's center line, alleys, parking aisles and driveways included (LA: 665 service roads
   with a double yellow, 3 m lanes), where US practice paints none. Now `lane_markings=no` gives no center line,
