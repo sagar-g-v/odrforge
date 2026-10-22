@@ -55,7 +55,7 @@ BASELINE = os.path.join(DATA, "build", "tmp", "inspect", "gate_baseline.json")
 METRICS = os.path.join(DATA, "build", "tmp", "inspect", "metrics_history")  # one snapshot per run (metrics.py)
 CARLA_PY = r"C:\Users\venki\AppData\Local\Programs\Python\Python38\python.exe"
 ODRPLOT = r"C:\mywork\tools\esmini\esmini\bin\odrplot.exe"
-EXE = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
+EXE = os.path.join(REPO, "build", "Release", "odrforge.exe")
 DETECTORS = ["osm_fidelity", "link_continuity", "edge_smoothness", "junction_gore", "lane_transitions"]
 LA_OUT = os.path.join(DATA, "build", "odrforge")
 TA = os.path.join(DATA, "data", "testareas")
@@ -147,7 +147,7 @@ def kind_of(name, f):
 
 
 def without_views(args):
-    """osm2xodr arguments without the HTML view options (--viz FILE, --basemap DIR)"""
+    """odrforge build arguments without the HTML view options (--viz FILE, --basemap DIR)"""
     out, skip = [], False
     for x in args:
         if skip:
@@ -162,7 +162,7 @@ def without_views(args):
 def convert(area):
     a = AREAS[area]
     os.makedirs(os.path.dirname(a["xodr"]), exist_ok=True)
-    r, dt = run([EXE, a["osm"], a["xodr"], "--target", "carla"] + a["args"], cwd=DATA)
+    r, dt = run([EXE, "build", a["osm"], a["xodr"], "--target", "carla"] + a["args"], cwd=DATA)
     log = r.stdout + r.stderr
     out = {"seconds": round(dt), "crashed": not os.path.exists(a["xodr"]) or "validation:" not in log}
     m = re.search(r"validation: (\d+) errors, (\d+) warnings", log)
@@ -180,7 +180,7 @@ def convert(area):
         # the standard profile and the conformed ground the viewer draws, from the same inputs (terrain_contract.py:
         # outputs never older than their inputs)
         f = terrain_contract.files(area, TOUT)
-        rs, _ = run([EXE, a["osm"], f["standard"], "--target", "standard"] + without_views(a["args"])
+        rs, _ = run([EXE, "build", a["osm"], f["standard"], "--target", "standard"] + without_views(a["args"])
                     + ["--ground-out", f["conformed"]], cwd=DATA)
         if not os.path.exists(f["standard"]) or "validation:" not in rs.stdout + rs.stderr:
             out["crashed"] = True

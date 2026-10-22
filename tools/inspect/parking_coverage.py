@@ -8,7 +8,7 @@ OSM maps street-side parking as its own area next to the road: amenity=parking +
 road and junction connecting road as a polygon (borders sampled every 1 m) and measures, per OSM polygon, the
 share of its area lying under lanes of each type. Only areas lying wholly inside the converter's clip box count (the
 converter cuts ways at the box, an area across its edge is no area there): the box from the file's header userData "clip"
-(osm2xodr --clip writes it), else --clip.
+(odrforge build --clip writes it), else --clip.
 
 Per area it prints: polygons, polygons >= 80 % covered by parking lanes ("covered"), the mean parking share,
 and the share of polygon area under driving / walking lanes (parking drawn as the wrong surface).
@@ -84,7 +84,7 @@ def measure(osm_path, xodr_path, clip=None):
     od = G.OpenDrive(xodr_path)
     osm = G.Osm(osm_path, od.lat0, od.lon0)
     box = None
-    # the box the converter cut the ways at: its header userData "clip" when the file has one (osm2xodr --clip), else
+    # the box the converter cut the ways at: its header userData "clip" when the file has one (odrforge build --clip), else
     # the one given
     for u in od.header.findall("userData"):
         if u.get("code") == "clip":

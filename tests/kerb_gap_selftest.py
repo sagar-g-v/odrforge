@@ -1,11 +1,11 @@
 """Planted-defect test of tools/inspect/kerb_gap.py (the proof measure of kerb-anchored carriageway edges) on a converted
 crossroads: a street with kerb lines 4 m either side of it (clear of the junction), a cross street, and a traffic
 island ringed by a kerb of its own.
-- converted (osm2xodr, standard profile): the edges lie on the kerbs - |median| <= 0.05 m, >= 90 % within 0.3 m, the
+- converted (odrforge build, standard profile): the edges lie on the kerbs - |median| <= 0.05 m, >= 90 % within 0.3 m, the
   island's kerb left out;
 - planted: converted with --no-kerb-edges (the lanes at their tagged widths) - the measure must see the edges inside
   the kerbs (median >= +0.3 m, < 20 % within 0.3 m).
-usage: python kerb_gap_selftest.py <osm2xodr.exe>   (exit 0 = pass; ctest)"""
+usage: python kerb_gap_selftest.py <odrforge.exe>   (exit 0 = pass; ctest)"""
 import math
 import os
 import subprocess
@@ -59,8 +59,8 @@ def write_osm(path):
 
 
 def convert(exe, osm, xodr, extra=()):
-    """osm2xodr, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
-    args = [exe, osm, xodr, "--target", "standard", "--country", "GB", "--origin", f"{LAT0},{LON0}", *extra]
+    """odrforge build, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
+    args = [exe, "build", osm, xodr, "--target", "standard", "--country", "GB", "--origin", f"{LAT0},{LON0}", *extra]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0:
         time.sleep(3)
@@ -82,9 +82,9 @@ def main():
         write_osm(osm)
         good, plain = os.path.join(tmp, "kerbs.xodr"), os.path.join(tmp, "plain.xodr")
         r = convert(exe, osm, good)
-        check(r.returncode == 0 and "kerb edges" in r.stdout, f"osm2xodr follows the kerbs ({r.stdout[-300:]})")
+        check(r.returncode == 0 and "kerb edges" in r.stdout, f"odrforge build follows the kerbs ({r.stdout[-300:]})")
         r = convert(exe, osm, plain, ("--no-kerb-edges",))
-        check(r.returncode == 0, f"osm2xodr --no-kerb-edges ({r.stdout[-300:]})")
+        check(r.returncode == 0, f"odrforge build --no-kerb-edges ({r.stdout[-300:]})")
         a, b = measure(osm, good), measure(osm, plain)
         print("kerb edges:", a)
         print("planted (no kerb edges):", b)

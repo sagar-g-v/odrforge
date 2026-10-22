@@ -5,7 +5,7 @@ curved / hairpin ways, 1..6 lanes, asymmetric lanes:forward/backward, oneway (in
 implied oneway), lane-count changes, turn:lanes / change:lanes / placement, width tags, T/X/Y/skewed
 /5-way junctions, roundabouts, motorway diverge/merge with gores, dual carriageways, dead ends,
 short ways, closely spaced nodes) in right-hand (US, DE) and left-hand (GB, JP, AU) countries,
-converts each with build/Release/osm2xodr.exe and checks the result with EXACT invariants.
+converts each with build/Release/odrforge.exe and checks the result with EXACT invariants.
 
 Because the fuzzer wrote the OSM, it knows the intended answer (lane counts per direction, which
 arms of a junction must be connected, which lane may turn where, where the way lies in the cross
@@ -63,7 +63,7 @@ sys.path.insert(0, HERE)
 import odrgeom as G  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(HERE))
-EXE = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
+EXE = os.path.join(REPO, "build", "Release", "odrforge.exe")
 XSD_DIR = os.path.join(REPO, "tests", "xsd", "opendrive_1_8_1")
 ODRPLOT = r"C:\mywork\tools\esmini\esmini\bin\odrplot.exe"
 DEFAULT_OUT = r"C:\mywork\osm2carla\build\tmp\spec\fuzz"
@@ -81,7 +81,7 @@ WIDTH_EPS = 1e-3    # m, spec eps_w: a lane narrower than this is zero width (a 
 TAG_TOL = 0.01      # m. OSM width tags carry at most centimetres.
 W_P = 2.13          # m, spec W_P: AASHTO P design vehicle width (7 ft) [Green Book Table 2-1a]. A drivable lane
                     # that never reaches it along its run is unusable (spec FLOW-6 'narrow').
-CORNER_TOL = 1.5    # m. osm2xodr --corner-tolerance default: how far a rounded corner may leave the
+CORNER_TOL = 1.5    # m. odrforge build --corner-tolerance default: how far a rounded corner may leave the
                     # mapped corner (the converter's own documented contract).
 PLACEMENT_TOL = 0.05  # m. Placement is checked on straight ways only, where the reference line must lie
                       # exactly on the way: OSM coordinates are written with 1e-8 deg (~1 mm).
@@ -925,7 +925,7 @@ def convert(osm, xodr, country, origin, target="carla", exe=EXE):
         if os.path.exists(exe):
             break
         time.sleep(2)
-    cmd = [exe, osm, xodr, "--country", country, "--target", target, "--origin", f"{origin[0]},{origin[1]}"]
+    cmd = [exe, "build", osm, xodr, "--country", country, "--target", target, "--origin", f"{origin[0]},{origin[1]}"]
     if os.path.exists(xodr):
         os.remove(xodr)
     rc, log, dt = run(cmd)
@@ -2903,7 +2903,7 @@ def check_case(xodr, osm_path, meta, log_info, work=None, external=True):
     osm = G.Osm(osm_path, od.lat0 or meta["origin"][0], od.lon0 or meta["origin"][1])
     if meta.get("clip") and not meta.get("clip_xy"):
         c = [float(v) for v in meta["clip"].split(",")]
-        # min / max over the four projected corners, exactly as tools/osm2xodr.cpp builds opt.clipBox
+        # min / max over the four projected corners, exactly as tools/odrforge.cpp builds opt.clipBox
         xs, ys = G.tm_forward(np.array([c[0], c[0], c[2], c[2]]), np.array([c[1], c[3], c[1], c[3]]), od.lat0, od.lon0)
         meta = dict(meta, clip_xy=(float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())))
     check_structure(od, F, meta["lht"])

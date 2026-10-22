@@ -9,15 +9,15 @@ Sources (any country): national lidar (USGS 3DEP, UK EA, NL AHN, FR IGN LiDAR HD
 (3DEP 1 m, Copernicus GLO-30 / FABDEM as global fallback).
 
 * Grids are in the same local transverse Mercator frame OdrForge uses (origin LAT,LON), so pass the
-  same --origin to osm2xodr.
+  same --origin to odrforge build.
 * ground: lidar ground (ASPRS class 2) and road surface (11) where available, else the DEM.
-* structures: lidar bridge deck (class 17) - used by osm2xodr for bridge=yes roads. Without lidar, a digital
+* structures: lidar bridge deck (class 17) - used by odrforge build for bridge=yes roads. Without lidar, a digital
   surface model (DSM: first-return heights, e.g. Hesse DOM1, UK EA DSM) gives the top deck: its cells more than
   2.5 m above the bare earth within 10 m of an OSM road bridge (highway + bridge=yes/viaduct, --deck-osm), and its
   smooth cells (std < 0.3 m) within 3 m of any other road nothing is mapped over (not tunnel / covered, layer >= 0): a
   street on a structure OSM does not call a bridge (London's Adelphi terrace, a bridge approach over an embankment
   road), which the bare-earth model removed. Trees and buildings elsewhere are left out; a deck under another deck is
-  not seen (osm2xodr: the lower road gives way).
+  not seen (odrforge build: the lower road gives way).
 * Lidar heights are aligned to the DEM's vertical datum by the median offset of ground points
   (e.g. ellipsoidal lidar vs NAVD88 DEM).
 * Several --dem, finest first: a later DEM fills only the cells the earlier ones leave empty (a regional model

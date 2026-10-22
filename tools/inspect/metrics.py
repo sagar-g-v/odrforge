@@ -201,10 +201,10 @@ def snapshot(folder, label="", paths=None):
         m.update(exact(path))
         files[os.path.basename(path)] = m
         ident[os.path.basename(path)] = identity(path)
-    exe = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
+    exe = os.path.join(REPO, "build", "Release", "odrforge.exe")
     folders = {i["folder"] for i in ident.values()}
     return {"label": label, "time": stamp(), "commit": git_commit(),
-            "osm2xodr_built": stamp(os.path.getmtime(exe)) if os.path.exists(exe) else None,
+            "odrforge_built": stamp(os.path.getmtime(exe)) if os.path.exists(exe) else None,
             "folder": os.path.abspath(folder) if folder else (folders.pop() if len(folders) == 1 else None),
             "files": files, "identity": ident}
 
@@ -213,7 +213,7 @@ def page_record(snap, name):
     """the provenance record of one output (schema 1, written next to it as <file>.metrics.json): the run, the file's
     identity and its metrics - the viewer shows the numbers only when the sha256 matches the bytes it loaded"""
     return {"schema": 1, "label": snap["label"], "time": snap["time"], "commit": snap["commit"],
-            "osm2xodr_built": snap["osm2xodr_built"], **snap["identity"][name], "metrics": snap["files"][name]}
+            "odrforge_built": snap["odrforge_built"], **snap["identity"][name], "metrics": snap["files"][name]}
 
 
 def compare(before_exe, after_exe, out, areas=None, labels=("before", "after")):
