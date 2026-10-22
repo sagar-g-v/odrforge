@@ -236,6 +236,8 @@ struct Builder {
   /// street-side parking areas (OSM parking=street_side|lane|layby) measured beside the roads (parking.cpp)
   void measureStreetSideParking();
   std::set<OsmId> parkingAreas, parkingAreasDrawn;  ///< street-side parking areas measured / drawn on some road
+  /// connecting roads round a loop road again (TargetProfile::loopRoadsApart): numbered after every other road
+  std::set<std::string> loopRoundRoads;
   /// the measured areas as parking lanes in the trimmed road's sections (parking.cpp)
   void applyParkingBays(const RoadMeta &m, double sTrim, double len, std::vector<SectionInfo> &secs);
   /// parking lanes from tags carry "no stopping at any time" within the country's legal distance of a junction (parking.cpp)

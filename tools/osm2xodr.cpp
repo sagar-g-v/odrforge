@@ -188,6 +188,9 @@ int main(int argc, char **argv) {
       std::printf("  kerb edges: %d road sides follow a mapped kerb (%d kerb positions used; left out: %d would leave a "
                   "lane under 2 m, %d on another level or beyond another road's lanes)\n",
                   rep.kerbSides, rep.kerbSamples, rep.kerbSamplesIgnored, rep.kerbSamplesOffLevel);
+    if (rep.loopRoadsSplit || rep.loopRoadsKept)
+      std::printf("  loop roads: %d roads starting and ending in one junction cut in two, linked road to road (CARLA); "
+                  "%d with no place to cut\n", rep.loopRoadsSplit, rep.loopRoadsKept);
     if (rep.parkingNoStoppingAtJunctions)
       std::printf("  parking: %d roads' tagged parking lanes carry \"no stopping at any time\" near junctions (%.1f m, "
                   "country rule)\n",

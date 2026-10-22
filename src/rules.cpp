@@ -82,6 +82,7 @@ TargetProfile carlaProfile() {
   t.trafficLightZeroOffset = true;
   t.maxIdLength = 32;
   t.junctionIdsApartFromRoads = true;
+  t.loopRoadsApart = true;
   return t;
 }
 

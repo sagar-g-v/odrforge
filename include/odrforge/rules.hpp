@@ -69,6 +69,12 @@ struct TargetProfile {
   /// as a road whenever a road of that id exists, whatever its elementType, so a junction sharing a road's id cuts
   /// every lane into it off; OpenDRIVE itself only asks ids to be unique per element type
   bool junctionIdsApartFromRoads = false;
+  /// CARLA: no road starts and ends in the same junction. LibCarla (MapBuilder::GetJunctionLanes) matches a connecting
+  /// road to an incoming road by road and lane id only, not by the contact point, so a loop street gets the connecting
+  /// lanes of both of its ends at each end (lanes that jump across the junction). Such a road is cut in two near its
+  /// middle and the halves linked road to road (OpenDRIVE §8.3 road linkage, no junction); the movement round the loop
+  /// again through its junction, two roads now, is built like any other
+  bool loopRoadsApart = false;
   SpecRevision spec() const { return {revMinor}; }
   /// "standard" or "carla". Earlier names stay accepted: asam, asam18 and esmini mean standard.
   static TargetProfile byName(const std::string &name);
