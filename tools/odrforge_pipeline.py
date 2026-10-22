@@ -7,7 +7,7 @@ Stages (in order; each is skipped when its output exists, unless the stage's `fo
   ground   a bare-earth elevation model (DEM / DTM) from the best source here     -> <data>/dem/<area>_ground/*.tif
   decks    a surface model (DSM) for bridge decks, where one is open              -> <data>/dem/<area>_decks/*.tif
   terrain  OdrForge grids from them (make_terrain.py)                             -> <out>/<area>_ground.odrz, _decks.odrz
-  convert  osm2xodr in each profile, plus the ground conformed to the roads        -> <out>/<area>[_standard].xodr, ...
+  convert  odrforge build per profile, plus the ground conformed to the roads     -> <out>/<area>[_standard].xodr, ...
 
 The config is TOML (Python tomllib). Every key has a default (DEFAULTS below); a config file only states what differs:
 
@@ -28,7 +28,7 @@ The config is TOML (Python tomllib). Every key has a default (DEFAULTS below); a
 `[areas.<name>]` keys not given fall back to `[area_defaults]`, then to DEFAULTS. `auto` picks the finest provider
 whose coverage holds the whole bbox (PROVIDERS, finest first; Copernicus GLO-30 covers the world), adding the next
 coarser one where its data ends inside the bbox (a region's border). Each provider
-states its CRS, resolution and vertical datum; the datum goes into the grids and, through osm2xodr, into the
+states its CRS, resolution and vertical datum; the datum goes into the grids and, through odrforge build, into the
 geoReference (PROJ +geoidgrids) and header userData.
 """
 import argparse
@@ -49,7 +49,7 @@ DEFAULTS = {
     "paths": {
         "data": "data",            # downloads (osm/, dem/<area>_ground, dem/<area>_decks)
         "out": "build/areas",      # grids and OpenDRIVE outputs
-        "osm2xodr": os.path.join(REPO, "build", "Release", "osm2xodr.exe" if os.name == "nt" else "osm2xodr"),
+        "odrforge": os.path.join(REPO, "build", "Release", "odrforge.exe" if os.name == "nt" else "odrforge"),
         "python": sys.executable,  # runs make_terrain.py (needs numpy, pyproj, rasterio)
     },
     "download": {
@@ -62,8 +62,8 @@ DEFAULTS = {
         "decks": "auto",
         "profiles": ["standard", "carla"],
         "margin": 60.0,           # m of terrain beyond the bbox (make_terrain.py --margin)
-        "conformed": True,        # also write <area>_ground_conformed.odrz (osm2xodr --ground-out)
-        "osm2xodr_args": [],      # extra osm2xodr arguments
+        "conformed": True,        # also write <area>_ground_conformed.odrz (odrforge build --ground-out)
+        "build_args": [],         # extra odrforge build arguments
         "viz": False,             # also write the HTML viewer page
     },
     "stages": {s: {"force": False} for s in ("osm", "ground", "decks", "terrain", "convert")},
@@ -119,6 +119,12 @@ def deep_merge(base, over):
 def load_config(path):
     with open(path, "rb") as f:
         user = tomllib.load(f)
+    # keys renamed with the command line (osm2xodr -> odrforge build): stop rather than ignore them
+    old = ["paths.osm2xodr"] if "osm2xodr" in user.get("paths", {}) else []
+    old += [f"{sec}.osm2xodr_args" for sec, v in [("area_defaults", user.get("area_defaults", {}))]
+            + [(f"areas.{n}", a) for n, a in user.get("areas", {}).items()] if "osm2xodr_args" in v]
+    if old:
+        sys.exit(f"{path}: renamed keys {', '.join(old)} - use paths.odrforge and build_args")
     cfg = deep_merge(DEFAULTS, user)
     base = os.path.dirname(os.path.abspath(path))
     for k in ("data", "out"):
@@ -371,7 +377,7 @@ def stage_convert(name, a, cfg, osm_path, gfile, dfile, ground_source):
         xodr = os.path.join(out, f"{name}.xodr" if prof == "carla" else f"{name}_{prof}.xodr")
         if os.path.exists(xodr) and not cfg["stages"]["convert"]["force"]:
             continue
-        cmd = [cfg["paths"]["osm2xodr"], osm_path, xodr, "--target", prof, "--country", country, "--name", name,
+        cmd = [cfg["paths"]["odrforge"], "build", osm_path, xodr, "--target", prof, "--country", country, "--name", name,
                "--origin", f"{a['origin'][0]},{a['origin'][1]}", "--clip", f"{s},{w},{n},{e}"]
         if gfile:
             cmd += ["--terrain", gfile]
@@ -381,14 +387,14 @@ def stage_convert(name, a, cfg, osm_path, gfile, dfile, ground_source):
             cmd += ["--structures", dfile]
         if a["viz"]:
             cmd += ["--viz", os.path.splitext(xodr)[0] + ".html"]
-        cmd += list(a["osm2xodr_args"])
+        cmd += list(a["build_args"])
         print(f"  convert ({prof}) -> {xodr}")
         r = subprocess.run(cmd, capture_output=True, text=True)
         tail = [l for l in r.stdout.splitlines() if "validation:" in l or "elevation vs" in l]
         for l in tail:
             print("   ", l.strip())
         if r.returncode not in (0, 1):  # 1: written, with validation errors
-            sys.exit(f"osm2xodr failed ({r.returncode}):\n{r.stderr[-2000:]}")
+            sys.exit(f"odrforge build failed ({r.returncode}):\n{r.stderr[-2000:]}")
 
 
 def main():

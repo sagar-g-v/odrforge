@@ -8,7 +8,7 @@ python tools/odrforge_pipeline.py my_areas.toml --area munich --plan   # what it
 python tools/odrforge_pipeline.py my_areas.toml --stages terrain,convert --yes
 ```
 
-It needs Python 3.11+ (tomllib) with numpy, pyproj and rasterio (for `make_terrain.py`), and a built `osm2xodr`.
+It needs Python 3.11+ (tomllib) with numpy, pyproj and rasterio (for `make_terrain.py`), and a built `odrforge` command line.
 
 ## Stages
 
@@ -18,7 +18,7 @@ It needs Python 3.11+ (tomllib) with numpy, pyproj and rasterio (for `make_terra
 | `ground` | bare-earth elevation model from the best source covering the area | `<data>/dem/<area>_ground_<source>/` |
 | `decks` | surface model for bridge decks, where an open one exists | `<data>/dem/<area>_decks_<source>/` |
 | `terrain` | OdrForge grids (`make_terrain.py`; decks only near OSM road bridges) | `<out>/<area>_ground.odrz`, `<area>_decks.odrz` |
-| `convert` | `osm2xodr` per profile (standard: `<area>_standard.xodr`, carla: `<area>.xodr`), and the ground conformed to the roads | `<out>/...xodr`, `<area>_ground_conformed.odrz` |
+| `convert` | `odrforge build` per profile (standard: `<area>_standard.xodr`, carla: `<area>.xodr`), and the ground conformed to the roads | `<out>/...xodr`, `<area>_ground_conformed.odrz` |
 
 A stage whose output exists is skipped (set `[stages.<name>] force = true` to redo it). Downloads are listed
 first and need a yes (`[download] confirm = false` or `--yes` to skip the question).
@@ -32,7 +32,7 @@ missing keys come from `[area_defaults]`, then from the built-in defaults. Only 
 [paths]
 data = "data"              # downloads (relative paths: to this file's folder)
 out = "build/areas"        # grids and OpenDRIVE outputs
-# osm2xodr = "...", python = "..."  (defaults: the repository build, the running Python)
+# odrforge = "...", python = "..."  (defaults: the repository build, the running Python)
 
 [download]
 confirm = true
@@ -40,7 +40,7 @@ confirm = true
 
 [area_defaults]
 profiles = ["standard", "carla"]
-# ground = "auto", decks = "auto", margin = 60.0, conformed = true, viz = false, osm2xodr_args = []
+# ground = "auto", decks = "auto", margin = 60.0, conformed = true, viz = false, build_args = []
 
 [areas.munich]
 bbox = [48.132, 11.560, 48.145, 11.585]   # min lat, min lon, max lat, max lon
@@ -72,5 +72,5 @@ own heights (Stelvio: median +1.26 m, IQR 2.34 m - no shift). The grid keeps the
 | `gsi_dem5a` | ground | Japan | 5 m | JGD2011 (T.P.) | GSI zoom-15 text tiles |
 | `copernicus_glo30` | ground | world | 30 m | EGM2008 | AWS open data (a surface model) |
 
-The datum goes into the grids; `osm2xodr` writes it into the geoReference (PROJ `+geoidgrids`) and the header
+The datum goes into the grids; `odrforge build` writes it into the geoReference (PROJ `+geoidgrids`) and the header
 userData (a datum without an open PROJ grid, like Genova1942, only in the userData). New sources are one entry in `PROVIDERS` (bbox, CRS, resolution, datum, kind, URL).

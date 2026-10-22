@@ -338,7 +338,7 @@ def project_many(r, px, py):
 
 # ----------------------------------------------------------------------------- clip box
 def clip_box_from_latlon(clip, lat0, lon0):
-    """converter's --clip: min/max of the four projected corners (tools/osm2xodr.cpp)."""
+    """converter's --clip: min/max of the four projected corners (tools/odrforge.cpp)."""
     a, b, c, d = clip
     xs, ys = G.tm_forward(np.array([a, c, a, c]), np.array([b, d, d, b]), lat0, lon0)
     return (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
@@ -2431,7 +2431,7 @@ def main(argv=None):
     ap.add_argument("xodr", nargs="?")
     ap.add_argument("osm", nargs="?")
     ap.add_argument("--area", help="reference area from gate.py (la, munich, london, frankfurt_kreuz, stelvio)")
-    ap.add_argument("--clip", help="MINLAT,MINLON,MAXLAT,MAXLON as given to osm2xodr --clip")
+    ap.add_argument("--clip", help="MINLAT,MINLON,MAXLAT,MAXLON as given to odrforge build --clip")
     ap.add_argument("--rule", choices=["RHT", "LHT"], help="evaluate under this traffic rule instead of road@rule")
     ap.add_argument("--out", help="output directory (default build/tmp/spec/laneflow/<name>)")
     ap.add_argument("--crops", type=int, default=3, help="evidence crops per defect invariant")

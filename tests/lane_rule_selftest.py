@@ -1,10 +1,10 @@
 """Planted-defect test of the NAT-2 lane-rule case in both checkers (tools/inspect/laneflow.py split.section_redundant,
 tools/inspect/invariants.py needless_split): a street tagged parking:both=lane across a junction is converted
-(osm2xodr, standard profile); within the country's no-parking distance of the junction its parking lanes carry the lane
+(odrforge build, standard profile); within the country's no-parking distance of the junction its parking lanes carry the lane
 rule "no stopping at any time" (OpenDRIVE 1.8.0 §11.9) in a section of their own. Such a boundary is not redundant (a
 rule has no end of its own). Planted: the rules removed - the same boundaries then are redundant, and both checkers
 must say so.
-usage: python lane_rule_selftest.py <osm2xodr.exe>   (exit 0 = pass; ctest)"""
+usage: python lane_rule_selftest.py <odrforge.exe>   (exit 0 = pass; ctest)"""
 import math
 import os
 import subprocess
@@ -51,8 +51,8 @@ def write_osm(path):
 
 
 def convert(exe, osm, xodr):
-    """osm2xodr, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
-    args = [exe, osm, xodr, "--target", "standard", "--country", "DE", "--origin", f"{LAT0},{LON0}"]
+    """odrforge build, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
+    args = [exe, "build", osm, xodr, "--target", "standard", "--country", "DE", "--origin", f"{LAT0},{LON0}"]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0:
         time.sleep(3)
@@ -76,7 +76,7 @@ def main():
         osm, xodr = os.path.join(tmp, "cross.osm"), os.path.join(tmp, "cross.xodr")
         write_osm(osm)
         r = convert(exe, osm, xodr)
-        check(r.returncode == 0 and "no stopping at any time" in r.stdout, f"osm2xodr writes the rule ({r.stdout[-300:]})")
+        check(r.returncode == 0 and "no stopping at any time" in r.stdout, f"odrforge build writes the rule ({r.stdout[-300:]})")
         tree = ET.parse(xodr)
         ruled = [lane for lane in tree.getroot().iter("lane") if lane.get("type") == "parking" and
                  any(u.get("value") == NO_STOPPING for u in lane.findall("rule"))]

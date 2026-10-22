@@ -19,7 +19,7 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 
 | check | what is measured | area | proven (2026-10-17) | limit |
 |---|---|---|---|---|
-| fresh | `<area>.xodr`, `<area>_standard.xodr` and `<area>_ground_conformed.odrz` are newer than the OSM file, the ground and deck grids, and `osm2xodr.exe` | all | (London road 389 floated 39 m in a carla file written before its deck grid) | none older |
+| fresh | `<area>.xodr`, `<area>_standard.xodr` and `<area>_ground_conformed.odrz` are newer than the OSM file, the ground and deck grids, and `odrforge.exe` | all | (London road 389 floated 39 m in a carla file written before its deck grid) | none older |
 | conformed | paved edges (0.3 m inside the outermost lane borders, z = elevation + t·tan(superelevation), OpenDRIVE 1.8.0 §10.5) minus the 0.05 m road floor vs the conformed ground, standard profile, outside bridges / tunnels (user decision 2026-10-18: measured against road − 0.05 m, limits unchanged). Edges whose ground another, lower road's floor or the cut rising from it holds down - a lane point of another road, or of the same road more than 20 m along it, lower by d within 1.5 cells + d / 2 - are left out and counted by `floating` (the approved lower-wins cost) | munich | p99 0.010 (before the floor 0.006) | p99 ≤ 0.02 |
 | | | london | p99 0.015 (0.008) | p99 ≤ 0.02 |
 | | | frankfurt_kreuz | p99 0.041 (0.044) | p99 ≤ 0.06 |
@@ -42,7 +42,7 @@ All heights are in metres. Sampling is every 2 m along every road; "plain" means
 | | | london | 4 (9 before the street decks, 5 before the local grade guard) | ≤ 4 |
 | | | frankfurt_kreuz | 4 (7 before deck cells needed a smooth surface near OSM bridges, make_terrain.py) | ≤ 4 |
 | | | stelvio | 1 (12 on GLO-30 alone) | ≤ 1 |
-| objects | trees and street lamps off bridge stretches: base = elevation(s) + zOffset (XSD 1.8.1 @zOffset) vs the conformed ground under them; osm2xodr seats them on that ground | all | 0 off (Munich 679, London 598, Frankfurt 276, Stelvio 2 objects; before: Munich 141 of 679 more than 0.3 m off, worst 8.2 m) | none more than 0.3 m off |
+| objects | trees and street lamps off bridge stretches: base = elevation(s) + zOffset (XSD 1.8.1 @zOffset) vs the conformed ground under them; odrforge build seats them on that ground | all | 0 off (Munich 679, London 598, Frankfurt 276, Stelvio 2 objects; before: Munich 141 of 679 more than 0.3 m off, worst 8.2 m) | none more than 0.3 m off |
 | buried | plain roads more than 2 m under the raw ground over 10 m or more, outside bridges / tunnels; samples under a bridge road (more than 2 m above within 4 m: the raw grid there may hold the deck, Frankfurt roads 57 and 276 under bridges 34 and 58) neither count nor end a run. The conformed ground trenches such a road. The parts of covered=yes stretches that deep are written as underpasses (elevation.cpp `coveredUnderpasses`, OpenDRIVE 1.8.0 §13.11). Measured over every covered stretch of Munich, London, Frankfurt and LA (36): at grade never more than 0.81 m deep at any sample, under a deck or hill a median of 5.54 m or more, so any limit between makes the same decisions. A 10 m run catches all five Frankfurt stretches before their underpasses (a 20 m run caught two) | all | 0 (before: Frankfurt 5 - roads 35, 136, 154, 224, 431 - and London 1, the Strand Underpass running 3.8-4.3 m under the street for 12 m past its OSM tunnel way; tunnel records are now extended over such ends, elevation.cpp `coveredUnderpasses`) | 0 |
 | pits | junction roads carrying a driving lane with a point (2 m steps) outside tunnel / bridge records where the conformed ground lies more than 2 m under the raw ground: a junction under cover without a tunnel record. Points whose ground another, lower road's floor holds down (as for `conformed`) are left out. Corner sidewalks are left out (user decision 2026-10-18): Stelvio road 245, the corner sidewalk round lay-by 1429965881 cut into the hillside, starts 3.1 m under the GLO-30 ground the 30 m model cannot resolve. Connecting roads between tunnel ends get a tunnel record, and at a portal the part under the terrain (elevation.cpp `junctionsUnderCover`) | all | 0 (before: Frankfurt 134 roads / 723 points - the underground car park P15 - London 5, Munich 1) | 0 |
 | cliffs | roads of 0.1 m and more (junction roads too) with a grade over 50 % between samples 0.25 m apart: short stubs the steep check's 5 m steps cannot see; no public road reaches 50 % (the steepest streets are about 35-37 %) | munich, frankfurt_kreuz | 0 (Frankfurt before the smooth-deck filter: 3, the 2 m stubs 97 / 366 / 367 climbing 5-6 m) | 0 |
@@ -55,7 +55,7 @@ different heights; a 2-D ground cannot hold both.
 
 ## Evidence behind the numbers
 
-- Conformed ground (src/conform.cpp, `osm2xodr --ground-out`): CHANGELOG, "Ground conformed to the roads".
+- Conformed ground (src/conform.cpp, `odrforge build --ground-out`): CHANGELOG, "Ground conformed to the roads".
 - Stelvio 2.5 m DTM with the GLO-30 fill shifted onto it: CHANGELOG, "Stelvio on South Tyrol's 2.5 m DTM".
 - Street decks: the London Adelphi terrace / Lancaster Place approach (make_terrain.py `raised_smooth`, `on_top`):
   CHANGELOG, "Streets on structures OSM does not tag as bridges".

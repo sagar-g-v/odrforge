@@ -4,6 +4,18 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Changed
+- **One command line, `odrforge`, named for what it does** (user decision 2026-10-22: the product will build road
+  networks from sources other than OpenStreetMap). `osm2xodr <in> <out> ...` is now `odrforge build <in> <out> ...`
+  and `xodrviz` is now `odrforge view`; the old names are gone (no aliases). `build --from SOURCE` names the map
+  source, default from the input's extension (`osm` is the one source today; anything else stops with exit 2).
+  `odrforge --version`, `odrforge <command> --help`. `view` now rejects unknown options (xodrviz ignored them).
+  Output unchanged: London, Stelvio and Munich in both profiles and MirrorMile's LA area give the same .xodr as
+  osm2xodr from 9a730ff (header date apart), `view` the same HTML as xodrviz. Tools follow: gate, fuzz,
+  same_output, terrain_contract, the self-tests (ctest 11/11) and the pipeline, whose config keys are now
+  `paths.odrforge` and `build_args` (the old `paths.osm2xodr` / `osm2xodr_args` stop it with a message). The
+  provenance records (`<file>.xodr.metrics.json`) carry `odrforge_built` instead of `osm2xodr_built`.
+
 ### Added
 - **Carriageway edges follow the mapped kerb** (kerbs.cpp, `--no-kerb-edges` to switch off; P2, user decisions
   2026-10-20): every 2 m each side of a road looks across to the parallel OSM `barrier=kerb` line on its level; the

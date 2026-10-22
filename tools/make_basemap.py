@@ -10,7 +10,7 @@
         with the roads exactly.
 
 Both are written as tile pyramids (512 px tiles, each level half the resolution of the one below)
-plus DIR/basemap.json. Pass DIR to `osm2xodr --basemap DIR` / `xodrviz --basemap DIR`; the viewer
+plus DIR/basemap.json. Pass DIR to `odrforge build --basemap DIR` / `odrforge view --basemap DIR`; the viewer
 then offers them as backgrounds and loads only the tiles in view.
 Requires numpy and Pillow; --naip needs network access to imagery.nationalmap.gov.
 """
@@ -362,7 +362,7 @@ def render_map(osm, lat0, lon0, x0, y0, x1, y1, res):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--origin", required=True, help="lat,lon of the OdrForge projection (osm2xodr --origin)")
+    ap.add_argument("--origin", required=True, help="lat,lon of the OdrForge projection (odrforge build --origin)")
     ap.add_argument("--bounds", required=True, help="minlat,minlon,maxlat,maxlon")
     ap.add_argument("--out", required=True)
     ap.add_argument("--osm", help="OSM XML file: render the map background")

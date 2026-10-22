@@ -1,4 +1,5 @@
-// osm2xodr - OpenStreetMap (.osm XML) to ASAM OpenDRIVE (.xodr) with OdrForge.
+// odrforge - the OdrForge command line: `build` makes an ASAM OpenDRIVE (.xodr) road network from a map source
+// (OpenStreetMap .osm XML today), `view` writes an interactive HTML view of any OpenDRIVE file.
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -15,10 +16,42 @@
 
 using namespace odrforge;
 
+// map sources `build` reads; --from names one, else the input's file extension picks it
+static const char *const kSources = "osm (OpenStreetMap XML, .osm)";
+
+static std::string sourceFromExtension(const std::string &path) {
+  const size_t dot = path.find_last_of('.');
+  if (dot == std::string::npos || path.find_first_of("/\\", dot) != std::string::npos) return "";
+  std::string ext = path.substr(dot + 1);
+  for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == "osm" ? "osm" : "";
+}
+
+static void mainUsage() {
+  std::printf(
+      "odrforge %s - road networks as ASAM OpenDRIVE\n"
+      "usage: odrforge <command> [arguments]\n"
+      "  build <in> <out.xodr> [options]      make an OpenDRIVE road network from a map source\n"
+      "  view <in.xodr> <out.html> [options]  interactive HTML view of an OpenDRIVE file\n"
+      "  --version                            print the version\n"
+      "odrforge <command> --help shows the command's options.\n",
+      ODRFORGE_VERSION);
+}
+
+static void viewUsage() {
+  std::printf(
+      "odrforge view %s - OpenDRIVE to interactive HTML\n"
+      "usage: odrforge view <in.xodr> <out.html> [options]\n"
+      "  --title T           page title (default: the input path)\n"
+      "  --basemap DIR       offline HD map / imagery backgrounds (tools/make_basemap.py)\n",
+      ODRFORGE_VERSION);
+}
+
 static void usage() {
   std::printf(
-      "osm2xodr %s - OpenStreetMap to OpenDRIVE\n"
-      "usage: osm2xodr <in.osm> <out.xodr> [options]\n"
+      "odrforge build %s - map source to OpenDRIVE\n"
+      "usage: odrforge build <in> <out.xodr> [options]\n"
+      "  --from SOURCE       the input's map source: %s; default from the file extension\n"
       "  --country CC        ISO 3166-1 alpha-2 rules (driving side, widths, speeds, signs); default XX\n"
       "  --target T          standard (OpenDRIVE 1.8, default) | carla (OpenDRIVE 1.4 + CARLA conventions)\n"
       "  --origin LAT,LON    projection origin (default: centre of the data)\n"
@@ -41,23 +74,25 @@ static void usage() {
       "  --no-overlap-shift  do not move roads drawn too close apart\n"
       "  --no-parking-lots   do not drive through parking lots that connect streets\n"
       "  --corner-tolerance M  how far a rounded corner may leave the mapped corner (default 1.5 m)\n",
-      ODRFORGE_VERSION);
+      ODRFORGE_VERSION, kSources);
 }
 
-int main(int argc, char **argv) {
+// argv[1] = input, argv[2] = output, options from argv[3]
+static int build(int argc, char **argv) {
   if (argc < 3) {
     usage();
     return 2;
   }
   const std::string in = argv[1], out = argv[2];
-  std::string country = "XX", target = "standard", name, vizPath, terrainPath, structuresPath, basemapDir, groundOutPath;
+  std::string from, country = "XX", target = "standard", name, vizPath, terrainPath, structuresPath, basemapDir, groundOutPath;
   double lat0 = 1e9, lon0 = 1e9, clip[4] = {0, 0, 0, 0};
   bool haveClip = false, flat = false;
   BuildOptions opt;
   for (int i = 3; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
-    if (a == "--country") country = next();
+    if (a == "--from") from = next();
+    else if (a == "--country") country = next();
     else if (a == "--target") target = next();
     else if (a == "--name") name = next();
     else if (a == "--origin") {
@@ -86,6 +121,16 @@ int main(int argc, char **argv) {
       usage();
       return 2;
     }
+  }
+  if (from.empty()) from = sourceFromExtension(in);
+  if (from.empty()) {
+    std::fprintf(stderr, "odrforge build: cannot tell the map source of %s from its extension: give --from (sources: %s)\n",
+                 in.c_str(), kSources);
+    return 2;
+  }
+  if (from != "osm") {
+    std::fprintf(stderr, "odrforge build: unknown map source '%s' (sources: %s)\n", from.c_str(), kSources);
+    return 2;
   }
   try {
     const auto t0 = std::chrono::steady_clock::now();
@@ -160,7 +205,7 @@ int main(int argc, char **argv) {
       phase("HTML view");
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("osm2xodr %s: %s -> %s in %.2f s\n", ODRFORGE_VERSION, in.c_str(), out.c_str(), secs);
+    std::printf("odrforge build %s: %s -> %s in %.2f s\n", ODRFORGE_VERSION, in.c_str(), out.c_str(), secs);
     std::printf("  roads %d + connecting %d, junctions %d, signals %d, controllers %d, objects %d\n", rep.roads,
                 rep.connectingRoads, rep.junctions, rep.signals, rep.controllers, rep.objects);
     std::printf("  geometry: %d elements (%d lines, %d arcs, %d spirals)\n", rep.geometryElements, rep.lines, rep.arcs,
@@ -242,7 +287,64 @@ int main(int argc, char **argv) {
     }
     return vr.errors ? 1 : 0;
   } catch (const std::exception &e) {
-    std::fprintf(stderr, "osm2xodr: %s\n", e.what());
+    std::fprintf(stderr, "odrforge build: %s\n", e.what());
     return 1;
   }
+}
+
+// argv[1] = input .xodr, argv[2] = output .html, options from argv[3]
+static int view(int argc, char **argv) {
+  if (argc < 3) {
+    viewUsage();
+    return 2;
+  }
+  VizOptions vo;
+  vo.title = argv[1];
+  for (int i = 3; i < argc; ++i) {
+    const std::string a = argv[i];
+    if (a == "--title" && i + 1 < argc) vo.title = argv[++i];
+    else if (a == "--basemap" && i + 1 < argc) vo.basemapDir = argv[++i];
+    else {
+      viewUsage();
+      return 2;
+    }
+  }
+  try {
+    const auto od = odr::read(argv[1]);
+    const auto vr = validate(od);
+    vo.validation = &vr;
+    writeVizHtml(od, argv[2], vo);
+    std::printf("odrforge view: %zu roads, %zu junctions -> %s (validation: %d errors, %d warnings)\n", od.roads.size(),
+                od.junctions.size(), argv[2], vr.errors, vr.warnings);
+    for (const auto &[rule, n] : vr.ruleCounts) std::printf("    %5d  %s\n", n, rule.c_str());
+    if (std::getenv("ODRFORGE_VERBOSE"))
+      for (const auto &m : vr.messages) std::printf("    %s\n", m.c_str());
+    return 0;
+  } catch (const std::exception &e) {
+    std::fprintf(stderr, "odrforge view: %s\n", e.what());
+    return 1;
+  }
+}
+
+int main(int argc, char **argv) {
+  const std::string cmd = argc > 1 ? argv[1] : "";
+  auto wantsHelp = [&]() {
+    for (int i = 2; i < argc; ++i)
+      if (std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h") return true;
+    return false;
+  };
+  if (cmd == "build") {
+    if (wantsHelp()) return usage(), 0;
+    return build(argc - 1, argv + 1);
+  }
+  if (cmd == "view") {
+    if (wantsHelp()) return viewUsage(), 0;
+    return view(argc - 1, argv + 1);
+  }
+  if (cmd == "--version" || cmd == "version") {
+    std::printf("odrforge %s\n", ODRFORGE_VERSION);
+    return 0;
+  }
+  mainUsage();
+  return cmd == "--help" || cmd == "-h" || cmd == "help" ? 0 : 2;
 }

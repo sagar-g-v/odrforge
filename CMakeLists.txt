@@ -11,7 +11,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(ODRFORGE_BUILD_TESTS "Build unit tests" ON)
-option(ODRFORGE_BUILD_CLI "Build the osm2xodr command line tool" ON)
+option(ODRFORGE_BUILD_CLI "Build the odrforge command line tool" ON)
 option(ODRFORGE_BUILD_PYTHON "Build the Python module (needs pybind11)" OFF)
 
 include(FetchContent)
@@ -78,11 +78,11 @@ else()
 endif()
 
 if(ODRFORGE_BUILD_CLI)
-  add_executable(osm2xodr tools/osm2xodr.cpp)
-  target_link_libraries(osm2xodr PRIVATE odrforge)
-  add_executable(xodrviz tools/xodrviz.cpp)
-  target_link_libraries(xodrviz PRIVATE odrforge)
-  install(TARGETS osm2xodr xodrviz RUNTIME DESTINATION bin)
+  # the command line `odrforge` (build / view); its target name is apart from the library's
+  add_executable(odrforge_cli tools/odrforge.cpp)
+  set_target_properties(odrforge_cli PROPERTIES OUTPUT_NAME odrforge)
+  target_link_libraries(odrforge_cli PRIVATE odrforge)
+  install(TARGETS odrforge_cli RUNTIME DESTINATION bin)
 endif()
 
 if(ODRFORGE_BUILD_TESTS)
@@ -120,13 +120,13 @@ if(ODRFORGE_BUILD_TESTS)
       add_test(NAME gate_stage_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/gate_stage_selftest.py)
       # laneflow.py / invariants.py NAT-2: a section boundary where a lane rule changes (no-stopping near junctions)
       add_test(NAME lane_rule_selftest COMMAND ${Python3_EXECUTABLE} -I
-               ${CMAKE_CURRENT_SOURCE_DIR}/tests/lane_rule_selftest.py $<TARGET_FILE:osm2xodr>)
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/lane_rule_selftest.py $<TARGET_FILE:odrforge_cli>)
       # laneflow.py: a parking lane growing from zero by a mapped street-side parking area is explained
       add_test(NAME laneflow_area_selftest COMMAND ${Python3_EXECUTABLE} -I
-               ${CMAKE_CURRENT_SOURCE_DIR}/tests/laneflow_area_selftest.py $<TARGET_FILE:osm2xodr>)
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/laneflow_area_selftest.py $<TARGET_FILE:odrforge_cli>)
       # kerb_gap.py (the proof measure of kerb-anchored edges): edges on the kerbs, and planted ones off them
       add_test(NAME kerb_gap_selftest COMMAND ${Python3_EXECUTABLE} -I
-               ${CMAKE_CURRENT_SOURCE_DIR}/tests/kerb_gap_selftest.py $<TARGET_FILE:osm2xodr>)
+               ${CMAKE_CURRENT_SOURCE_DIR}/tests/kerb_gap_selftest.py $<TARGET_FILE:odrforge_cli>)
     else()
       message(STATUS "xmlschema not available: XSD conformance test disabled (pip install xmlschema)")
     endif()

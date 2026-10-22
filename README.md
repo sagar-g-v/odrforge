@@ -1,7 +1,8 @@
 # OdrForge
 
-OdrForge converts OpenStreetMap into ASAM OpenDRIVE. It is a C++17 library plus the `osm2xodr`
-command-line tool.
+OdrForge builds ASAM OpenDRIVE road networks from map data; OpenStreetMap is the source it reads today. It is a
+C++17 library plus the `odrforge` command-line tool: `odrforge build` makes a network (the source is chosen by
+`--from`, or by the input's file extension), `odrforge view` writes an interactive HTML view of any OpenDRIVE file.
 
 - **Standard geometry only.** Reference lines are clothoid splines of `line`, `arc` and `spiral`
   elements, with continuous heading and curvature.
@@ -43,7 +44,7 @@ Dependencies (pugixml and nlohmann/json) are fetched at configure time and pinne
 ## Use
 
 ```bat
-osm2xodr area.osm out.xodr --country US --target carla --origin 34.054,-118.2575
+odrforge build area.osm out.xodr --country US --target carla --origin 34.054,-118.2575
 ```
 
 ```cpp
@@ -64,7 +65,7 @@ odr::write(od, "out.xodr", {opt.target.revMinor});
 ```bat
 python tools\make_terrain.py --origin 34.054,-118.2575 --bounds 34.044,-118.27,34.064,-118.245 ^
     --dem usgs_1m.tif --lidar tile.laz --ground ground.odrz --structures decks.odrz --datum NAVD88
-osm2xodr area.osm out.xodr --country US --target carla --origin 34.054,-118.2575 ^
+odrforge build area.osm out.xodr --country US --target carla --origin 34.054,-118.2575 ^
     --terrain ground.odrz --structures decks.odrz --clip 34.044,-118.27,34.064,-118.245
 ```
 
@@ -79,7 +80,7 @@ The vertical datum of the grids is recorded in the header `userData`. See
 ```bat
 python tools\make_basemap.py --origin 34.054,-118.2575 --bounds 34.044,-118.27,34.064,-118.245 ^
     --out out_basemap --osm area.osm --naip
-osm2xodr area.osm out.xodr ... --viz out.html --basemap out_basemap
+odrforge build area.osm out.xodr ... --viz out.html --basemap out_basemap
 ```
 
 The viewer's Background selector then offers:
@@ -93,8 +94,8 @@ lanes over it, or lanes beside the street in the imagery, is a difference to loo
 ## Visualise
 
 ```bat
-osm2xodr area.osm out.xodr --country US --viz out.html
-xodrviz any.xodr view.html
+odrforge build area.osm out.xodr --country US --viz out.html
+odrforge view any.xodr view.html
 ```
 
 Both commands write one self-contained HTML file. Nothing is fetched from the web unless you turn

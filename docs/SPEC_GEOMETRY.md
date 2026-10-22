@@ -822,7 +822,7 @@ CLI option, and must be stated in the output header `userData`.
 
 `flowprobe` (scratch checker, `build/tmp/spec/spec/flowprobe.py`) implements FLOW-0..4 and FLOW-6,
 NAT-1/2/4, XS-5 at links, JCT-6, TOP-1/SIM-3 and SIM-5 as written above. Boundaries come from the
-gate's `--clip` boxes, projected as `osm2xodr` projects them (min/max of the four corners). Dead ends
+gate's `--clip` boxes, projected as `odrforge build` projects them (min/max of the four corners). Dead ends
 come from the degree of OSM nodes over the emitted ways.
 
 | Rule | la | munich | london | frankfurt_kreuz | stelvio |

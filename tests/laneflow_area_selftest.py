@@ -1,10 +1,10 @@
 """Planted-defect test of laneflow's street-side parking explanation (tools/inspect/laneflow.py edge.break.osm_area):
-a street with a street-side parking area beside part of it is converted (osm2xodr, standard profile); the parking lane
+a street with a street-side parking area beside part of it is converted (odrforge build, standard profile); the parking lane
 (and its strip) starting and stopping at the area grow from / fall to zero width there and are explained by the area.
 Planted: the area missing from the OSM laneflow reads, or the lane starting at full width (a jump) - neither may be
 explained by the area (the tiny synthetic map gives laneflow no road-to-OSM mapping, so such a break is classed
 osm_unknown here, unexplained in the reference areas).
-usage: python laneflow_area_selftest.py <osm2xodr.exe>   (exit 0 = pass; ctest)"""
+usage: python laneflow_area_selftest.py <odrforge.exe>   (exit 0 = pass; ctest)"""
 import math
 import os
 import subprocess
@@ -52,8 +52,8 @@ def write_osm(path, with_area):
 
 
 def convert(exe, osm, xodr, extra=()):
-    """osm2xodr, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
-    args = [exe, osm, xodr, "--target", "standard", "--country", "DE", "--origin", f"{LAT0},{LON0}", *extra]
+    """odrforge build, standard profile; once more after a pause if it fails (a just-linked exe can be held by a scan)"""
+    args = [exe, "build", osm, xodr, "--target", "standard", "--country", "DE", "--origin", f"{LAT0},{LON0}", *extra]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0:
         time.sleep(3)
@@ -79,7 +79,7 @@ def main():
         write_osm(bare, False)
         r = convert(exe, osm, xodr)
         check(r.returncode == 0 and "street-side parking: 1 mapped areas drawn" in r.stdout,
-              f"osm2xodr draws the area ({r.stdout[-400:]}{r.stderr[-400:]})")
+              f"odrforge build draws the area ({r.stdout[-400:]}{r.stderr[-400:]})")
         b = breaks(xodr, osm)
         explained, unexplained = b.get("edge.break.osm_area", []), b.get("edge.break.unexplained", [])
         check(len(explained) >= 2, f"the lane's start and end are explained by the area ({len(explained)})")
@@ -105,7 +105,7 @@ def main():
         check(not any(i.get("kind") == "start" for i in b.get("edge.break.osm_area", [])) and
               any(i.get("kind") == "start" for v in b.values() for i in v),
               "a parking lane starting at full width is not explained by the area")
-        # the clip box in the header (osm2xodr --clip) decides which areas the coverage measure counts
+        # the clip box in the header (odrforge build --clip) decides which areas the coverage measure counts
         for (x0, y0, x1, y1), want in (((-120, -60, 120, 60), 1), ((30, -60, 120, 60), 0)):
             (la0, lo0), (la1, lo1) = ll(x0, y0), ll(x1, y1)
             box = f"{la0:.6f},{lo0:.6f},{la1:.6f},{lo1:.6f}"

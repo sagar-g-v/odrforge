@@ -7,7 +7,7 @@ refreshed: a converter change that lifts roads off the ground, lets a deck road 
 leaves a stale output fails here. The limits are the proven numbers plus a small margin; they are tightened with new
 evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks per area:
   fresh        every output (carla <area>.xodr, <area>_standard.xodr, <area>_ground_conformed.odrz) is newer than its
-               inputs (OSM, ground and deck grids, osm2xodr.exe) - London road 389 floated 39 m in a carla file written
+               inputs (OSM, ground and deck grids, odrforge.exe) - London road 389 floated 39 m in a carla file written
                before its deck grid existed
   conformed    paved edges minus the 0.05 m road floor vs the conformed ground (OpenDRIVE 1.8.0 §10.5: z = elevation +
                t tan(superelevation)); edges whose ground another, lower road's floor or cut holds down (lower wins, user
@@ -24,7 +24,7 @@ evidence, never loosened to let a change pass (docs/TERRAIN_CONTRACT.md). Checks
                bridge (Frankfurt: the Hugo-Eckener-Ring under the terminal forecourt, covered=yes, ran 7 m under it as a
                plain road and the conformed ground trenched it; elevation.cpp coveredUnderpasses)
   objects      trees and street lamps off bridge stretches stand within 0.3 m of the conformed ground under them
-               (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; osm2xodr seats them on that ground)
+               (base = elevation(s) + zOffset, XSD 1.8.1 @zOffset; odrforge build seats them on that ground)
   floating     lane points more than 1 m over the conformed ground (outside tunnels / bridges): the road floor's
                lower-wins cost where roads at different heights lie within a cell or the cut's reach (held at the counts)
   above        roads with a lane point where the conformed ground stands over the road floor - the lane's surface minus
@@ -55,7 +55,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 DATA = r"C:\mywork\osm2carla"
 TOUT = os.path.join(DATA, "build", "testareas")
-EXE = os.path.join(REPO, "build", "Release", "osm2xodr.exe")
+EXE = os.path.join(REPO, "build", "Release", "odrforge.exe")
 SE_PLAIN = 0.085            # plain-road interior: atan(8 %) = 0.0798 + cubic overshoot (measured max 0.0822)
 SE_ALL = math.atan(0.15) + 2e-3  # junction-plane cap (measured max 0.1489 = atan(15 %))
 OBJECT_TOL = 0.3  # m: a tree / street lamp base vs the conformed ground under it (off bridge stretches)
@@ -485,7 +485,7 @@ def check(area, d=TOUT, exe=EXE, profiles=("standard", "carla")):
     lim, f, problems = CONTRACT[area], files(area, d), []
     old = stale(f, exe)
     if old:
-        problems.append(f"{area} fresh: older than their inputs (OSM, grids, osm2xodr): {', '.join(old)}")
+        problems.append(f"{area} fresh: older than their inputs (OSM, grids, odrforge.exe): {', '.join(old)}")
     named = tuple(lim.get("named", {}))
     metrics = {}
     for prof in profiles:
