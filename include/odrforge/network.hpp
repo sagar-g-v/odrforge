@@ -82,6 +82,9 @@ struct BuildOptions {
   /// the carriageway edge follows the OSM kerb line (barrier=kerb) beside it: the outermost travelled lane's width
   /// (2 - 5.5 m) and, on a side without lanes, the lane offset vary along the road (kerbs.cpp)
   bool followKerbs = true;
+  /// independent pieces of work (junctions trimmed, barrier samples placed) run on several threads; false: one after
+  /// the other. The result is the same either way (each piece writes only its own result, consumed in order).
+  bool parallel = true;
   std::set<OsmId> includeWays;  ///< ways included regardless of the class filters (lot aisles are added here)
   std::string name = "OdrForge network";
 };

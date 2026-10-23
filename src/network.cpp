@@ -447,7 +447,7 @@ void Builder::trimRoads() {
   }
   // every road end belongs to one cluster and the rest is read only: clusters are trimmed in
   // parallel, with the same result as one after the other
-  std::for_each(std::execution::par, clusters.begin(), clusters.end(), [&](Cluster &c) {
+  forEach(opt.parallel, clusters.begin(), clusters.end(), [&](Cluster &c) {
     if (c.ends.size() < 2) return;
     // the part of every road within reach of the junction (projection targets)
     std::vector<ReferenceLine> nearPart(c.ends.size());
