@@ -67,6 +67,11 @@ class ReferenceLine {
   Pose eval(double s) const;  ///< clamps s to [0, length]
   /// Closest point on the line: returns s and signed lateral offset t (left positive).
   void project(const Vec2 &p, double &s, double &t) const;
+  /// The midpoint of every element, as project() measures them: for a line projected onto many times, computed once.
+  std::vector<Vec2> midpoints() const;
+  /// project() with the element midpoints given (midpoints() of this line, unchanged since): the same result, without
+  /// evaluating every element's midpoint on every call. A list of another size is ignored.
+  void project(const Vec2 &p, double &s, double &t, const std::vector<Vec2> &mids) const;
   /// Re-number s along the line and recompute element start poses from the first element
   /// (removes drift so consecutive elements are exactly continuous).
   void finalize();
@@ -79,6 +84,9 @@ class ReferenceLine {
   /// Fold elements shorter than minLen into a neighbour. OpenDRIVE 1.8.0 §9.2 only requires @length > 0
   /// (XSD t_grZero); the minLen floor (1 cm) is our own guard against degenerate elements, not a spec value.
   void dropTiny(double minLen = 0.01);  // elements under 1 cm are folded into a neighbour (validator rule spec2.min_geometry_length)
+
+ private:
+  void projectImpl(const Vec2 &p, double &s, double &t, const std::vector<Vec2> *mids) const;
 };
 
 }  // namespace odrforge

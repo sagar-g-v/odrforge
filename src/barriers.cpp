@@ -113,6 +113,9 @@ void Builder::roadBarriers() {
       roadGrid[{static_cast<int>(std::floor(p.x / kCell)), static_cast<int>(std::floor(p.y / kCell))}].insert(i);
     }
   const double maxSin = std::sin(kMaxAngle * kPi / 180.0);
+  // every road's element midpoints for the projections below (barriers add objects, the reference lines stay)
+  std::vector<std::vector<Vec2>> mids(od.roads.size());
+  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.midpoints();
 
   // the road a barrier sample lines (false: none, or it would stand on a lane in use)
   auto place = [&](const Vec2 &q, const Vec2 &dir, int layer, const BarrierKind &k, BarrierSample &out) {
@@ -125,7 +128,7 @@ void Builder::roadBarriers() {
     for (int c : cand) {
       const odr::Road &r = od.roads[metas[c].roadIndex];
       double s, t;
-      r.planView.project(q, s, t);
+      r.planView.project(q, s, t, mids[static_cast<size_t>(metas[c].roadIndex)]);
       if (s <= 1e-3 || s >= r.length() - 1e-3) continue;
       const Pose p = r.planView.eval(s);
       if (std::abs((q - p.pos()).dot(p.dir())) > 0.5 || std::abs(dir.cross(p.dir())) > maxSin) continue;
@@ -176,7 +179,7 @@ void Builder::roadBarriers() {
       if (ri == metas[smp.meta].roadIndex) continue;
       const odr::Road &o = od.roads[ri];
       double s, t;
-      o.planView.project(q, s, t);
+      o.planView.project(q, s, t, mids[static_cast<size_t>(ri)]);
       if (s <= 1e-3 || s >= o.length() - 1e-3) continue;
       const Pose p = o.planView.eval(s);
       if (std::abs((q - p.pos()).dot(p.dir())) > 0.5 || std::abs(odr::surfaceZ(o, s, t) - zHere) > kOtherLevel) continue;

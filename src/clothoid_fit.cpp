@@ -308,6 +308,7 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
   for (int round = 0; round < 12; ++round) {
     double worst = o.maxLegDeviation;
     std::optional<Vec2> add;
+    const std::vector<Vec2> mids = line.midpoints();  // this round's line, projected onto many times
     for (size_t i = 0; i + 1 < src.size(); ++i) {
       const Vec2 a = src[i], b = src[i + 1];
       const double L = (b - a).norm();
@@ -315,18 +316,18 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
       for (double u : {0.25, 0.5, 0.75}) {
         if (u * L < reach[i] || (1.0 - u) * L < reach[i + 1]) continue;
         double s, t;
-        line.project(a + (b - a) * u, s, t);
+        line.project(a + (b - a) * u, s, t, mids);
         if (std::abs(t) > worst) worst = std::abs(t), add = a + (b - a) * u;
       }
     }
     if (!add) break;
     // insert the midpoint in source order (between the kept vertices around it)
     double sAdd, tAdd;
-    line.project(*add, sAdd, tAdd);
+    line.project(*add, sAdd, tAdd, mids);
     size_t at = 1;
     for (; at < q.size(); ++at) {
       double sq, tq;
-      line.project(q[at], sq, tq);
+      line.project(q[at], sq, tq, mids);
       if (sq > sAdd) break;
     }
     if (at >= q.size() || (q[at] - *add).norm() < 0.5 || (q[at - 1] - *add).norm() < 0.5) break;

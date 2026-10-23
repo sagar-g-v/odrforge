@@ -122,6 +122,9 @@ void Builder::resolveOverlaps() {
     double half = 0.0;
   };
   std::vector<Reach> reach(metas.size());
+  // every road's element midpoints, for the projections onto it (a shift changes laneOffset, not the reference lines)
+  std::vector<std::vector<Vec2>> mids(od.roads.size());
+  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.midpoints();
   auto measure = [&](int mi) {  // again whenever the road's laneOffset changes
     const odr::Road &r = od.roads[metas[mi].roadIndex];
     const double L = r.length();
@@ -213,7 +216,7 @@ void Builder::resolveOverlaps() {
               const RoadMeta &mb = metas[mj];
               const odr::Road &b = od.roads[mb.roadIndex];
               double sb, tb;
-              b.planView.project(pa.pos(), sb, tb);
+              b.planView.project(pa.pos(), sb, tb, mids[static_cast<size_t>(mb.roadIndex)]);
               if (sb < 0.5 || sb > b.length() - 0.5) continue;  // ends meet in junctions instead
               const Pose pb = b.planView.eval(sb);
               if (std::abs((pa.pos() - pb.pos()).dot(pb.dir())) > 0.5) continue;

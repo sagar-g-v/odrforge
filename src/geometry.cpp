@@ -138,13 +138,29 @@ Pose ReferenceLine::eval(double s) const {
 }
 
 void ReferenceLine::project(const Vec2 &p, double &sOut, double &tOut) const {
+  projectImpl(p, sOut, tOut, nullptr);
+}
+
+std::vector<Vec2> ReferenceLine::midpoints() const {
+  std::vector<Vec2> mids;
+  mids.reserve(elements.size());
+  for (const GeomElement &e : elements) mids.push_back(e.eval(0.5 * e.length).pos());
+  return mids;
+}
+
+void ReferenceLine::project(const Vec2 &p, double &sOut, double &tOut, const std::vector<Vec2> &mids) const {
+  projectImpl(p, sOut, tOut, mids.size() == elements.size() ? &mids : nullptr);
+}
+
+void ReferenceLine::projectImpl(const Vec2 &p, double &sOut, double &tOut, const std::vector<Vec2> *mids) const {
   // coarse sampling then Newton refinement on the tangent condition
   const double L = length();
   double best = std::numeric_limits<double>::max(), bestS = 0.0;
-  for (const GeomElement &e : elements) {
+  for (size_t k = 0; k < elements.size(); ++k) {
+    const GeomElement &e = elements[k];
     // bounding-circle rejection, then a few samples per element (curvature-aware)
-    const Pose mid = e.eval(0.5 * e.length);
-    if ((mid.pos() - p).norm() - 0.5 * e.length > best) continue;
+    const Vec2 mid = mids ? (*mids)[k] : e.eval(0.5 * e.length).pos();
+    if ((mid - p).norm() - 0.5 * e.length > best) continue;
     const double turn = std::abs(0.5 * (e.k0 + e.k1)) * e.length + std::abs(e.k1 - e.k0) * e.length;
     const int n = std::max(4, static_cast<int>(std::min(e.length / 2.0, 8.0 + 16.0 * turn)));
     for (int i = 0; i <= n; ++i) {
