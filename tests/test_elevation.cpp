@@ -846,6 +846,32 @@ TEST_CASE("terrain: a street on a structure OSM does not call a bridge takes the
   CHECK_NEAR(zThrough(od, 0, 100, isStreet), 20.0, 0.1);  // under the bus: the ground
 }
 
+TEST_CASE("terrain: the conformed ground is the same grid on several threads and on one") {
+  // a 5 x 5 street grid over 500 m of rolling terrain at 0.5 m cells: its roads cross many 64-row bands of the grid
+  OsmB b;
+  std::vector<std::vector<OsmId>> n(5, std::vector<OsmId>(5));
+  for (int i = 0; i < 5; ++i)
+    for (int j = 0; j < 5; ++j) n[i][j] = b.node(-200.0 + 100.0 * i, -200.0 + 100.0 * j);
+  for (int i = 0; i < 5; ++i) {
+    b.way({n[i][0], n[i][1], n[i][2], n[i][3], n[i][4]}, {{"highway", "residential"}});
+    b.way({n[0][i], n[1][i], n[2][i], n[3][i], n[4][i]}, {{"highway", "residential"}});
+  }
+  Terrain t;
+  t.ground = makeGrid(-260, -260, 0.5, 1041, 1041, 1, [](int, double x, double y) {
+    return static_cast<float>(100.0 + 0.03 * x + 0.02 * y + 2.0 * std::sin(x / 37.0) * std::cos(y / 23.0));
+  });
+  BuildOptions o = baseOptions();
+  o.terrain = &t;
+  const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
+  ConformOptions one;
+  one.parallel = false;
+  const TerrainGrid many = conformGround(od, t.ground), single = conformGround(od, t.ground, one);
+  CHECK(many.z.size() == single.z.size() && std::memcmp(many.z.data(), single.z.data(), many.z.size() * sizeof(float)) == 0);
+  size_t changed = 0;
+  for (size_t k = 0; k < many.z.size(); ++k) changed += many.z[k] != t.ground.z[k];
+  CHECK(changed > 100000);  // the roads and their slopes reach well over a tenth of the cells
+}
+
 TEST_CASE("terrain: an untagged road under a street on a structure keeps the ground, the street the deck") {
   // the risk of street decks: a road passing under the structure without tunnel / layer tags. Its deck cells lie only
   // along the upper street (make_terrain.py: within 3 m of its centre line), so the road beneath crosses a 6 m strip of

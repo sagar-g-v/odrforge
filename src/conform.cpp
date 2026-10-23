@@ -5,6 +5,8 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <cstddef>
+#include <cstdint>
 #include <execution>
 #include <map>
 #include <memory>
@@ -90,9 +92,10 @@ class Tiles {
     }
     return t[cellIn(i, j)];
   }
+  /// a tile's side: rows kSize * n .. kSize * (n + 1) - 1 lie in their own tiles (written by one thread at a time)
+  static constexpr int kShift = 6, kSize = 1 << kShift;
 
  private:
-  static constexpr int kShift = 6, kSize = 1 << kShift;
   size_t tile(int i, int j) const { return static_cast<size_t>(j >> kShift) * static_cast<size_t>(tnx_) + static_cast<size_t>(i >> kShift); }
   static size_t cellIn(int i, int j) { return static_cast<size_t>(j & (kSize - 1)) * kSize + static_cast<size_t>(i & (kSize - 1)); }
   int tnx_;
@@ -100,18 +103,29 @@ class Tiles {
   std::vector<std::unique_ptr<T[]>> tiles_;
 };
 
-/// fn(0) .. fn(n - 1) on the parallel algorithms' threads; each call writes only its own results
+/// fn(0) .. fn(n - 1) on the parallel algorithms' threads (ConformOptions::parallel), else one after the other; each
+/// call writes only its own results
 template <class Fn>
-void inParallel(size_t n, Fn &&fn) {
+void inParallel(size_t n, Fn &&fn, bool parallel = true) {
   std::vector<size_t> idx(n);
   std::iota(idx.begin(), idx.end(), size_t{0});
-  std::for_each(std::execution::par, idx.begin(), idx.end(), fn);
+  if (parallel) std::for_each(std::execution::par, idx.begin(), idx.end(), fn);
+  else std::for_each(idx.begin(), idx.end(), fn);
 }
 /// roads measured in parallel per batch, their results applied in road order: a batch's results stay small
 constexpr size_t kRoadBatch = 256;
 
+/// the grid rows rasterTriangle visits for t: j0 .. j1 (none when j0 > j1)
+void triangleRows(const TerrainGrid &g, const std::array<P3, 3> &t, int &j0, int &j1) {
+  const auto &[a, b, c] = t;
+  const double h = g.cell;
+  j0 = std::max(0, static_cast<int>(std::floor((std::min({a.y, b.y, c.y}) - h - g.originY) / g.cell)));
+  j1 = std::min(g.ny - 1, static_cast<int>(std::ceil((std::max({a.y, b.y, c.y}) + h - g.originY) / g.cell)));
+}
+
+/// rows rowLo .. rowHi only (each row's cells are rastered on their own: the rows of a triangle can be split)
 void rasterTriangle(Tiles<double> &cap, const TerrainGrid &g, const std::array<P3, 3> &t, double eps, Box &box,
-                    Tiles<double> *highest = nullptr) {
+                    Tiles<double> *highest = nullptr, int rowLo = 0, int rowHi = std::numeric_limits<int>::max()) {
   const auto &[a, b, c] = t;
   const double area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
   if (std::abs(area) < 1e-9) return;
@@ -119,8 +133,9 @@ void rasterTriangle(Tiles<double> &cap, const TerrainGrid &g, const std::array<P
   const double gy = ((c.z - a.z) * (b.x - a.x) - (b.z - a.z) * (c.x - a.x)) / area;
   const double h = g.cell;
   const bool steep = std::hypot(gx, gy) > kMaxPlaneGrade;
-  const int j0 = std::max(0, static_cast<int>(std::floor((std::min({a.y, b.y, c.y}) - h - g.originY) / g.cell)));
-  const int j1 = std::min(g.ny - 1, static_cast<int>(std::ceil((std::max({a.y, b.y, c.y}) + h - g.originY) / g.cell)));
+  int j0, j1;
+  triangleRows(g, t, j0, j1);
+  j0 = std::max(j0, rowLo), j1 = std::min(j1, rowHi);
   const P3 P[3] = {a, b, c};
   for (int j = j0; j <= j1; ++j) {
     // a cell's square [mx +- h] x [my +- h] meets the (convex) triangle exactly where the triangle's part inside the
@@ -434,7 +449,7 @@ void conformInPlace(const odr::OpenDrive &od, TerrainGrid &out, const ConformOpt
     std::vector<std::vector<CellZ>> passes(std::min(kRoadBatch, od.roads.size()));
     for (size_t r0 = 0; r0 < od.roads.size(); r0 += kRoadBatch) {
       const size_t n = std::min(kRoadBatch, od.roads.size() - r0);
-      inParallel(n, [&](size_t b) { roadPasses(od.roads[r0 + b], passes[b]); });
+      inParallel(n, [&](size_t b) { roadPasses(od.roads[r0 + b], passes[b]); }, opt.parallel);
       for (size_t b = 0; b < n; ++b)
         for (const CellZ &c : passes[b]) {
           const int i = static_cast<int>(c.k % nx), j = static_cast<int>(c.k / nx);
@@ -480,8 +495,23 @@ void conformInPlace(const odr::OpenDrive &od, TerrainGrid &out, const ConformOpt
       if (b >= buckets.size()) buckets.resize(b + 1);
       buckets[b].push_back({nd, m});
     };
+    // a cell inside the window's rim has all eight neighbours in the window (and so in the grid): their offsets in the
+    // loop's order below, with the same step lengths
+    const double straight = cell * 1.0, diagonal = cell * std::sqrt(2.0);
+    const std::ptrdiff_t sx = wx;
+    const std::ptrdiff_t offset[8] = {-sx - 1, -sx, -sx + 1, -1, 1, sx - 1, sx, sx + 1};
+    const double stepOf[8] = {diagonal, straight, diagonal, straight, straight, diagonal, straight, diagonal};
     auto expand = [&](double d, size_t w) {
-      const int i = win.i0 + static_cast<int>(w % wx), j = win.j0 + static_cast<int>(w / wx);
+      const int wi = static_cast<int>(w % wx), wj = static_cast<int>(w / wx);
+      if (wi > 0 && wj > 0 && wi < wx - 1 && wj < wy - 1) {
+        for (int k = 0; k < 8; ++k) {
+          const size_t m = static_cast<size_t>(static_cast<std::ptrdiff_t>(w) + offset[k]);
+          const double nd = d + stepOf[k];
+          if (nd < dist[m]) dist[m] = nd, roadZ[m] = roadZ[w], push(nd, m);
+        }
+        return;
+      }
+      const int i = win.i0 + wi, j = win.j0 + wj;
       for (int dj = -1; dj <= 1; ++dj)
         for (int di = -1; di <= 1; ++di) {
           if (!di && !dj) continue;
@@ -579,13 +609,47 @@ void conformInPlace(const odr::OpenDrive &od, TerrainGrid &out, const ConformOpt
     }
   };
   {
+    // a batch's triangles are rastered in bands of a tile's rows, the bands in parallel: each band takes every triangle
+    // over its rows in road and triangle order, so every cell sees the same writes in the same order as one road after
+    // the other (a cell's rows lie in one band, a band's tiles are its own)
+    constexpr int kBand = Tiles<double>::kSize;
     std::vector<std::vector<Triangle>> tris(std::min(kRoadBatch, od.roads.size()));
+    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> inBand(static_cast<size_t>((ny + kBand - 1) / kBand));
+    std::vector<int> bands;  // the bands holding triangles of the batch
     for (size_t r0 = 0; r0 < od.roads.size(); r0 += kRoadBatch) {
       const size_t n = std::min(kRoadBatch, od.roads.size() - r0);
-      inParallel(n, [&](size_t b) { roadTriangles(od.roads[r0 + b], tris[b]); });
-      for (size_t b = 0; b < n; ++b) {
-        Tiles<double> *plain = od.roads[r0 + b].junction == "-1" ? &plainCap : nullptr;
-        for (const Triangle &t : tris[b]) rasterTriangle(cap, ground, t, opt.floorEpsilon, box, plain);
+      inParallel(n, [&](size_t b) { roadTriangles(od.roads[r0 + b], tris[b]); }, opt.parallel);
+      if (!opt.parallel) {  // one thread: every triangle whole, one after the other (what the bands reproduce)
+        for (size_t b = 0; b < n; ++b) {
+          Tiles<double> *plain = od.roads[r0 + b].junction == "-1" ? &plainCap : nullptr;
+          for (const Triangle &t : tris[b]) rasterTriangle(cap, ground, t, opt.floorEpsilon, box, plain);
+        }
+        continue;
+      }
+      bands.clear();
+      for (size_t b = 0; b < n; ++b)
+        for (size_t k = 0; k < tris[b].size(); ++k) {
+          int j0, j1;
+          triangleRows(ground, tris[b][k], j0, j1);
+          for (int band = j0 >= 0 ? j0 / kBand : 0; band <= j1 / kBand && j0 <= j1; ++band) {
+            if (inBand[static_cast<size_t>(band)].empty()) bands.push_back(band);
+            inBand[static_cast<size_t>(band)].push_back({static_cast<uint32_t>(b), static_cast<uint32_t>(k)});
+          }
+        }
+      std::vector<Box> boxes(bands.size());
+      inParallel(bands.size(), [&](size_t u) {
+        const int band = bands[u];
+        for (const auto &[b, k] : inBand[static_cast<size_t>(band)]) {
+          Tiles<double> *plain = od.roads[r0 + b].junction == "-1" ? &plainCap : nullptr;
+          rasterTriangle(cap, ground, tris[b][k], opt.floorEpsilon, boxes[u], plain, band * kBand, band * kBand + kBand - 1);
+        }
+      }, opt.parallel);
+      for (size_t u = 0; u < bands.size(); ++u) {
+        inBand[static_cast<size_t>(bands[u])].clear();
+        const Box &bb = boxes[u];
+        if (bb.i1 < 0) continue;
+        box.i0 = std::min(box.i0, bb.i0), box.i1 = std::max(box.i1, bb.i1);
+        box.j0 = std::min(box.j0, bb.j0), box.j1 = std::max(box.j1, bb.j1);
       }
     }
   }
@@ -615,16 +679,29 @@ void conformInPlace(const odr::OpenDrive &od, TerrainGrid &out, const ConformOpt
   double capMin = kInf, groundMax = -kInf;
   for (int j = box.j0; j <= box.j1; ++j)
     for (int i = box.i0; i <= box.i1; ++i) capMin = std::min(capMin, cap.get(i, j));
-  for (const float z : out.z)
-    if (!std::isnan(z)) groundMax = std::max(groundMax, static_cast<double>(z));
+  {  // in parallel slices; groundMax only bounds the cone's reach (a comparison and a difference): the slices' order of
+     // folding cannot change it (equal values are equal; +0 and -0 give the same reach)
+    constexpr size_t kSlices = 64;
+    std::vector<double> sliceMax(kSlices, -kInf);
+    const size_t N = out.z.size();
+    inParallel(kSlices, [&](size_t q) {
+      double m = -kInf;
+      for (size_t k = N * q / kSlices; k < N * (q + 1) / kSlices; ++k)
+        if (!std::isnan(out.z[k])) m = std::max(m, static_cast<double>(out.z[k]));
+      sliceMax[q] = m;
+    }, opt.parallel);
+    for (const double m : sliceMax) groundMax = std::max(groundMax, m);
+  }
   const int reach = groundMax > capMin ? static_cast<int>(std::ceil((groundMax - capMin) / (opt.floorSlope * cell))) + 1 : 1;
   box.i0 = std::max(0, box.i0 - reach), box.j0 = std::max(0, box.j0 - reach);
   box.i1 = std::min(nx - 1, box.i1 + reach), box.j1 = std::min(ny - 1, box.j1 + reach);
   // the cone over that box alone, as one array (its row order the grid's)
   const int bx = box.i1 - box.i0 + 1, by = box.j1 - box.j0 + 1;
   std::vector<double> boxCap(static_cast<size_t>(bx) * by);
-  for (int j = box.j0; j <= box.j1; ++j)
-    for (int i = box.i0; i <= box.i1; ++i) boxCap[static_cast<size_t>(j - box.j0) * bx + (i - box.i0)] = cap.get(i, j);
+  inParallel(static_cast<size_t>(by), [&](size_t r) {  // row by row
+    const int j = box.j0 + static_cast<int>(r);
+    for (int i = box.i0; i <= box.i1; ++i) boxCap[r * bx + (i - box.i0)] = cap.get(i, j);
+  }, opt.parallel);
   cap = Tiles<double>(0, 0, kInf);
   plainCap = Tiles<double>(0, 0, -kInf);
   Box local;
