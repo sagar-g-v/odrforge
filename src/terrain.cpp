@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <execution>
 #include <fstream>
+#include <numeric>
 #include <stdexcept>
 
 namespace odrforge {
@@ -82,13 +84,39 @@ float TerrainGrid::emptyCell() {
   return v;
 }
 
+namespace {
+/// fn(0) .. fn(n - 1) in parallel, each with its own stream on the file at `path` (the parts of a large grid are read
+/// at once); false when a part could not be read in full
+template <class Fn>
+bool readParts(const std::string &path, size_t n, Fn &&fn) {
+  std::vector<size_t> idx(n);
+  std::iota(idx.begin(), idx.end(), size_t{0});
+  std::vector<char> ok(n, 0);
+  std::for_each(std::execution::par, idx.begin(), idx.end(), [&](size_t p) {
+    std::ifstream f(path, std::ios::binary);
+    ok[p] = f && fn(p, f);
+  });
+  return std::all_of(ok.begin(), ok.end(), [](char c) { return c != 0; });
+}
+/// parts a grid of `cells` heights is read in: 16 from 4 MB on (LA's grids: 0.8 and 1.6 GB), else one
+size_t partsFor(size_t cells) { return cells * sizeof(float) >= (size_t{4} << 20) ? 16 : 1; }
+}  // namespace
+
 TerrainGrid TerrainGrid::load(const std::string &path) {
   std::ifstream f(path, std::ios::binary);
   TerrainGrid g;
   readHeader(f, path, g);
+  const std::streamoff data = f.tellg();
   g.z.resize(static_cast<size_t>(g.levels) * g.nx * g.ny);
-  f.read(reinterpret_cast<char *>(g.z.data()), static_cast<std::streamsize>(g.z.size() * sizeof(float)));
-  if (!f) throw std::runtime_error("terrain: truncated grid " + path);
+  // the heights of a large grid in parts read at once, each the file's bytes at its offset
+  const size_t n = g.z.size(), kParts = partsFor(n);
+  const bool ok = readParts(path, kParts, [&](size_t p, std::ifstream &part) {
+    const size_t a = n * p / kParts, b = n * (p + 1) / kParts;
+    part.seekg(data + static_cast<std::streamoff>(a * sizeof(float)));
+    part.read(reinterpret_cast<char *>(g.z.data() + a), static_cast<std::streamsize>((b - a) * sizeof(float)));
+    return static_cast<bool>(part);
+  });
+  if (!ok) throw std::runtime_error("terrain: truncated grid " + path);
   return g;
 }
 
@@ -96,16 +124,24 @@ TerrainGrid TerrainGrid::loadSparse(const std::string &path) {
   std::ifstream f(path, std::ios::binary);
   TerrainGrid g;
   readHeader(f, path, g);
+  const std::streamoff data = f.tellg();
   g.tilesX_ = (g.nx + kTile - 1) >> kTileShift, g.tilesY_ = (g.ny + kTile - 1) >> kTileShift;
   g.tileAt_.assign(static_cast<size_t>(g.levels) * g.tilesY_ * g.tilesX_, -1);
-  // a band of kTile rows at a time, cut into its tiles; a tile is kept when one of its cells is not the empty NaN
-  std::vector<float> band(static_cast<size_t>(kTile) * g.nx);
-  std::vector<float> tile(static_cast<size_t>(kTile) * kTile);
-  for (int l = 0; l < g.levels; ++l)
-    for (int ty = 0; ty < g.tilesY_; ++ty) {
+  // a band of kTile rows (per level) at a time, cut into its tiles; a tile is kept when one of its cells is not the
+  // empty NaN. The bands are read at once in parts of consecutive bands; the kept tiles are numbered in band order.
+  const size_t bands = static_cast<size_t>(g.levels) * g.tilesY_;
+  std::vector<std::vector<std::pair<int, std::vector<float>>>> kept(bands);  // per band: (tx, tile)
+  const size_t kParts = std::min(bands, partsFor(static_cast<size_t>(g.levels) * g.nx * g.ny));
+  const bool ok = readParts(path, kParts, [&](size_t p, std::ifstream &part) {
+    std::vector<float> band(static_cast<size_t>(kTile) * g.nx);
+    std::vector<float> tile(static_cast<size_t>(kTile) * kTile);
+    for (size_t bi = bands * p / kParts; bi < bands * (p + 1) / kParts; ++bi) {
+      const int l = static_cast<int>(bi / g.tilesY_), ty = static_cast<int>(bi % g.tilesY_);
       const int rows = std::min(kTile, g.ny - ty * kTile);
-      f.read(reinterpret_cast<char *>(band.data()), static_cast<std::streamsize>(static_cast<size_t>(rows) * g.nx * sizeof(float)));
-      if (!f) throw std::runtime_error("terrain: truncated grid " + path);
+      const size_t first = (static_cast<size_t>(l) * g.ny + static_cast<size_t>(ty) * kTile) * g.nx;  // its first cell
+      part.seekg(data + static_cast<std::streamoff>(first * sizeof(float)));
+      part.read(reinterpret_cast<char *>(band.data()), static_cast<std::streamsize>(static_cast<size_t>(rows) * g.nx * sizeof(float)));
+      if (!part) return false;
       for (int tx = 0; tx < g.tilesX_; ++tx) {
         const int i0 = tx * kTile, cols = std::min(kTile, g.nx - i0);
         bool keep = false;
@@ -118,12 +154,22 @@ TerrainGrid TerrainGrid::loadSparse(const std::string &path) {
             keep = keep || bits != kEmptyCellBits;
             tile[static_cast<size_t>(r) * kTile + c] = v;
           }
-        if (!keep) continue;
-        g.tileAt_[(static_cast<size_t>(l) * g.tilesY_ + ty) * g.tilesX_ + tx] = static_cast<int32_t>(g.tileZ_.size() / tile.size());
-        g.tileZ_.insert(g.tileZ_.end(), tile.begin(), tile.end());
+        if (keep) kept[bi].push_back({tx, tile});
       }
     }
-  g.tileZ_.shrink_to_fit();
+    return true;
+  });
+  if (!ok) throw std::runtime_error("terrain: truncated grid " + path);
+  size_t count = 0;
+  for (const auto &kb : kept) count += kb.size();
+  g.tileZ_.reserve(count * kTile * kTile);
+  for (size_t bi = 0; bi < bands; ++bi) {
+    for (const auto &[tx, tile] : kept[bi]) {
+      g.tileAt_[bi * g.tilesX_ + static_cast<size_t>(tx)] = static_cast<int32_t>(g.tileZ_.size() / (kTile * kTile));
+      g.tileZ_.insert(g.tileZ_.end(), tile.begin(), tile.end());
+    }
+    kept[bi] = {};
+  }
   return g;
 }
 

@@ -153,6 +153,56 @@ TEST_CASE("terrain grid: loadSparse on random grids (sizes, levels, NaN patterns
   CHECK(cellsSame);
 }
 
+TEST_CASE("terrain grid: load and loadSparse read a grid of 4 MB and more in parallel parts, the same cells") {
+  // 1100 x 1000 cells, two levels (8.8 MB: 16 parts); level 1 empty but for a few tiles
+  const auto g = makeGrid(0, 0, 1.0, 1100, 1000, 2, [](int l, double x, double y) {
+    if (l == 1) return x > 500 && x < 700 && y > 300 && y < 330 ? static_cast<float>(x - y) : std::numeric_limits<float>::quiet_NaN();
+    return static_cast<float>(0.25 * x - 0.125 * y + 1e-3 * x * y);
+  });
+  g.save("odrforge_terrain_big.odrz");
+  const TerrainGrid dense = TerrainGrid::load("odrforge_terrain_big.odrz");
+  const TerrainGrid sparse = TerrainGrid::loadSparse("odrforge_terrain_big.odrz");
+  std::remove("odrforge_terrain_big.odrz");
+  CHECK(dense.z.size() == g.z.size() && std::memcmp(dense.z.data(), g.z.data(), g.z.size() * sizeof(float)) == 0);
+  bool same = true;
+  for (int l = 0; l < 2; ++l)
+    for (int j = 0; j < 1000; ++j)
+      for (int i = 0; i < 1100; ++i) {
+        const float a = g.at(l, i, j), b = sparse.at(l, i, j);
+        same = same && std::memcmp(&a, &b, sizeof a) == 0;
+      }
+  CHECK(same);
+}
+
+TEST_CASE("terrain grid: load and loadSparse (read in parallel parts) refuse a truncated file") {
+  const auto g = makeGrid(0, 0, 1.0, 1100, 1000, 2, [](int l, double x, double y) { return static_cast<float>(l + x + y); });
+  g.save("odrforge_terrain_cut.odrz");
+  std::string bytes;
+  {
+    std::ifstream f("odrforge_terrain_cut.odrz", std::ios::binary);
+    bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+  }
+  const TerrainGrid whole = TerrainGrid::load("odrforge_terrain_cut.odrz");
+  CHECK(whole.z.size() == g.z.size() && std::memcmp(whole.z.data(), g.z.data(), g.z.size() * sizeof(float)) == 0);
+  {
+    std::ofstream f("odrforge_terrain_cut.odrz", std::ios::binary | std::ios::trunc);
+    f.write(bytes.data(), static_cast<std::streamsize>(bytes.size() - 4));  // the last cell missing
+  }
+  bool loadThrew = false, sparseThrew = false;
+  try {
+    TerrainGrid::load("odrforge_terrain_cut.odrz");
+  } catch (const std::runtime_error &) {
+    loadThrew = true;
+  }
+  try {
+    TerrainGrid::loadSparse("odrforge_terrain_cut.odrz");
+  } catch (const std::runtime_error &) {
+    sparseThrew = true;
+  }
+  std::remove("odrforge_terrain_cut.odrz");
+  CHECK(loadThrew && sparseThrew);
+}
+
 TEST_CASE("elevation: roads follow a sloped terrain and share one surface per junction") {
   OsmB b;
   const OsmId c = b.node(0, 0);
