@@ -426,10 +426,12 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         if (std::abs(g1 - g2) > 0.01) err("quality.link_grade", R_ + "grade " + std::to_string(g2) + " vs " + std::to_string(g1) + " on road " + o.id);
       }
   }
-  // every road's element midpoints, for the many projections onto it below
-  std::vector<std::vector<Vec2>> mids(od.roads.size());
-  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.midpoints();
-  auto midsOf = [&](const odr::Road &q) -> const std::vector<Vec2> & { return mids[static_cast<size_t>(&q - od.roads.data())]; };
+  // every road's projection aid, for the many projections onto it below
+  std::vector<ReferenceLine::ProjectionAid> mids(od.roads.size());
+  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.projectionAid();
+  auto midsOf = [&](const odr::Road &q) -> const ReferenceLine::ProjectionAid & {
+    return mids[static_cast<size_t>(&q - od.roads.data())];
+  };
   // one surface per junction: overlapping connecting lanes must agree in height
   {
     std::map<std::string, std::vector<const odr::Road *>> byJunction;

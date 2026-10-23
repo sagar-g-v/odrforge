@@ -177,7 +177,7 @@ void Builder::buildGores() {
     fo.maxCurvature = 1.0 / (halfWidth + 1.5);
     const ReferenceLine C = fitPolylineLimited(pts, fo);
     if (C.elements.empty()) continue;
-    const std::vector<Vec2> midsC = C.midpoints();  // C is projected onto up to 300 times below
+    const ReferenceLine::ProjectionAid midsC = C.projectionAid();  // C is projected onto up to 300 times below
     const double Lc = C.length();
     // which side the branch leaves on, and where its carriageway clears the main one
     const double LB = mB.full.length();

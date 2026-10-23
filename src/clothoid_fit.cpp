@@ -308,7 +308,7 @@ ReferenceLine fitPolyline(std::vector<Vec2> pts, const PolylineFitOptions &o) {
   for (int round = 0; round < 12; ++round) {
     double worst = o.maxLegDeviation;
     std::optional<Vec2> add;
-    const std::vector<Vec2> mids = line.midpoints();  // this round's line, projected onto many times
+    const ReferenceLine::ProjectionAid mids = line.projectionAid();  // this round's line, projected onto many times
     for (size_t i = 0; i + 1 < src.size(); ++i) {
       const Vec2 a = src[i], b = src[i + 1];
       const double L = (b - a).norm();

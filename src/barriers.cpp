@@ -113,9 +113,9 @@ void Builder::roadBarriers() {
       roadGrid[{static_cast<int>(std::floor(p.x / kCell)), static_cast<int>(std::floor(p.y / kCell))}].insert(i);
     }
   const double maxSin = std::sin(kMaxAngle * kPi / 180.0);
-  // every road's element midpoints for the projections below (barriers add objects, the reference lines stay)
-  std::vector<std::vector<Vec2>> mids(od.roads.size());
-  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.midpoints();
+  // every road's projection aid for the projections below (barriers add objects, the reference lines stay)
+  std::vector<ReferenceLine::ProjectionAid> mids(od.roads.size());
+  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.projectionAid();
 
   // the road a barrier sample lines (false: none, or it would stand on a lane in use)
   auto place = [&](const Vec2 &q, const Vec2 &dir, int layer, const BarrierKind &k, BarrierSample &out) {

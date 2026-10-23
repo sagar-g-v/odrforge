@@ -126,7 +126,7 @@ TEST_CASE("project / slice / reverse round trip") {
   CHECK_NEAR(r.eval(r.length()).y, L.eval(0).y, 1e-6);
 }
 
-TEST_CASE("project with the elements' midpoints given: the same s and t, bit for bit") {
+TEST_CASE("project with the line's projection aid given: the same s and t, bit for bit") {
   // random winding polylines fitted into lines, arcs and spirals; points near, beside and far from them
   std::mt19937 rng(7);
   std::uniform_real_distribution<double> u(-1.0, 1.0);
@@ -141,15 +141,16 @@ TEST_CASE("project with the elements' midpoints given: the same s and t, bit for
       pts.push_back(pts.back() + Vec2(std::cos(h), std::sin(h)) * len);
     }
     const ReferenceLine L = fitPolyline(pts);
-    const std::vector<Vec2> mids = L.midpoints();
-    same = same && mids.size() == L.elements.size();
+    const ReferenceLine::ProjectionAid mids = L.projectionAid();
+    same = same && mids.mids.size() == L.elements.size() && mids.first.size() == L.elements.size() + 1 &&
+           mids.first.back() == mids.points.size();
     for (int k = 0; k < 200; ++k) {
       const Pose p = L.eval((u(rng) + 1.0) * 0.5 * L.length() * 1.2 - 0.1 * L.length());
       const Vec2 q = p.offset(30.0 * u(rng)) + Vec2(5.0 * u(rng), 5.0 * u(rng));
       double s0, t0, s1, t1, s2, t2;
       L.project(q, s0, t0);
       L.project(q, s1, t1, mids);
-      L.project(q, s2, t2, std::vector<Vec2>{});  // a list of another size: computed as without one
+      L.project(q, s2, t2, ReferenceLine::ProjectionAid{});  // an aid of another size: computed as without one
       same = same && std::memcmp(&s0, &s1, sizeof s0) == 0 && std::memcmp(&t0, &t1, sizeof t0) == 0;
       fallback = fallback && std::memcmp(&s0, &s2, sizeof s0) == 0 && std::memcmp(&t0, &t2, sizeof t0) == 0;
       ++projected;

@@ -372,7 +372,7 @@ void Builder::buildRoadGeometry() {
     m.full = fitPolylineLimited(pts, fo);
     if (m.full.elements.empty() || m.full.length() < 0.5) continue;
     // s of every chain node (sections, signals, crossings are located by node)
-    const std::vector<Vec2> mids = m.full.midpoints();
+    const ReferenceLine::ProjectionAid mids = m.full.projectionAid();
     for (size_t k = 0; k < pts.size(); ++k) {
       double s, t;
       m.full.project(pts[k], s, t, mids);
@@ -451,14 +451,14 @@ void Builder::trimRoads() {
     if (c.ends.size() < 2) return;
     // the part of every road within reach of the junction (projection targets)
     std::vector<ReferenceLine> nearPart(c.ends.size());
-    std::vector<std::vector<Vec2>> nearMids(c.ends.size());  // their element midpoints (many probes per part)
+    std::vector<ReferenceLine::ProjectionAid> nearMids(c.ends.size());  // their projection aids (many probes per part)
     std::vector<double> nearStart(c.ends.size());
     for (size_t k = 0; k < c.ends.size(); ++k) {
       const RoadMeta &n = metas[c.ends[k].road];
       const double Ln = n.full.length(), reach = std::min(0.6 * Ln, trimCap(n)) + 2.0;
       nearStart[k] = c.ends[k].atEnd ? std::max(0.0, Ln - reach) : 0.0;
       nearPart[k] = n.full.slice(nearStart[k], c.ends[k].atEnd ? Ln : std::min(Ln, reach));
-      nearMids[k] = nearPart[k].midpoints();
+      nearMids[k] = nearPart[k].projectionAid();
     }
     for (const RoadEnd &e : c.ends) {
       const RoadMeta &m = metas[e.road];
