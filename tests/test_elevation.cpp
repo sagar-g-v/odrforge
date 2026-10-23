@@ -3,6 +3,7 @@
 // pitfall 11 (C1 elevation, matching z at links), plus the visual quality rules in validate().
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <map>
 
 #include "odrforge/conform.hpp"
@@ -963,6 +964,10 @@ TEST_CASE("terrain: trees and street lamps stand on the conformed ground, not at
   mark.outline = {{0, 0, 0, 0}, {1, 0, 0, 0}, {1, 1, 0, 0}};
   road->objects = {tree, lamp, mark};
   const TerrainGrid c = conformGround(od, t.ground);
+  // the ground handed over (conformed in place): the same grid, bit for bit
+  TerrainGrid handed = t.ground;
+  const TerrainGrid c2 = conformGround(od, std::move(handed));
+  CHECK(c2.z.size() == c.z.size() && std::memcmp(c2.z.data(), c.z.data(), c.z.size() * sizeof(float)) == 0);
   const SeatReport rep = seatObjects(od, c);
   CHECK(rep.seated == 1);
   CHECK(rep.onBridges == 1);

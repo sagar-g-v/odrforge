@@ -27,6 +27,8 @@ struct ConformOptions {
 /// that point's surface minus floorEpsilon (a road's own lanes inside its tunnels excepted), the cap rising at
 /// floorSlope away from them, so the road wins over the terrain. Same frame and datum.
 TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt = {});
+/// The same, the ground handed over: its level 0 becomes the result in place (no copy of a large grid held twice).
+TerrainGrid conformGround(const odr::OpenDrive &od, TerrainGrid &&ground, const ConformOptions &opt = {});
 
 struct SeatReport {
   int seated = 0;         ///< objects whose zOffset now puts their base on the ground

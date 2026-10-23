@@ -348,12 +348,21 @@ void cone(std::vector<double> &cap, int nx, const Box &b, double cell, double sl
 }
 }  // namespace
 
-TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt) {
-  TerrainGrid out;  // the ground's frame and level 0
+namespace {
+/// the ground's frame and its level 0, held in z
+TerrainGrid levelZero(const TerrainGrid &ground) {
+  TerrainGrid out;
   out.originX = ground.originX, out.originY = ground.originY, out.cell = ground.cell;
   out.nx = ground.nx, out.ny = ground.ny, out.levels = 1;
   out.datum = ground.datum;
   out.z.assign(ground.z.begin(), ground.z.begin() + static_cast<long>(ground.nx) * ground.ny);
+  return out;
+}
+
+/// conformGround on `out`, one level held in z, in place: its frame is the ground's, its heights the ground's until
+/// they are conformed (each cell's ground height is read before the cell is changed)
+void conformInPlace(const odr::OpenDrive &od, TerrainGrid &out, const ConformOptions &opt) {
+  const TerrainGrid &ground = out;  // the frame
   const int nx = ground.nx, ny = ground.ny;
   const double cell = ground.cell;
   // 1. the road surface under every lane (outside bridges and tunnels). Where roads share a cell (junction roads, the
@@ -594,7 +603,7 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
     }
     for (const auto &t : triangulate(poly)) rasterTriangle(cap, ground, t, opt.floorEpsilon, box);
   }
-  if (box.i1 < 0) return out;
+  if (box.i1 < 0) return;
   // the cone matters only within its reach of a capped cell: farther out it stands above the highest ground. The box of
   // the capped cells grown by that reach holds every cell it lowers, and the steps from a capped cell to it
   double capMin = kInf, groundMax = -kInf;
@@ -621,7 +630,19 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
       const double c = boxCap[static_cast<size_t>(j - box.j0) * bx + (i - box.i0)];
       if (c < out.z[k]) out.z[k] = static_cast<float>(c);
     }
+}
+}  // namespace
+
+TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt) {
+  TerrainGrid out = levelZero(ground);
+  conformInPlace(od, out, opt);
   return out;
+}
+
+TerrainGrid conformGround(const odr::OpenDrive &od, TerrainGrid &&ground, const ConformOptions &opt) {
+  if (ground.levels != 1) return conformGround(od, static_cast<const TerrainGrid &>(ground), opt);
+  conformInPlace(od, ground, opt);
+  return std::move(ground);
 }
 
 SeatReport seatObjects(odr::OpenDrive &od, const TerrainGrid &conformed) {
