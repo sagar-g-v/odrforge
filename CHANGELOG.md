@@ -5,6 +5,20 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## [Unreleased]
 
 ### Changed
+- **A conversion takes a third of the time and up to a ninth of the memory; output unchanged** (branch perf-memory).
+  conformGround works on the cells the roads reach (tiles and boxes instead of seven full-grid arrays, an exact bucket
+  queue for its distance search, roads sampled, triangulated and rastered in parallel - the raster in 64-row bands, each
+  cell written in the old order); the command line releases the terrain grids once used and conforms the ground in
+  place; bridge-deck grids are held without their empty tiles (`TerrainGrid::loadSparse`); grids of 4 MB and more are
+  read in parallel parts; projections onto an unchanged reference line reuse its element midpoints and coarse samples
+  (`ReferenceLine::ProjectionAid`: validate, overlap resolution, trims, fits, gores, barriers); barrier samples are
+  placed in parallel; coincident junction nodes are found through a grid. `BuildOptions::parallel` /
+  `ConformOptions::parallel` (default true) run the same work on one thread, for tests. Master 168b1b2 -> now (best of 3,
+  runs interleaved, peak working set): LA carla 23.3 s / 11.7 GB -> 8.4 s / 1.35 GB, standard 24.8 s / 11.7 GB ->
+  10.2 s / 1.36 GB; Munich 6.3 / 7.2 s, 0.8 GB -> 3.2 / 4.1 s, 0.37 GB; London 5.1 / 6.0 s, 0.54 GB -> 2.6 / 3.2 s,
+  0.27 GB; Frankfurt 12.5 / 19.0 s, 0.93 GB -> 4.1 / 4.8 s, 0.39 GB; Stelvio 7.3 / 7.4 s -> 0.9 / 1.0 s, 251 -> 62 /
+  70 MB; Tokyo 8.1 / 9.2 s -> 3.1 / 4.2 s (memory unchanged, no terrain). All six gate areas in both profiles give
+  byte-identical .xodr (header date apart) and console reports, and the same --ground-out grids.
 - **One command line, `odrforge`, named for what it does** (user decision 2026-10-22: the product will build road
   networks from sources other than OpenStreetMap). `osm2xodr <in> <out> ...` is now `odrforge build <in> <out> ...`
   and `xodrviz` is now `odrforge view`; the old names are gone (no aliases). `build --from SOURCE` names the map
