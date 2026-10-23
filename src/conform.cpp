@@ -355,7 +355,13 @@ TerrainGrid levelZero(const TerrainGrid &ground) {
   out.originX = ground.originX, out.originY = ground.originY, out.cell = ground.cell;
   out.nx = ground.nx, out.ny = ground.ny, out.levels = 1;
   out.datum = ground.datum;
-  out.z.assign(ground.z.begin(), ground.z.begin() + static_cast<long>(ground.nx) * ground.ny);
+  if (!ground.z.empty()) {
+    out.z.assign(ground.z.begin(), ground.z.begin() + static_cast<long>(ground.nx) * ground.ny);
+  } else {  // held in tiles (loadSparse)
+    out.z.resize(static_cast<size_t>(ground.nx) * ground.ny);
+    for (int j = 0; j < ground.ny; ++j)
+      for (int i = 0; i < ground.nx; ++i) out.z[static_cast<size_t>(j) * ground.nx + i] = ground.at(0, i, j);
+  }
   return out;
 }
 
@@ -640,7 +646,7 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
 }
 
 TerrainGrid conformGround(const odr::OpenDrive &od, TerrainGrid &&ground, const ConformOptions &opt) {
-  if (ground.levels != 1) return conformGround(od, static_cast<const TerrainGrid &>(ground), opt);
+  if (ground.levels != 1 || ground.z.empty()) return conformGround(od, static_cast<const TerrainGrid &>(ground), opt);
   conformInPlace(od, ground, opt);
   return std::move(ground);
 }

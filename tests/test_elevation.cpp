@@ -4,7 +4,12 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
+#include <limits>
 #include <map>
+#include <random>
+#include <string>
 
 #include "odrforge/conform.hpp"
 #include "odrforge/network.hpp"
@@ -75,6 +80,77 @@ TEST_CASE("terrain grid: v1/v2 round trip, bilinear sampling, stacked levels") {
   const auto lv = r.levelsAt(0.4, 0.0);
   CHECK(lv.size() == 2 && std::abs(lv[1] - 20.0) < 1e-6);
   CHECK(r.levelsAt(8.0, 0.0).size() == 1);
+}
+
+TEST_CASE("terrain grid: loadSparse reads every cell as load does, leaving out the empty tiles") {
+  // 150 x 140 cells over 3 x 3 tiles of 64; level 1 holds a deck in the last (partial) tiles, with cells of another NaN
+  // payload, and the first tile holds no number, only NaNs of both payloads (kept: not all the empty NaN)
+  const float otherNaN = -std::numeric_limits<float>::quiet_NaN();
+  const auto g = makeGrid(-10, -10, 0.5, 150, 140, 2, [&](int l, double x, double y) {
+    if (l == 0) return static_cast<float>(10 + 0.1 * x + 0.05 * y);
+    if (x > 60.0 && y > 50.0) return x > 64.0 ? otherNaN : 20.0f;  // the last tile column / row (partial tiles)
+    if (x < 0.0 && y < 0.0) return otherNaN;
+    return std::numeric_limits<float>::quiet_NaN();
+  });
+  g.save("odrforge_terrain_sparse.odrz");
+  const TerrainGrid dense = TerrainGrid::load("odrforge_terrain_sparse.odrz");
+  const TerrainGrid sparse = TerrainGrid::loadSparse("odrforge_terrain_sparse.odrz");
+  sparse.save("odrforge_terrain_sparse2.odrz");
+  const TerrainGrid again = TerrainGrid::load("odrforge_terrain_sparse2.odrz");
+  std::remove("odrforge_terrain_sparse.odrz");
+  std::remove("odrforge_terrain_sparse2.odrz");
+  CHECK(sparse.z.empty() && !sparse.empty() && sparse.levels == 2 && sparse.nx == 150 && sparse.ny == 140);
+  bool same = true;
+  for (int l = 0; l < 2; ++l)
+    for (int j = 0; j < 140; ++j)
+      for (int i = 0; i < 150; ++i) {
+        const float a = dense.at(l, i, j), b = sparse.at(l, i, j);
+        same = same && std::memcmp(&a, &b, sizeof a) == 0;
+      }
+  CHECK(same);  // bit for bit, NaN payloads included
+  CHECK(again.z.size() == dense.z.size() && std::memcmp(again.z.data(), dense.z.data(), dense.z.size() * sizeof(float)) == 0);
+  CHECK(sparse.sample(1.23, -2.71) == dense.sample(1.23, -2.71));
+  CHECK(sparse.levelsAt(63.0, 52.0) == dense.levelsAt(63.0, 52.0));
+}
+
+TEST_CASE("terrain grid: loadSparse on random grids (sizes, levels, NaN patterns) writes back the file it read") {
+  // per tile one of: all the empty NaN, numbers, numbers and NaNs, NaNs with a few of another payload
+  std::mt19937 rng(20261023);
+  const float otherNaN = -std::numeric_limits<float>::quiet_NaN();
+  auto bytes = [](const char *path) {
+    std::ifstream f(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+  };
+  bool same = true, cellsSame = true;
+  for (int round = 0; round < 12; ++round) {
+    TerrainGrid g;
+    g.originX = -3.0 * round, g.originY = 1.5 * round, g.cell = 0.5, g.datum = "RAND";
+    g.nx = 1 + static_cast<int>(rng() % 200), g.ny = 1 + static_cast<int>(rng() % 200), g.levels = 1 + static_cast<int>(rng() % 3);
+    g.z.resize(static_cast<size_t>(g.levels) * g.nx * g.ny);
+    for (int l = 0; l < g.levels; ++l)
+      for (int j = 0; j < g.ny; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+          const int kind = ((i >> 6) * 7 + (j >> 6) * 3 + l + round) % 4;
+          float v = std::numeric_limits<float>::quiet_NaN();
+          if (kind == 1 || (kind == 2 && rng() % 2)) v = static_cast<float>(rng() % 100000) * 0.01f - 300.0f;
+          if (kind == 3 && rng() % 50 == 0) v = otherNaN;
+          g.z[(static_cast<size_t>(l) * g.ny + j) * g.nx + i] = v;
+        }
+    g.save("odrforge_terrain_rand.odrz");
+    const TerrainGrid s = TerrainGrid::loadSparse("odrforge_terrain_rand.odrz");
+    s.save("odrforge_terrain_rand2.odrz");
+    same = same && bytes("odrforge_terrain_rand.odrz") == bytes("odrforge_terrain_rand2.odrz");
+    for (int l = 0; l < g.levels; ++l)
+      for (int j = 0; j < g.ny; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+          const float a = g.at(l, i, j), b = s.at(l, i, j);
+          cellsSame = cellsSame && std::memcmp(&a, &b, sizeof a) == 0;
+        }
+  }
+  std::remove("odrforge_terrain_rand.odrz");
+  std::remove("odrforge_terrain_rand2.odrz");
+  CHECK(same);
+  CHECK(cellsSame);
 }
 
 TEST_CASE("elevation: roads follow a sloped terrain and share one surface per junction") {
@@ -792,6 +868,18 @@ TEST_CASE("terrain: an untagged road under a street on a structure keeps the gro
   o.terrain = &t;
   const odr::OpenDrive od = buildOpenDrive(b.d, b.proj, o);
   CHECK(validate(od, o.target).count("quality.road_overlap") == 0);
+  {  // the deck grid held in tiles (loadSparse, as the command line holds --structures): the same network
+    t.structures.save("odrforge_decks_sparse.odrz");
+    Terrain ts;
+    ts.ground = t.ground;
+    ts.structures = TerrainGrid::loadSparse("odrforge_decks_sparse.odrz");
+    std::remove("odrforge_decks_sparse.odrz");
+    BuildOptions os = o;
+    os.terrain = &ts;
+    odr::OpenDrive sparse = buildOpenDrive(b.d, b.proj, os);
+    sparse.header.date = od.header.date;
+    CHECK(ts.structures.z.empty() && odr::toString(sparse) == odr::toString(od));
+  }
   double zUpper = NAN, zLower = NAN;
   for (const auto &r : od.roads) {
     if (r.junction != "-1") continue;
@@ -964,10 +1052,14 @@ TEST_CASE("terrain: trees and street lamps stand on the conformed ground, not at
   mark.outline = {{0, 0, 0, 0}, {1, 0, 0, 0}, {1, 1, 0, 0}};
   road->objects = {tree, lamp, mark};
   const TerrainGrid c = conformGround(od, t.ground);
-  // the ground handed over (conformed in place): the same grid, bit for bit
+  // the ground handed over (conformed in place), and the ground held in tiles: the same grid, bit for bit
   TerrainGrid handed = t.ground;
   const TerrainGrid c2 = conformGround(od, std::move(handed));
+  t.ground.save("odrforge_conform_sparse.odrz");
+  const TerrainGrid c3 = conformGround(od, TerrainGrid::loadSparse("odrforge_conform_sparse.odrz"));
+  std::remove("odrforge_conform_sparse.odrz");
   CHECK(c2.z.size() == c.z.size() && std::memcmp(c2.z.data(), c.z.data(), c.z.size() * sizeof(float)) == 0);
+  CHECK(c3.z.size() == c.z.size() && std::memcmp(c3.z.data(), c.z.data(), c.z.size() * sizeof(float)) == 0);
   const SeatReport rep = seatObjects(od, c);
   CHECK(rep.seated == 1);
   CHECK(rep.onBridges == 1);

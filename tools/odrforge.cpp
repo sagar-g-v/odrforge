@@ -158,7 +158,8 @@ static int build(int argc, char **argv) {
     }
     Terrain terrain;
     if (!terrainPath.empty()) terrain.ground = TerrainGrid::load(terrainPath);
-    if (!structuresPath.empty()) terrain.structures = TerrainGrid::load(structuresPath);
+    // bridge decks cover a small part of their grid: its empty tiles are not held
+    if (!structuresPath.empty()) terrain.structures = TerrainGrid::loadSparse(structuresPath);
     if (!terrain.ground.empty() || !terrain.structures.empty()) {
       opt.terrain = &terrain;
       opt.verticalDatum = !terrain.ground.datum.empty() ? terrain.ground.datum : terrain.structures.datum;
