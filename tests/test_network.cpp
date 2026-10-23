@@ -978,6 +978,45 @@ TEST_CASE("barriers (standard): OSM guard rails and jersey barriers become barri
   }
 }
 
+TEST_CASE("junction nodes of unconnected ways drawn under 2 m apart are one junction; 30 m apart, two") {
+  // two parallel one-way carriageways drawn 1.6 m apart (not connected by any way): on the southern one a street from
+  // the south ends at node A, on the northern one a street from the north at node B, 0.5 m east of A (on either side
+  // of x = 0) - one crossroads mapped as two nodes. With B 30 m east of A they are two T junctions. Further T junctions
+  // along both carriageways stay junctions of their own.
+  auto scene = [](double dx) {
+    OsmBuilder b;
+    const Tags street{{"highway", "residential"}};
+    std::vector<std::pair<double, OsmId>> south, north;  // the carriageways' nodes by x
+    const OsmId A = b.node(-0.25, 0), B = b.node(dx - 0.25, 1.6);
+    south.push_back({-0.25, A});
+    north.push_back({dx - 0.25, B});
+    b.way({A, b.node(-0.25, -60)}, street);
+    b.way({B, b.node(dx - 0.25, 60)}, street);
+    for (int k = -4; k <= 4; ++k)
+      if (k) {
+        const double x = 80.0 * k + 5.0;
+        const OsmId s = b.node(x, 0), n = b.node(x + 20.0, 1.6);
+        south.push_back({x, s});
+        north.push_back({x + 20.0, n});
+        b.way({s, b.node(x, -60)}, street);
+        b.way({n, b.node(x + 20.0, 60)}, street);
+      }
+    south.push_back({-400.0, b.node(-400, 0)}), south.push_back({400.0, b.node(400, 0)});
+    north.push_back({-400.0, b.node(-400, 1.6)}), north.push_back({400.0, b.node(400, 1.6)});
+    for (auto *side : {&south, &north}) {
+      std::sort(side->begin(), side->end());
+      std::vector<OsmId> nodes;
+      for (const auto &[x, n] : *side) nodes.push_back(n);
+      if (side == &north) std::reverse(nodes.begin(), nodes.end());
+      b.way(nodes, {{"highway", "residential"}, {"oneway", "yes"}});
+    }
+    return b;
+  };
+  const Result near = build(scene(0.5)), far = build(scene(30.0));
+  CHECK(far.od.junctions.size() == near.od.junctions.size() + 1);
+  CHECK(far.od.junctions.size() == 18);
+}
+
 TEST_CASE("barriers (standard): many barrier ways give their objects in way order, run by run, the same every build") {
   // 12 guard rails along a 600 m road, alternating sides; every third one dips onto the right lane in its middle
   // (samples on a lane close the run: two objects); the samples are placed in parallel and their runs built in way

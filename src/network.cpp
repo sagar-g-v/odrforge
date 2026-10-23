@@ -294,10 +294,27 @@ void Builder::clusterJunctions() {
   };
   std::vector<OsmId> jn(junctionNodes.begin(), junctionNodes.end());
   std::sort(jn.begin(), jn.end());
-  for (size_t i = 0; i < jn.size(); ++i)
-    for (size_t j = i + 1; j < jn.size(); ++j)
-      if ((pos(jn[i]) - pos(jn[j])).norm() < 2.0 && nodeLayer(jn[i]) == nodeLayer(jn[j]) && sameLevel(jn[i], jn[j], 2.0))
-        unite(jn[i], jn[j]);
+  {  // the pairs under 2 m apart, found through 4 m cells (such a pair lies in the same or neighbouring cells): the
+     // clusters below depend on which pairs are joined, not on the order they are joined in
+    constexpr double kCell = 4.0;
+    std::vector<Vec2> at(jn.size());
+    std::map<std::pair<long, long>, std::vector<size_t>> cells;
+    for (size_t i = 0; i < jn.size(); ++i) {
+      at[i] = pos(jn[i]);
+      cells[{static_cast<long>(std::floor(at[i].x / kCell)), static_cast<long>(std::floor(at[i].y / kCell))}].push_back(i);
+    }
+    for (size_t i = 0; i < jn.size(); ++i) {
+      const long cx = static_cast<long>(std::floor(at[i].x / kCell)), cy = static_cast<long>(std::floor(at[i].y / kCell));
+      for (long dx = -1; dx <= 1; ++dx)
+        for (long dy = -1; dy <= 1; ++dy) {
+          const auto it = cells.find({cx + dx, cy + dy});
+          if (it == cells.end()) continue;
+          for (const size_t j : it->second)
+            if (j > i && (at[i] - at[j]).norm() < 2.0 && nodeLayer(jn[i]) == nodeLayer(jn[j]) && sameLevel(jn[i], jn[j], 2.0))
+              unite(jn[i], jn[j]);
+        }
+    }
+  }
 
   // junctions that squeezed the road between them out (joinSqueezedJunctions), on one level only
   for (const auto &[a, b] : forcedJoins)
