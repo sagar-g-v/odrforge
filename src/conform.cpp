@@ -5,8 +5,12 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <execution>
 #include <map>
+#include <memory>
+#include <numeric>
 #include <queue>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
@@ -62,9 +66,52 @@ double lowestInSquare(const P3 (&tri)[3], double mx, double my, double h) {
 /// this raster set at each cell.
 struct Box {
   int i0 = std::numeric_limits<int>::max(), j0 = std::numeric_limits<int>::max(), i1 = -1, j1 = -1;
+  void grow(int i, int j) { i0 = std::min(i0, i), i1 = std::max(i1, i), j0 = std::min(j0, j), j1 = std::max(j1, j); }
 };
-void rasterTriangle(std::vector<double> &cap, const TerrainGrid &g, const std::array<P3, 3> &t, double eps, Box &box,
-                    std::vector<double> *highest = nullptr) {
+
+/// A work array over a grid's cells held in 64 x 64 tiles, each allocated when a cell of it is first written; every
+/// other cell reads `fill`. The roads cover a small part of a terrain grid (LA: the clip box is a tenth of the DEM's
+/// area), so the work arrays hold only the tiles they touch, not a value per grid cell.
+template <class T>
+class Tiles {
+ public:
+  Tiles(int nx, int ny, T fill)
+      : tnx_((nx + kSize - 1) >> kShift), fill_(fill), tiles_(static_cast<size_t>(tnx_) * ((ny + kSize - 1) >> kShift)) {}
+  /// cell (i, j) of the grid, 0 <= i < nx, 0 <= j < ny
+  T get(int i, int j) const {
+    const std::unique_ptr<T[]> &t = tiles_[tile(i, j)];
+    return t ? t[cellIn(i, j)] : fill_;
+  }
+  T &ref(int i, int j) {
+    std::unique_ptr<T[]> &t = tiles_[tile(i, j)];
+    if (!t) {
+      t.reset(new T[kSize * kSize]);
+      std::fill(t.get(), t.get() + kSize * kSize, fill_);
+    }
+    return t[cellIn(i, j)];
+  }
+
+ private:
+  static constexpr int kShift = 6, kSize = 1 << kShift;
+  size_t tile(int i, int j) const { return static_cast<size_t>(j >> kShift) * static_cast<size_t>(tnx_) + static_cast<size_t>(i >> kShift); }
+  static size_t cellIn(int i, int j) { return static_cast<size_t>(j & (kSize - 1)) * kSize + static_cast<size_t>(i & (kSize - 1)); }
+  int tnx_;
+  T fill_;
+  std::vector<std::unique_ptr<T[]>> tiles_;
+};
+
+/// fn(0) .. fn(n - 1) on the parallel algorithms' threads; each call writes only its own results
+template <class Fn>
+void inParallel(size_t n, Fn &&fn) {
+  std::vector<size_t> idx(n);
+  std::iota(idx.begin(), idx.end(), size_t{0});
+  std::for_each(std::execution::par, idx.begin(), idx.end(), fn);
+}
+/// roads measured in parallel per batch, their results applied in road order: a batch's results stay small
+constexpr size_t kRoadBatch = 256;
+
+void rasterTriangle(Tiles<double> &cap, const TerrainGrid &g, const std::array<P3, 3> &t, double eps, Box &box,
+                    Tiles<double> *highest = nullptr) {
   const auto &[a, b, c] = t;
   const double area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
   if (std::abs(area) < 1e-9) return;
@@ -102,9 +149,12 @@ void rasterTriangle(std::vector<double> &cap, const TerrainGrid &g, const std::a
       // point within the cell's square then - every point a reader interpolates from this cell lies in that square, so
       // it reads at most its own surface minus eps
       const double z = (steep ? lowestInSquare(P, mx, my, h) : a.z + gx * (mx - a.x) + gy * (my - a.y)) - eps;
-      double &k = cap[static_cast<size_t>(j) * g.nx + i];
+      double &k = cap.ref(i, j);
       k = std::min(k, z);
-      if (highest) (*highest)[static_cast<size_t>(j) * g.nx + i] = std::max((*highest)[static_cast<size_t>(j) * g.nx + i], z);
+      if (highest) {
+        double &top = highest->ref(i, j);
+        top = std::max(top, z);
+      }
     }
   }
 }
@@ -229,14 +279,14 @@ bool gridHeight(const odr::JunctionGrid &g, double x, double y, double &z) {
 /// is drawn in plan, and where its polygon reaches under a road beside the junction on a wall above it there is no
 /// junction surface to press the ground to; an arm's lane end at the junction's level is capped by both, the lower wins
 constexpr double kOtherLevel = 0.5;  // m
-void rasterPolygon(std::vector<double> &cap, const TerrainGrid &g, const std::vector<P3> &poly, const odr::JunctionGrid &jg,
-                   double eps, Box &box, const std::vector<double> &plainCap) {
+void rasterPolygon(Tiles<double> &cap, const TerrainGrid &g, const std::vector<P3> &poly, const odr::JunctionGrid &jg,
+                   double eps, Box &box, const Tiles<double> &plainCap) {
   const auto capCell = [&](int i, int j) {
     if (i < 0 || j < 0 || i >= g.nx || j >= g.ny) return;
     double z;
     if (!gridHeight(jg, g.originX + i * g.cell, g.originY + j * g.cell, z)) return;
-    if (plainCap[static_cast<size_t>(j) * g.nx + i] > z - eps + kOtherLevel) return;
-    double &k = cap[static_cast<size_t>(j) * g.nx + i];
+    if (plainCap.get(i, j) > z - eps + kOtherLevel) return;
+    double &k = cap.ref(i, j);
     k = std::min(k, z - eps);
     box.i0 = std::min(box.i0, i), box.i1 = std::max(box.i1, i), box.j0 = std::min(box.j0, j), box.j1 = std::max(box.j1, j);
   };
@@ -299,12 +349,13 @@ void cone(std::vector<double> &cap, int nx, const Box &b, double cell, double sl
 }  // namespace
 
 TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt) {
-  TerrainGrid out = ground;
-  out.levels = 1;
+  TerrainGrid out;  // the ground's frame and level 0
+  out.originX = ground.originX, out.originY = ground.originY, out.cell = ground.cell;
+  out.nx = ground.nx, out.ny = ground.ny, out.levels = 1;
+  out.datum = ground.datum;
   out.z.assign(ground.z.begin(), ground.z.begin() + static_cast<long>(ground.nx) * ground.ny);
   const int nx = ground.nx, ny = ground.ny;
   const double cell = ground.cell;
-  const size_t N = static_cast<size_t>(nx) * ny;
   // 1. the road surface under every lane (outside bridges and tunnels). Where roads share a cell (junction roads, the
   //    two legs of a hairpin side by side at different heights) the lowest surface is the ground: a higher road stands
   //    on its wall or embankment there, a lower one is not buried. One pass of a road over the cell gives the mean of
@@ -314,19 +365,26 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
     double s, sum;  // s of the pass's last sample in the cell
     int n;
   };
-  std::vector<double> lowest(N, kInf);
-  std::vector<int> cnt(N, 0);
-  std::unordered_map<size_t, std::vector<Pass>> own;  // this road's passes per cell
+  Tiles<double> lowest(nx, ny, kInf);
+  Tiles<char> roadCell(nx, ny, 0);  // a road's surface lies in the cell
+  Box roads;                        // every road cell
   const double step = 0.5 * cell;
   auto onList = [](const std::vector<odr::Structure> &list, double s) {
     for (const odr::Structure &st : list)
       if (s >= st.s - 1e-6 && s <= st.s + st.length + 1e-6) return true;
     return false;
   };
-  for (const odr::Road &r : od.roads) {
-    if (r.lanes.empty()) continue;
+  // one road's passes (read only, so the roads are sampled in parallel): per cell its passes' mean heights in the
+  // order the passes were made; the roads' results go into the cells in road order, as one road after the other
+  struct CellZ {
+    size_t k;
+    double z;
+  };
+  auto roadPasses = [&](const odr::Road &r, std::vector<CellZ> &result) {
+    result.clear();
+    if (r.lanes.empty()) return;
     const double L = r.length();
-    own.clear();
+    std::unordered_map<size_t, std::vector<Pass>> own;  // this road's passes per cell
     for (double s = 0.0; s <= L + 1e-9; s += step) {
       const double sc = std::min(s, L);
       if (onList(r.bridges, sc) || onList(r.tunnels, sc)) continue;
@@ -354,44 +412,98 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
         else it->sum += zs, ++it->n, it->s = sc;
       }
     }
-    for (const auto &[k, ps] : own) {
-      for (const Pass &q : ps) lowest[k] = std::min(lowest[k], q.sum / q.n);
-      ++cnt[k];
+    for (const auto &[k, ps] : own)
+      for (const Pass &q : ps) result.push_back({k, q.sum / q.n});
+  };
+  {
+    std::vector<std::vector<CellZ>> passes(std::min(kRoadBatch, od.roads.size()));
+    for (size_t r0 = 0; r0 < od.roads.size(); r0 += kRoadBatch) {
+      const size_t n = std::min(kRoadBatch, od.roads.size() - r0);
+      inParallel(n, [&](size_t b) { roadPasses(od.roads[r0 + b], passes[b]); });
+      for (size_t b = 0; b < n; ++b)
+        for (const CellZ &c : passes[b]) {
+          const int i = static_cast<int>(c.k % nx), j = static_cast<int>(c.k / nx);
+          double &lo = lowest.ref(i, j);
+          lo = std::min(lo, c.z);
+          roadCell.ref(i, j) = 1;
+          roads.grow(i, j);
+        }
     }
   }
-  // 2. distance to the nearest road cell and that cell's height (multi-source Dijkstra on the 8-neighbour grid)
-  std::vector<double> dist(N, kInf), roadZ(N, std::numeric_limits<double>::quiet_NaN());
-  using Item = std::pair<double, size_t>;
-  std::priority_queue<Item, std::vector<Item>, std::greater<>> pq;
-  for (size_t k = 0; k < N; ++k)
-    if (cnt[k] > 0) dist[k] = 0.0, roadZ[k] = lowest[k], pq.push({0.0, k});
-  while (!pq.empty()) {
-    const auto [d, k] = pq.top();
-    pq.pop();
-    if (d > dist[k] || d > opt.maxReach) continue;
-    const int i = static_cast<int>(k % nx), j = static_cast<int>(k / nx);
-    for (int dj = -1; dj <= 1; ++dj)
-      for (int di = -1; di <= 1; ++di) {
-        if (!di && !dj) continue;
-        const int a = i + di, b = j + dj;
-        if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
-        const size_t m = static_cast<size_t>(b) * nx + a;
-        const double nd = d + cell * ((di && dj) ? std::sqrt(2.0) : 1.0);
-        if (nd < dist[m]) dist[m] = nd, roadZ[m] = roadZ[k], pq.push({nd, m});
+  if (roads.i1 >= 0) {
+    // 2. distance to the nearest road cell and that cell's height (multi-source Dijkstra on the 8-neighbour grid). A
+    //    cell is expanded only within maxReach of a road cell - at most ceil(maxReach / cell) steps from one - so every
+    //    cell the search reaches lies within one step more of the road cells' box: the search runs on that box grown by
+    //    two steps more (`win`, its cells in the grid's row order, so the queue's order is the grid's)
+    const double grow = std::ceil(opt.maxReach / cell) + 2.0;
+    const int g = grow >= 2.0 && grow < static_cast<double>(nx) + ny ? static_cast<int>(grow) : grow < 2.0 ? 2 : nx + ny;
+    Box win;
+    win.i0 = std::max(0, roads.i0 - g), win.j0 = std::max(0, roads.j0 - g);
+    win.i1 = std::min(nx - 1, roads.i1 + g), win.j1 = std::min(ny - 1, roads.j1 + g);
+    const int wx = win.i1 - win.i0 + 1, wy = win.j1 - win.j0 + 1;
+    const size_t W = static_cast<size_t>(wx) * wy;
+    std::vector<double> dist(W, kInf), roadZ(W, std::numeric_limits<double>::quiet_NaN());
+    std::vector<char> isRoad(W, 0);
+    for (int j = roads.j0; j <= roads.j1; ++j)
+      for (int i = roads.i0; i <= roads.i1; ++i)
+        if (roadCell.get(i, j)) {
+          const size_t w = static_cast<size_t>(j - win.j0) * wx + (i - win.i0);
+          isRoad[w] = 1, dist[w] = 0.0, roadZ[w] = lowest.get(i, j);
+        }
+    lowest = Tiles<double>(0, 0, kInf);
+    roadCell = Tiles<char>(0, 0, 0);
+    // the queue: the search takes its entries in the order of (distance, cell) - one order, whatever holds them (a cell
+    // is queued again only nearer, so no two entries are equal). A step is at least one cell long, so an entry's pushes
+    // lie at least four buckets of a quarter cell beyond it: the buckets are taken in turn, each sorted. An entry beyond
+    // maxReach is not queued (it would be taken and passed over).
+    using Item = std::pair<double, size_t>;
+    const double bucketWidth = 0.25 * cell;
+    std::vector<std::vector<Item>> buckets;
+    auto push = [&](double nd, size_t m) {
+      if (nd > opt.maxReach) return;
+      const size_t b = static_cast<size_t>(nd / bucketWidth);
+      if (b >= buckets.size()) buckets.resize(b + 1);
+      buckets[b].push_back({nd, m});
+    };
+    auto expand = [&](double d, size_t w) {
+      const int i = win.i0 + static_cast<int>(w % wx), j = win.j0 + static_cast<int>(w / wx);
+      for (int dj = -1; dj <= 1; ++dj)
+        for (int di = -1; di <= 1; ++di) {
+          if (!di && !dj) continue;
+          const int a = i + di, b = j + dj;
+          if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
+          if (a < win.i0 || b < win.j0 || a > win.i1 || b > win.j1) throw std::logic_error("conformGround: search left its box");
+          const size_t m = static_cast<size_t>(b - win.j0) * wx + (a - win.i0);
+          const double nd = d + cell * ((di && dj) ? std::sqrt(2.0) : 1.0);
+          if (nd < dist[m]) dist[m] = nd, roadZ[m] = roadZ[w], push(nd, m);
+        }
+    };
+    // the road cells (distance 0) come off the queue first, in grid order, before anything they push (distance > 0):
+    // they are expanded in that order without queueing them
+    for (size_t w = 0; w < W; ++w)
+      if (isRoad[w] && !(0.0 > dist[w] || 0.0 > opt.maxReach)) expand(0.0, w);
+    for (size_t b = 0; b < buckets.size(); ++b) {
+      std::vector<Item> items = std::move(buckets[b]);  // taken out: expanding them pushes into later buckets only
+      std::sort(items.begin(), items.end());
+      for (const auto &[d, w] : items) {
+        if (d > dist[w] || d > opt.maxReach) continue;
+        expand(d, w);
       }
-  }
-  // 3. under a road its surface; beside it the cut / fill slope from the road edge, where it lies between the road and
-  //    the terrain (a fill: the higher of embankment and terrain, a cut: the lower of cutting and terrain)
-  for (size_t k = 0; k < N; ++k) {
-    if (std::isnan(roadZ[k])) continue;
-    if (cnt[k] > 0) {
-      out.z[k] = static_cast<float>(roadZ[k]);
-      continue;
     }
-    const double g = out.z[k];
-    if (std::isnan(g) || dist[k] > opt.maxReach) continue;
-    const double drop = dist[k] / opt.slope;
-    out.z[k] = static_cast<float>(roadZ[k] > g ? std::max(g, roadZ[k] - drop) : std::min(g, roadZ[k] + drop));
+    // 3. under a road its surface; beside it the cut / fill slope from the road edge, where it lies between the road and
+    //    the terrain (a fill: the higher of embankment and terrain, a cut: the lower of cutting and terrain)
+    for (size_t w = 0; w < W; ++w) {
+      if (std::isnan(roadZ[w])) continue;
+      const size_t k = static_cast<size_t>(win.j0 + static_cast<int>(w / wx)) * nx + (win.i0 + static_cast<int>(w % wx));
+      if (isRoad[w]) {
+        out.z[k] = static_cast<float>(roadZ[w]);
+        continue;
+      }
+      const double gz = out.z[k];
+      if (std::isnan(gz) || dist[w] > opt.maxReach) continue;
+      const double drop = dist[w] / opt.slope;
+      out.z[k] = static_cast<float>(roadZ[w] > gz ? std::max(gz, roadZ[w] - drop) : std::min(gz, roadZ[w] + drop));
+    }
   }
   // 4. the road floor (decided with the user on 2026-10-18; the viewer draws the same, src/map/roadFloor.ts): the road
   //    wins over the terrain. Every lane of every road (bridges included: a deck presses only ground that rises above it)
@@ -400,8 +512,8 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
   //    not press (they run under the ground on purpose; a road over the tunnel still does). Where two roads at
   //    different heights touch, the lower wins. Away from them the cap rises at floorSlope (a 63-degree cut), and the
   //    ground is the lower of itself and the cap.
-  std::vector<double> cap(N, kInf);
-  std::vector<double> plainCap(N, -kInf);  // the highest cap a lane of a road outside every junction set at each cell
+  Tiles<double> cap(nx, ny, kInf);
+  Tiles<double> plainCap(nx, ny, -kInf);  // the highest cap a lane of a road outside every junction set at each cell
   Box box;  // every cell capped
   // quads a quarter of a cell long: the triangles' planes follow a banked, curving lane to well under the floor's 5 cm
   const double ds = 0.25 * cell;
@@ -410,7 +522,10 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
     double width = 0.0;
     P3 inner{}, outer{};
   };
-  for (const odr::Road &r : od.roads) {
+  // one road's triangles in raster order (read only, so the roads are triangulated in parallel); rastered in road order
+  using Triangle = std::array<P3, 3>;
+  auto roadTriangles = [&](const odr::Road &r, std::vector<Triangle> &tris) {
+    tris.clear();
     for (size_t k = 0; k < r.lanes.size(); ++k) {
       const double s0 = r.lanes[k].s, s1 = k + 1 < r.lanes.size() ? r.lanes[k + 1].s : r.length();
       if (s1 - s0 < 1e-6) continue;
@@ -441,11 +556,21 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
           for (size_t m = 0; m < ids.size(); ++m) {
             const Edge &a = ea[m], &b = eb[m];
             if (!a.ok || !b.ok || (a.width < 1e-3 && b.width < 1e-3)) continue;
-            std::vector<double> *plain = r.junction == "-1" ? &plainCap : nullptr;
-            rasterTriangle(cap, ground, {a.inner, b.inner, b.outer}, opt.floorEpsilon, box, plain);
-            rasterTriangle(cap, ground, {a.inner, b.outer, a.outer}, opt.floorEpsilon, box, plain);
+            tris.push_back({a.inner, b.inner, b.outer});
+            tris.push_back({a.inner, b.outer, a.outer});
           }
         std::swap(ea, eb);
+      }
+    }
+  };
+  {
+    std::vector<std::vector<Triangle>> tris(std::min(kRoadBatch, od.roads.size()));
+    for (size_t r0 = 0; r0 < od.roads.size(); r0 += kRoadBatch) {
+      const size_t n = std::min(kRoadBatch, od.roads.size() - r0);
+      inParallel(n, [&](size_t b) { roadTriangles(od.roads[r0 + b], tris[b]); });
+      for (size_t b = 0; b < n; ++b) {
+        Tiles<double> *plain = od.roads[r0 + b].junction == "-1" ? &plainCap : nullptr;
+        for (const Triangle &t : tris[b]) rasterTriangle(cap, ground, t, opt.floorEpsilon, box, plain);
       }
     }
   }
@@ -474,17 +599,27 @@ TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, c
   // the capped cells grown by that reach holds every cell it lowers, and the steps from a capped cell to it
   double capMin = kInf, groundMax = -kInf;
   for (int j = box.j0; j <= box.j1; ++j)
-    for (int i = box.i0; i <= box.i1; ++i) capMin = std::min(capMin, cap[static_cast<size_t>(j) * nx + i]);
+    for (int i = box.i0; i <= box.i1; ++i) capMin = std::min(capMin, cap.get(i, j));
   for (const float z : out.z)
     if (!std::isnan(z)) groundMax = std::max(groundMax, static_cast<double>(z));
   const int reach = groundMax > capMin ? static_cast<int>(std::ceil((groundMax - capMin) / (opt.floorSlope * cell))) + 1 : 1;
   box.i0 = std::max(0, box.i0 - reach), box.j0 = std::max(0, box.j0 - reach);
   box.i1 = std::min(nx - 1, box.i1 + reach), box.j1 = std::min(ny - 1, box.j1 + reach);
-  cone(cap, nx, box, cell, opt.floorSlope);
+  // the cone over that box alone, as one array (its row order the grid's)
+  const int bx = box.i1 - box.i0 + 1, by = box.j1 - box.j0 + 1;
+  std::vector<double> boxCap(static_cast<size_t>(bx) * by);
+  for (int j = box.j0; j <= box.j1; ++j)
+    for (int i = box.i0; i <= box.i1; ++i) boxCap[static_cast<size_t>(j - box.j0) * bx + (i - box.i0)] = cap.get(i, j);
+  cap = Tiles<double>(0, 0, kInf);
+  plainCap = Tiles<double>(0, 0, -kInf);
+  Box local;
+  local.i0 = 0, local.j0 = 0, local.i1 = bx - 1, local.j1 = by - 1;
+  cone(boxCap, bx, local, cell, opt.floorSlope);
   for (int j = box.j0; j <= box.j1; ++j)
     for (int i = box.i0; i <= box.i1; ++i) {
       const size_t k = static_cast<size_t>(j) * nx + i;
-      if (cap[k] < out.z[k]) out.z[k] = static_cast<float>(cap[k]);
+      const double c = boxCap[static_cast<size_t>(j - box.j0) * bx + (i - box.i0)];
+      if (c < out.z[k]) out.z[k] = static_cast<float>(c);
     }
   return out;
 }
