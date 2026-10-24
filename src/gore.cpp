@@ -177,6 +177,7 @@ void Builder::buildGores() {
     fo.maxCurvature = 1.0 / (halfWidth + 1.5);
     const ReferenceLine C = fitPolylineLimited(pts, fo);
     if (C.elements.empty()) continue;
+    const ReferenceLine::ProjectionAid midsC = C.projectionAid();  // C is projected onto up to 300 times below
     const double Lc = C.length();
     // which side the branch leaves on, and where its carriageway clears the main one
     const double LB = mB.full.length();
@@ -191,7 +192,7 @@ void Builder::buildGores() {
         const double s = diverge ? k : LB - k;
         if (s < 0 || s > LB) break;
         double sp, tp;
-        C.project(mB.full.eval(s).pos(), sp, tp);
+        C.project(mB.full.eval(s).pos(), sp, tp, midsC);
         maxL = std::max(maxL, tp), maxR = std::max(maxR, -tp);
         if (tp >= needL || -tp >= needR) {
           left = tp >= needL;

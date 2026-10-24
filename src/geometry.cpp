@@ -138,18 +138,49 @@ Pose ReferenceLine::eval(double s) const {
 }
 
 void ReferenceLine::project(const Vec2 &p, double &sOut, double &tOut) const {
+  projectImpl(p, sOut, tOut, nullptr);
+}
+
+namespace {
+/// the coarse samples project() takes on an element: n + 1 points at ds = length * i / n (curvature-aware)
+int coarseSamples(const GeomElement &e) {
+  const double turn = std::abs(0.5 * (e.k0 + e.k1)) * e.length + std::abs(e.k1 - e.k0) * e.length;
+  return std::max(4, static_cast<int>(std::min(e.length / 2.0, 8.0 + 16.0 * turn)));
+}
+}  // namespace
+
+ReferenceLine::ProjectionAid ReferenceLine::projectionAid() const {
+  ProjectionAid aid;
+  aid.mids.reserve(elements.size());
+  aid.first.reserve(elements.size() + 1);
+  for (const GeomElement &e : elements) {
+    aid.mids.push_back(e.eval(0.5 * e.length).pos());
+    aid.first.push_back(aid.points.size());
+    const int n = coarseSamples(e);
+    for (int i = 0; i <= n; ++i) aid.points.push_back(e.eval(e.length * i / n).pos());
+  }
+  aid.first.push_back(aid.points.size());
+  return aid;
+}
+
+void ReferenceLine::project(const Vec2 &p, double &sOut, double &tOut, const ProjectionAid &aid) const {
+  const bool fits = aid.mids.size() == elements.size() && aid.first.size() == elements.size() + 1;
+  projectImpl(p, sOut, tOut, fits ? &aid : nullptr);
+}
+
+void ReferenceLine::projectImpl(const Vec2 &p, double &sOut, double &tOut, const ProjectionAid *aid) const {
   // coarse sampling then Newton refinement on the tangent condition
   const double L = length();
   double best = std::numeric_limits<double>::max(), bestS = 0.0;
-  for (const GeomElement &e : elements) {
+  for (size_t k = 0; k < elements.size(); ++k) {
+    const GeomElement &e = elements[k];
     // bounding-circle rejection, then a few samples per element (curvature-aware)
-    const Pose mid = e.eval(0.5 * e.length);
-    if ((mid.pos() - p).norm() - 0.5 * e.length > best) continue;
-    const double turn = std::abs(0.5 * (e.k0 + e.k1)) * e.length + std::abs(e.k1 - e.k0) * e.length;
-    const int n = std::max(4, static_cast<int>(std::min(e.length / 2.0, 8.0 + 16.0 * turn)));
+    const Vec2 mid = aid ? aid->mids[k] : e.eval(0.5 * e.length).pos();
+    if ((mid - p).norm() - 0.5 * e.length > best) continue;
+    const int n = coarseSamples(e);
     for (int i = 0; i <= n; ++i) {
       const double ds = e.length * i / n;
-      const double d = (e.eval(ds).pos() - p).norm();
+      const double d = ((aid ? aid->points[aid->first[k] + static_cast<size_t>(i)] : e.eval(ds).pos()) - p).norm();
       if (d < best) best = d, bestS = e.s + ds;
     }
   }

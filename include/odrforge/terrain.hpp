@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -22,16 +23,35 @@ class TerrainGrid {
   double originX = 0, originY = 0, cell = 1;
   int nx = 0, ny = 0, levels = 1;
   std::string datum;
-  std::vector<float> z;  ///< levels * ny * nx
+  /// levels * ny * nx; empty when the heights are held in tiles (loadSparse): at() reads a cell either way
+  std::vector<float> z;
 
-  bool empty() const { return z.empty(); }
+  bool empty() const { return z.empty() && tileAt_.empty(); }
   /// Bilinear height of level 0 at (x, y); NaN cells ignored (weights renormalised); NaN if none.
   double sample(double x, double y) const;
   /// All surface levels at (x, y) (nearest cell, neighbours if it is empty), lowest first.
   std::vector<double> levelsAt(double x, double y) const;
   static TerrainGrid load(const std::string &path);
+  /// load() holding the heights in tiles of kTile x kTile cells per level, leaving out every tile whose cells are all
+  /// the quiet NaN (a bridge-deck grid is empty almost everywhere): at() reads each cell as after load().
+  static TerrainGrid loadSparse(const std::string &path);
   void save(const std::string &path) const;
-  float at(int level, int i, int j) const { return z[(static_cast<size_t>(level) * ny + j) * nx + i]; }
+  float at(int level, int i, int j) const {
+    if (tileAt_.empty()) return z[(static_cast<size_t>(level) * ny + j) * nx + i];
+    const int32_t t = tileAt_[(static_cast<size_t>(level) * tilesY_ + static_cast<size_t>(j >> kTileShift)) * tilesX_ +
+                              static_cast<size_t>(i >> kTileShift)];
+    if (t < 0) return emptyCell();
+    return tileZ_[static_cast<size_t>(t) * kTile * kTile + static_cast<size_t>(j & (kTile - 1)) * kTile +
+                  static_cast<size_t>(i & (kTile - 1))];
+  }
+
+  static constexpr int kTileShift = 6, kTile = 1 << kTileShift;
+
+ private:
+  static float emptyCell();      ///< the quiet NaN (bits 0x7fc00000) every cell of a tile left out holds
+  int tilesX_ = 0, tilesY_ = 0;  ///< tiles per row / column (loadSparse)
+  std::vector<int32_t> tileAt_;  ///< per level and tile: its index in tileZ_, -1 when left out (loadSparse)
+  std::vector<float> tileZ_;     ///< the tiles kept, kTile rows of kTile cells each
 };
 
 /// Ground + structure (bridge deck) surfaces.

@@ -978,6 +978,89 @@ TEST_CASE("barriers (standard): OSM guard rails and jersey barriers become barri
   }
 }
 
+TEST_CASE("junction nodes of unconnected ways drawn under 2 m apart are one junction; 30 m apart, two") {
+  // two parallel one-way carriageways drawn 1.6 m apart (not connected by any way): on the southern one a street from
+  // the south ends at node A, on the northern one a street from the north at node B, 0.5 m east of A (on either side
+  // of x = 0) - one crossroads mapped as two nodes. With B 30 m east of A they are two T junctions. Further T junctions
+  // along both carriageways stay junctions of their own.
+  auto scene = [](double dx) {
+    OsmBuilder b;
+    const Tags street{{"highway", "residential"}};
+    std::vector<std::pair<double, OsmId>> south, north;  // the carriageways' nodes by x
+    const OsmId A = b.node(-0.25, 0), B = b.node(dx - 0.25, 1.6);
+    south.push_back({-0.25, A});
+    north.push_back({dx - 0.25, B});
+    b.way({A, b.node(-0.25, -60)}, street);
+    b.way({B, b.node(dx - 0.25, 60)}, street);
+    for (int k = -4; k <= 4; ++k)
+      if (k) {
+        const double x = 80.0 * k + 5.0;
+        const OsmId s = b.node(x, 0), n = b.node(x + 20.0, 1.6);
+        south.push_back({x, s});
+        north.push_back({x + 20.0, n});
+        b.way({s, b.node(x, -60)}, street);
+        b.way({n, b.node(x + 20.0, 60)}, street);
+      }
+    south.push_back({-400.0, b.node(-400, 0)}), south.push_back({400.0, b.node(400, 0)});
+    north.push_back({-400.0, b.node(-400, 1.6)}), north.push_back({400.0, b.node(400, 1.6)});
+    for (auto *side : {&south, &north}) {
+      std::sort(side->begin(), side->end());
+      std::vector<OsmId> nodes;
+      for (const auto &[x, n] : *side) nodes.push_back(n);
+      if (side == &north) std::reverse(nodes.begin(), nodes.end());
+      b.way(nodes, {{"highway", "residential"}, {"oneway", "yes"}});
+    }
+    return b;
+  };
+  const Result near = build(scene(0.5)), far = build(scene(30.0));
+  CHECK(far.od.junctions.size() == near.od.junctions.size() + 1);
+  CHECK(far.od.junctions.size() == 18);
+}
+
+TEST_CASE("barriers (standard): many barrier ways give their objects in way order, run by run, the same every build") {
+  // 12 guard rails along a 600 m road, alternating sides; every third one dips onto the right lane in its middle
+  // (samples on a lane close the run: two objects); the samples are placed in parallel and their runs built in way
+  // order, so every build - on several threads or one (BuildOptions::parallel) - gives the same objects, ids in the
+  // order of the ways
+  OsmBuilder b;
+  b.way({b.node(0, 0), b.node(600, 0)}, {{"highway", "primary"}, {"lanes", "2"}, {"sidewalk", "no"}});
+  for (int k = 0; k < 12; ++k) {
+    const double x0 = 10.0 + 48.0 * k, side = k % 2 ? 5.5 : -5.5;
+    if (k % 3 == 0)
+      b.way({b.node(x0, side), b.node(x0 + 12, side), b.node(x0 + 14, -1.5), b.node(x0 + 18, -1.5), b.node(x0 + 20, side),
+             b.node(x0 + 40, side)}, {{"barrier", "guard_rail"}});
+    else
+      b.way({b.node(x0, side), b.node(x0 + 40, side)}, {{"barrier", "guard_rail"}});
+  }
+  const Result r1 = build(b, "US", "asam", false, true), r2 = build(b, "US", "asam", false, true);
+  CHECK(r1.val.errors == 0);
+  odr::OpenDrive a = r1.od, c = r2.od;
+  c.header.date = a.header.date;
+  CHECK(odr::toString(a) == odr::toString(c));
+  CHECK(r1.rep.barrierSamples == r2.rep.barrierSamples && r1.rep.barrierSamplesOnLane == r2.rep.barrierSamplesOnLane);
+  BuildOptions one;  // as build() sets them, on one thread
+  one.country = CountryProfile::load("US");
+  one.target = TargetProfile::byName("asam");
+  one.streetFurniture = true;
+  one.parallel = false;
+  BuildReport repOne;
+  odr::OpenDrive seq = buildOpenDrive(b.d, b.proj, one, &repOne);
+  seq.header.revMinor = one.target.revMinor;
+  seq.header.date = a.header.date;
+  CHECK(odr::toString(seq) == odr::toString(a));
+  CHECK(repOne.barrierSamples == r1.rep.barrierSamples && repOne.barrierSamplesOnLane == r1.rep.barrierSamplesOnLane &&
+        repOne.barriers == r1.rep.barriers);
+  std::vector<std::pair<int, double>> objects;  // (object id, s of its first repeat) in id order
+  for (const auto &rd : r1.od.roads)
+    for (const auto &o : rd.objects)
+      if (o.type == "barrier") objects.push_back({std::stoi(o.id), o.repeats.front().s});
+  std::sort(objects.begin(), objects.end());
+  CHECK(r1.rep.barriers == 16 && objects.size() == 16 && r1.rep.barrierSamplesOnLane > 0);
+  bool ascending = true;  // ways run along +x in id order: their objects' first s grow with the object id
+  for (size_t k = 1; k < objects.size(); ++k) ascending = ascending && objects[k].second > objects[k - 1].second;
+  CHECK(ascending);
+}
+
 TEST_CASE("barriers (standard): none on a lane in use, none without street furniture, none in carla") {
   // a guard rail drawn over the right driving lane: a barrier never blocks a lane anyone travels on
   const Result onLane = build(roadWithBarriers(-1.5), "US", "asam", false, true);

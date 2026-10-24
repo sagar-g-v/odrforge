@@ -113,6 +113,9 @@ void Builder::roadBarriers() {
       roadGrid[{static_cast<int>(std::floor(p.x / kCell)), static_cast<int>(std::floor(p.y / kCell))}].insert(i);
     }
   const double maxSin = std::sin(kMaxAngle * kPi / 180.0);
+  // every road's projection aid for the projections below (barriers add objects, the reference lines stay)
+  std::vector<ReferenceLine::ProjectionAid> mids(od.roads.size());
+  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.projectionAid();
 
   // the road a barrier sample lines (false: none, or it would stand on a lane in use)
   auto place = [&](const Vec2 &q, const Vec2 &dir, int layer, const BarrierKind &k, BarrierSample &out) {
@@ -125,7 +128,7 @@ void Builder::roadBarriers() {
     for (int c : cand) {
       const odr::Road &r = od.roads[metas[c].roadIndex];
       double s, t;
-      r.planView.project(q, s, t);
+      r.planView.project(q, s, t, mids[static_cast<size_t>(metas[c].roadIndex)]);
       if (s <= 1e-3 || s >= r.length() - 1e-3) continue;
       const Pose p = r.planView.eval(s);
       if (std::abs((q - p.pos()).dot(p.dir())) > 0.5 || std::abs(dir.cross(p.dir())) > maxSin) continue;
@@ -176,7 +179,7 @@ void Builder::roadBarriers() {
       if (ri == metas[smp.meta].roadIndex) continue;
       const odr::Road &o = od.roads[ri];
       double s, t;
-      o.planView.project(q, s, t);
+      o.planView.project(q, s, t, mids[static_cast<size_t>(ri)]);
       if (s <= 1e-3 || s >= o.length() - 1e-3) continue;
       const Pose p = o.planView.eval(s);
       if (std::abs((q - p.pos()).dot(p.dir())) > 0.5 || std::abs(odr::surfaceZ(o, s, t) - zHere) > kOtherLevel) continue;
@@ -239,16 +242,21 @@ void Builder::roadBarriers() {
     if (auto b = tag(w.tags, "barrier"); b && std::any_of(std::begin(kKinds), std::end(kKinds), [&](const BarrierKind &k) { return *b == k.osm; }))
       ids.push_back(id);
   std::sort(ids.begin(), ids.end());
-  for (OsmId id : ids) {
-    const OsmWay &w = osm.ways.at(id);
+  // every sample of every barrier way, in way order: where it lies, which way it belongs to
+  struct Point {
+    size_t way;  // index into ids
+    Vec2 q, dir;
+    bool placed = false, stands = false;
+    BarrierSample smp;
+  };
+  std::vector<const BarrierKind *> kinds(ids.size());
+  std::vector<int> layers(ids.size());
+  std::vector<Point> points;
+  for (size_t wi = 0; wi < ids.size(); ++wi) {
+    const OsmWay &w = osm.ways.at(ids[wi]);
     const std::string b = *tag(w.tags, "barrier");
-    const BarrierKind &k = *std::find_if(std::begin(kKinds), std::end(kKinds), [&](const BarrierKind &x) { return b == x.osm; });
-    const int layer = wayLayer(w.tags);
-    std::vector<BarrierSample> run;
-    auto close = [&]() {
-      if (!run.empty() && !emit(run, k)) rep.barrierSamplesShort += static_cast<int>(run.size());
-      run.clear();
-    };
+    kinds[wi] = &*std::find_if(std::begin(kKinds), std::end(kKinds), [&](const BarrierKind &x) { return b == x.osm; });
+    layers[wi] = wayLayer(w.tags);
     for (size_t n = 0; n + 1 < w.nodes.size(); ++n) {
       const Vec2 a = pos(w.nodes[n]), d = pos(w.nodes[n + 1]) - a;
       const double len = d.norm();
@@ -257,28 +265,49 @@ void Builder::roadBarriers() {
       const int steps = std::max(1, static_cast<int>(std::ceil(len / kSampleStep)));
       const bool last = n + 2 == w.nodes.size();
       for (int i = 0; i <= steps - (last ? 0 : 1); ++i) {
-        ++rep.barrierSamples;
-        BarrierSample smp;
-        const Vec2 qq = a + d * (static_cast<double>(i) / steps);
-        if (!place(qq, dir, layer, k, smp)) {
-          ++rep.barrierSamplesUnmatched;
-          close();
-          continue;
-        }
-        if (!standing(smp, k, qq)) {
-          ++rep.barrierSamplesOnLane;
-          close();
-          continue;
-        }
-        // a run continues on the same road, s moving on by about one step in one direction, on ground without a
-        // step (a raised sidewalk ending, a lowered curb: a repeat's linear zOffset would cut into the ground there)
-        if (!run.empty() && run.back().meta == smp.meta && std::abs(smp.s - run.back().s) < 1e-3) continue;
-        if (!run.empty() && (run.back().meta != smp.meta || std::abs(smp.s - run.back().s) > 2.0 * kSampleStep ||
-                             std::abs(smp.z - run.back().z) > kGroundStep ||
-                             (run.size() >= 2 && (smp.s - run.back().s) * (run.back().s - run[run.size() - 2].s) < 0)))
-          close();
-        run.push_back(smp);
+        Point p;
+        p.way = wi, p.q = a + d * (static_cast<double>(i) / steps), p.dir = dir;
+        points.push_back(p);
       }
+    }
+  }
+  // placing and standing a sample read the roads' lines and lanes only (a barrier is an object, added below): all
+  // samples in parallel, each writing its own result
+  forEach(opt.parallel, points.begin(), points.end(), [&](Point &p) {
+    p.placed = place(p.q, p.dir, layers[p.way], *kinds[p.way], p.smp);
+    if (p.placed) p.stands = standing(p.smp, *kinds[p.way], p.q);
+  });
+  // the runs, way by way in id order, as one sample after the other
+  for (size_t at = 0; at < points.size();) {
+    const size_t wi = points[at].way;
+    const BarrierKind &k = *kinds[wi];
+    std::vector<BarrierSample> run;
+    auto close = [&]() {
+      if (!run.empty() && !emit(run, k)) rep.barrierSamplesShort += static_cast<int>(run.size());
+      run.clear();
+    };
+    for (; at < points.size() && points[at].way == wi; ++at) {
+      const Point &p = points[at];
+      ++rep.barrierSamples;
+      if (!p.placed) {
+        ++rep.barrierSamplesUnmatched;
+        close();
+        continue;
+      }
+      if (!p.stands) {
+        ++rep.barrierSamplesOnLane;
+        close();
+        continue;
+      }
+      // a run continues on the same road, s moving on by about one step in one direction, on ground without a
+      // step (a raised sidewalk ending, a lowered curb: a repeat's linear zOffset would cut into the ground there)
+      const BarrierSample &smp = p.smp;
+      if (!run.empty() && run.back().meta == smp.meta && std::abs(smp.s - run.back().s) < 1e-3) continue;
+      if (!run.empty() && (run.back().meta != smp.meta || std::abs(smp.s - run.back().s) > 2.0 * kSampleStep ||
+                           std::abs(smp.z - run.back().z) > kGroundStep ||
+                           (run.size() >= 2 && (smp.s - run.back().s) * (run.back().s - run[run.size() - 2].s) < 0)))
+        close();
+      run.push_back(smp);
     }
     close();
   }

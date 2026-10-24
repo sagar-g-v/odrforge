@@ -426,6 +426,12 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
         if (std::abs(g1 - g2) > 0.01) err("quality.link_grade", R_ + "grade " + std::to_string(g2) + " vs " + std::to_string(g1) + " on road " + o.id);
       }
   }
+  // every road's projection aid, for the many projections onto it below
+  std::vector<ReferenceLine::ProjectionAid> mids(od.roads.size());
+  for (size_t i = 0; i < od.roads.size(); ++i) mids[i] = od.roads[i].planView.projectionAid();
+  auto midsOf = [&](const odr::Road &q) -> const ReferenceLine::ProjectionAid & {
+    return mids[static_cast<size_t>(&q - od.roads.data())];
+  };
   // one surface per junction: overlapping connecting lanes must agree in height
   {
     std::map<std::string, std::vector<const odr::Road *>> byJunction;
@@ -458,7 +464,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
             // compare both surfaces at the same point: project point i onto road j
             const odr::Road &q = *rs[pts[j].road];
             double sq, tq;
-            q.planView.project({pts[i].x, pts[i].y}, sq, tq);
+            q.planView.project({pts[i].x, pts[i].y}, sq, tq, midsOf(q));
             const Pose pq = q.planView.eval(sq);
             if (std::abs((Vec2(pts[i].x, pts[i].y) - pq.pos()).dot(pq.dir())) > 0.05) continue;
             const double dz = std::abs(odr::surfaceZ(q, sq, tq) - pts[i].z);
@@ -509,7 +515,7 @@ ValidationReport validate(const odr::OpenDrive &od, const TargetProfile &target)
               if (reported.count(std::minmax(k, o))) continue;
               const odr::Road &q = *rs[o];
               double so, to;
-              q.planView.project(c.pos(), so, to);
+              q.planView.project(c.pos(), so, to, midsOf(q));
               if (so < 1.0 || so > q.length() - 1.0) continue;
               const Pose po = q.planView.eval(so);
               if (std::abs((c.pos() - po.pos()).dot(po.dir())) > 0.3) continue;

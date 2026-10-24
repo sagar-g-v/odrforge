@@ -67,6 +67,17 @@ class ReferenceLine {
   Pose eval(double s) const;  ///< clamps s to [0, length]
   /// Closest point on the line: returns s and signed lateral offset t (left positive).
   void project(const Vec2 &p, double &s, double &t) const;
+  /// What project() evaluates on the line itself, whatever the point: every element's midpoint and its coarse samples.
+  struct ProjectionAid {
+    std::vector<Vec2> mids;     ///< per element
+    std::vector<size_t> first;  ///< per element its first sample in points; one more entry: the end
+    std::vector<Vec2> points;   ///< the coarse samples, element by element
+  };
+  /// For a line projected onto many times: computed once, as project() computes them.
+  ProjectionAid projectionAid() const;
+  /// project() with projectionAid() of this line (unchanged since): the same result without evaluating the line's
+  /// elements on every call. An aid of another size is ignored.
+  void project(const Vec2 &p, double &s, double &t, const ProjectionAid &aid) const;
   /// Re-number s along the line and recompute element start poses from the first element
   /// (removes drift so consecutive elements are exactly continuous).
   void finalize();
@@ -79,6 +90,9 @@ class ReferenceLine {
   /// Fold elements shorter than minLen into a neighbour. OpenDRIVE 1.8.0 §9.2 only requires @length > 0
   /// (XSD t_grZero); the minLen floor (1 cm) is our own guard against degenerate elements, not a spec value.
   void dropTiny(double minLen = 0.01);  // elements under 1 cm are folded into a neighbour (validator rule spec2.min_geometry_length)
+
+ private:
+  void projectImpl(const Vec2 &p, double &s, double &t, const ProjectionAid *aid) const;
 };
 
 }  // namespace odrforge

@@ -1,6 +1,8 @@
 // OdrForge - internal state shared by the network builder stages (not installed).
 #pragma once
 
+#include <algorithm>
+#include <execution>
 #include <functional>
 #include <map>
 #include <optional>
@@ -12,6 +14,14 @@
 #include "odrforge/network.hpp"
 
 namespace odrforge::detail {
+
+/// fn on every element of [first, last): on the parallel algorithms' threads when `parallel` (BuildOptions::parallel),
+/// else one after the other. fn must write only its own element's result.
+template <class It, class Fn>
+void forEach(bool parallel, It first, It last, Fn fn) {
+  if (parallel) std::for_each(std::execution::par, first, last, fn);
+  else std::for_each(first, last, fn);
+}
 
 struct Seg {
   OsmId way = 0;

@@ -19,6 +19,9 @@ struct ConformOptions {
   double floorEpsilon = 0.05;
   /// ... and the cap on it rises this much per metre away from them (2: a 1:0.5 cut, 63 degrees)
   double floorSlope = 2.0;
+  /// roads sampled, triangulated and rastered on several threads (results applied in road order); false: one thread.
+  /// The grid is the same either way.
+  bool parallel = true;
 };
 
 /// `ground` (level 0) conformed to the roads of `od`: the road surface (odr::surfaceZ, without lane heights; the lowest
@@ -27,6 +30,8 @@ struct ConformOptions {
 /// that point's surface minus floorEpsilon (a road's own lanes inside its tunnels excepted), the cap rising at
 /// floorSlope away from them, so the road wins over the terrain. Same frame and datum.
 TerrainGrid conformGround(const odr::OpenDrive &od, const TerrainGrid &ground, const ConformOptions &opt = {});
+/// The same, the ground handed over: its level 0 becomes the result in place (no copy of a large grid held twice).
+TerrainGrid conformGround(const odr::OpenDrive &od, TerrainGrid &&ground, const ConformOptions &opt = {});
 
 struct SeatReport {
   int seated = 0;         ///< objects whose zOffset now puts their base on the ground

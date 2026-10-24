@@ -158,7 +158,8 @@ static int build(int argc, char **argv) {
     }
     Terrain terrain;
     if (!terrainPath.empty()) terrain.ground = TerrainGrid::load(terrainPath);
-    if (!structuresPath.empty()) terrain.structures = TerrainGrid::load(structuresPath);
+    // bridge decks cover a small part of their grid: its empty tiles are not held
+    if (!structuresPath.empty()) terrain.structures = TerrainGrid::loadSparse(structuresPath);
     if (!terrain.ground.empty() || !terrain.structures.empty()) {
       opt.terrain = &terrain;
       opt.verticalDatum = !terrain.ground.datum.empty() ? terrain.ground.datum : terrain.structures.datum;
@@ -176,21 +177,25 @@ static int build(int argc, char **argv) {
       std::fprintf(stderr, "--ground-out needs --terrain\n");
       return 2;
     }
+    terrain.structures = TerrainGrid();  // the network is built: the decks are read no more
     // on measured terrain the ground conformed to the roads (the grid --ground-out publishes) also seats the trees and
-    // street lamps: their base on that ground, not at the reference line's height
+    // street lamps: their base on that ground, not at the reference line's height. The ground grid becomes the
+    // conformed one (not read again).
     TerrainGrid conformed;
     if (!terrain.ground.empty()) {
-      conformed = conformGround(od, terrain.ground);
+      conformed = conformGround(od, std::move(terrain.ground));
       const SeatReport seat = seatObjects(od, conformed);
       std::printf("  objects on the ground: %d seated (up to %.2f m up, %.2f m down), %d left on bridge decks\n", seat.seated,
                   seat.maxLift, seat.maxDrop, seat.onBridges);
     }
+    if (groundOutPath.empty()) conformed = TerrainGrid();  // not published: not held any longer
     phase("conform ground, objects");
     odr::WriteOptions wo;
     wo.revMinor = opt.target.revMinor;
     odr::write(od, out, wo);
     if (!groundOutPath.empty()) {
       conformed.save(groundOutPath);
+      conformed = TerrainGrid();
       std::printf("  conformed ground: %s\n", groundOutPath.c_str());
     }
     phase("write");
