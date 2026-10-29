@@ -222,7 +222,16 @@ generated roads with the map):
 - hover and click inspection of lanes and roads, and road search
 - the validation status of the file
 
-## Conformance
+## Standards and conformance
+
+OdrForge writes [ASAM OpenDRIVE](https://www.asam.net/standards/detail/opendrive/): the `standard` profile targets
+OpenDRIVE 1.8.0 (junction boundaries and elevation grids, lane layout per the ASAM OpenDRIVE Junction Guideline
+1.0.0), the `carla` profile writes a 1.4-compatible file (header revMinor 4) for CARLA. Every output is validated
+against the ASAM OpenDRIVE 1.8.1 XML schemas (`tests/xsd/opendrive_1_8_1`, distributable under the ASAM licence
+terms) and the OpenDRIVE 1.4H schema (`tests/xsd/opendrive_1_4`, as shipped in ASAM's
+[qc-opendrive](https://github.com/asam-ev/qc-opendrive)), and can be checked with the ASAM Quality Checker
+(`tools/inspect/asam_qc.py`). The specifications themselves are not included in this repository; get them from
+[ASAM](https://www.asam.net/standards/detail/opendrive/) (see [docs/reference](docs/reference/README.md)).
 
 `validate()` checks the ASAM OpenDRIVE rules listed in `src/validate.cpp`. Every message carries the
 ASAM rule id or the spec section it enforces. The test suite (`ctest`) runs the formulas, writer,
@@ -245,4 +254,6 @@ is exposed as `ODRFORGE_VERSION` (`<odrforge/version.hpp>`). It is written into 
 
 ## License
 
-Proprietary. See [LICENSE](LICENSE).
+Licensed under the Apache License 2.0; see [LICENSE](LICENSE). Test areas and pictures contain data derived from
+OpenStreetMap (© OpenStreetMap contributors, ODbL 1.0). ASAM OpenDRIVE is a standard of ASAM e.V.; the schema files
+in `tests/xsd` keep their own notices.

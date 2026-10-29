@@ -2,3 +2,9 @@ build/
 *.xodr
 !tests/data/*.xodr
 __pycache__/
+# local copies of the ASAM specifications (copyright ASAM e.V., not redistributed; see docs/reference/README.md)
+docs/reference/ASAM_*
+docs/reference/Quick_Read_*
+docs/reference/asam_opendrive_*/
+docs/reference/fig/
+docs/reference/figures/
